@@ -24,18 +24,142 @@ export type PriceCandle = {
   close: number;
 };
 export type OrderSide = "buy" | "sell";
+type OrderBookMapEntry = {
+  orderBook: OrderBook;
+  timestamp: number;
+};
+export type OrderBookHeatmapEntry = {
+  x: number;
+  y: number;
+  size: number;
+};
+export type OrderBookHistogramEntry = {
+  kind: OrderSide;
+  y: number;
+  size: number;
+};
+export type OrderBookHeatmapRegion = {
+  timestamp: [start: number, end: number];
+  price: [min: number, max: number];
+  resolution: [time: number, price: number];
+};
+export type OrderBookHistogramRegion = {
+  price: [min: number, max: number];
+  resolution: number;
+};
 
-const orderBook: {
+type OrderBook = {
   buy: RegisteredOrder[];
   sell: RegisteredOrder[];
-} = {
+};
+
+const orderBook: OrderBook = {
   buy: [{ id: -1, price: 0.99, size: 1e2 }],
   sell: [{ id: -2, price: 1.01, size: 1e2 }],
 };
 
+const cloneOrderBook = (): OrderBook => ({
+  buy: orderBook.buy.map((order) => ({ ...order })),
+  sell: orderBook.sell.map((order) => ({ ...order })),
+});
+
+const initialTimestamp = Date.now();
+
+const orderBookMap: OrderBookMapEntry[] = [
+  {
+    timestamp: initialTimestamp,
+    orderBook: cloneOrderBook(),
+  },
+];
+
+export const getOrderBookRegion = (
+  region: OrderBookHeatmapRegion,
+): OrderBookHeatmapEntry[] => {
+  const cellSize: [time: number, price: number] = [
+    Math.max(region.timestamp[1] - region.timestamp[0], 1) /
+      region.resolution[0],
+    Math.max(region.price[1] - region.price[0], Number.EPSILON) /
+      region.resolution[1],
+  ];
+  const heatmapKey = (time: number, price: number) =>
+    JSON.stringify([time, price]);
+  const heatmap: Map<string, OrderBookHeatmapEntry> = new Map();
+
+  for (const snapshot of orderBookMap) {
+    if (
+      snapshot.timestamp < region.timestamp[0] ||
+      snapshot.timestamp > region.timestamp[1]
+    ) {
+      continue;
+    }
+
+    const x = Math.floor(
+      (snapshot.timestamp - region.timestamp[0]) / cellSize[0],
+    );
+
+    const orders = [...snapshot.orderBook.buy, ...snapshot.orderBook.sell];
+    for (const order of orders) {
+      if (order.price < region.price[0] || order.price > region.price[1]) {
+        continue;
+      }
+
+      const y = Math.floor((order.price - region.price[0]) / cellSize[1]);
+      const key = heatmapKey(x, y);
+      const cell = heatmap.get(key);
+      if (cell) {
+        cell.size += order.size;
+      } else {
+        heatmap.set(key, { x, y, size: order.size });
+      }
+    }
+  }
+
+  return new Array(region.resolution[0]).fill(0).flatMap((_, timeIndex) =>
+    new Array(region.resolution[1]).fill(0).map((_, priceIndex) => {
+      const key = heatmapKey(timeIndex, priceIndex);
+      return heatmap.get(key) ?? { x: timeIndex, y: priceIndex, size: 0 };
+    }),
+  );
+};
+
+export const getOrderBookHistogram = (
+  region: OrderBookHistogramRegion,
+): OrderBookHistogramEntry[] => {
+  const cellHeight =
+    Math.max(region.price[1] - region.price[0], Number.EPSILON) /
+    region.resolution;
+  const histogram = new Map<string, OrderBookHistogramEntry>();
+  const histogramKey = (y: number, kind: OrderSide): string =>
+    JSON.stringify([y, kind]);
+
+  for (let y = 0; y < region.resolution; y += 1) {
+    histogram.set(histogramKey(y, "buy"), { y, kind: "buy", size: 0 });
+    histogram.set(histogramKey(y, "sell"), { y, kind: "sell", size: 0 });
+  }
+
+  for (const [kind, orders] of [
+    ["buy", orderBook.buy],
+    ["sell", orderBook.sell],
+  ] as const) {
+    for (const order of orders) {
+      if (order.price < region.price[0] || order.price > region.price[1]) {
+        continue;
+      }
+
+      const y = Math.floor((order.price - region.price[0]) / cellHeight);
+      const entry = histogram.get(histogramKey(y, kind));
+      if (!entry) continue;
+
+      entry.size += order.size;
+    }
+  }
+
+  return Array.from(histogram.values()).sort((left, right) => left.y - right.y);
+};
+
 const priceHistory: PriceHistoryEntry[] = [
   {
-    timestamp: Date.now(),
+    timestamp: initialTimestamp,
     spread: {
       buy: 1.01,
       sell: 0.99,
@@ -43,10 +167,16 @@ const priceHistory: PriceHistoryEntry[] = [
   },
 ];
 
-const recordPriceHistory = () => {
+const recordMarketState = () => {
+  const timestamp = Date.now();
+
   priceHistory.push({
-    timestamp: Date.now(),
+    timestamp,
     spread: marketPriceSpread(),
+  });
+  orderBookMap.push({
+    timestamp,
+    orderBook: cloneOrderBook(),
   });
 };
 
@@ -104,7 +234,7 @@ export const makeOrder = (side: OrderSide, order: Order): number => {
     side === "sell" ? b.price - a.price : a.price - b.price,
   );
 
-  recordPriceHistory();
+  recordMarketState();
 
   return id;
 };
@@ -121,19 +251,19 @@ export const takeOrder = (
   while (fulfilled < size) {
     const order = orders.pop();
     if (!order) {
-      if (fulfilled > 0) recordPriceHistory();
+      if (fulfilled > 0) recordMarketState();
       return { id, fulfilled };
     }
 
     if (price !== undefined && side === "buy" && order.price > price) {
       orders.push(order);
-      if (fulfilled > 0) recordPriceHistory();
+      if (fulfilled > 0) recordMarketState();
       return { id, fulfilled };
     }
 
     if (price !== undefined && side === "sell" && order.price < price) {
       orders.push(order);
-      if (fulfilled > 0) recordPriceHistory();
+      if (fulfilled > 0) recordMarketState();
       return { id, fulfilled };
     }
 
@@ -151,7 +281,7 @@ export const takeOrder = (
         price: order.price,
         size: order.size - remainingSize,
       });
-      recordPriceHistory();
+      recordMarketState();
 
       return { id, fulfilled };
     }
@@ -165,7 +295,7 @@ export const takeOrder = (
     // });
   }
 
-  recordPriceHistory();
+  recordMarketState();
   return { id, fulfilled };
 };
 
