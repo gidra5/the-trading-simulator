@@ -14,12 +14,13 @@ import type {
 } from "./market";
 import clsx from "clsx";
 import {
-  writeCandleInstances,
-  writeChartUniforms,
   drawFrame,
   getCanvasResolution,
   initializeRenderer,
   type RendererState,
+  writeCandleInstances,
+  writeChartUniforms,
+  writeHeatmapTexture,
 } from "./chartUtils";
 
 export type ChartViewport = {
@@ -97,6 +98,7 @@ export const Chart: Component<ChartProps> = (props) => {
     }
 
     writeChartUniforms(renderer, props.viewport, props.candleInterval);
+    writeHeatmapTexture(renderer, props.orderBookHeatmap);
     const candleInstanceCount = writeCandleInstances(
       renderer,
       props.viewport,

@@ -14,6 +14,7 @@ const orderBias = 0;
 // https://chatgpt.com/c/69e01063-a9c8-8390-a2db-4f314b4d59f1
 const tick = () => {
   for (let i = 0; i < 100; i++) {
+    // todo: psychology, like preferring round prices
     // todo: poisson
     // todo: hawkes
     // todo: then multivariate hawkes process (market sell/buy, order sell/buy, cancels, a matrix for cross correlation)

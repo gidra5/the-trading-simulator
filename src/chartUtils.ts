@@ -1,4 +1,4 @@
-import type { PriceCandle } from "./market";
+import type { OrderBookHeatmapEntry, PriceCandle } from "./market";
 import type { ChartViewport } from "./Chart";
 
 const floatsPerCandleInstance = 8;
@@ -37,47 +37,74 @@ export type RendererState = {
   context: GPUCanvasContext;
   device: GPUDevice;
   format: GPUTextureFormat;
-  backgroundPipeline: GPURenderPipeline;
+  heatmapPipeline: GPURenderPipeline;
   candlePipeline: GPURenderPipeline;
   chartUniformBuffer: GPUBuffer;
   chartBindGroup: GPUBindGroup;
+  heatmapSampler: GPUSampler;
+  heatmapTexture: GPUTexture;
+  heatmapTextureView: GPUTextureView;
+  heatmapBindGroup: GPUBindGroup;
+  heatmapTextureSize: [width: number, height: number];
   candleInstanceBuffer: GPUBuffer;
   candleInstanceCapacity: number;
 };
 
-const backgroundShader = /* wgsl */ `
+const heatmapShader = /* wgsl */ `
 struct VertexOutput {
   @builtin(position) position: vec4<f32>,
   @location(0) uv: vec2<f32>,
 };
 
+struct ChartUniforms {
+  price_range: vec2<f32>,
+  resolution: vec2<f32>,
+  time_scale: vec2<f32>,
+  padding: vec2<f32>,
+};
+
+@group(0) @binding(0) var<uniform> chart: ChartUniforms;
+@group(1) @binding(0) var heatmapSampler: sampler;
+@group(1) @binding(1) var heatmapTexture: texture_2d<f32>;
+
 @vertex
-fn vertexMain(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
+fn vertexMain(
+  @builtin(vertex_index) vertexIndex: u32,
+) -> VertexOutput {
   var positions = array<vec2<f32>, 3>(
-    vec2<f32>(-1.0, -3.0),
-    vec2<f32>(-1.0, 1.0),
-    vec2<f32>(3.0, 1.0),
+    vec2<f32>(-1.0, -1.0),
+    vec2<f32>(3.0, -1.0),
+    vec2<f32>(-1.0, 3.0),
   );
 
   var output: VertexOutput;
   let position = positions[vertexIndex];
   output.position = vec4<f32>(position, 0.0, 1.0);
-  output.uv = position * 0.5 + vec2<f32>(0.5, 0.5);
+  output.uv = vec2<f32>(
+    position.x * 0.5 + 0.5,
+    0.5 - position.y * 0.5,
+  );
   return output;
 }
 
 @fragment
 fn fragmentMain(input: VertexOutput) -> @location(0) vec4<f32> {
-  let uv = clamp(input.uv, vec2<f32>(0.0, 0.0), vec2<f32>(1.0, 1.0));
-  let top = vec3<f32>(0.02, 0.06, 0.16);
-  let bottom = vec3<f32>(0.96, 0.33, 0.12);
-  let accent = vec3<f32>(0.98, 0.84, 0.28);
-  let base = mix(bottom, top, uv.y);
-  let glow = 1.0 - smoothstep(0.0, 0.55, distance(uv, vec2<f32>(0.72, 0.2)));
-  let streak = smoothstep(0.0, 1.0, uv.x) * 0.09;
-  let color = base + accent * glow * 0.18 + vec3<f32>(streak, streak * 0.6, streak * 0.2);
-
-  return vec4<f32>(color, 1.0);
+  let textureSize = vec2<f32>(textureDimensions(heatmapTexture));
+  let texelSize = 1.0 / max(textureSize, vec2<f32>(1.0, 1.0));
+  let sampleUv = clamp(
+    input.uv * (1.0 - texelSize) + texelSize * 0.5,
+    texelSize * 0.5,
+    vec2<f32>(1.0, 1.0) - texelSize * 0.5,
+  );
+  let intensity = clamp(textureSampleLevel(heatmapTexture, heatmapSampler, sampleUv, 0.0).r, 0.0, 1.0);
+  let low = vec3<f32>(0.04, 0.09, 0.17);
+  let mid = vec3<f32>(0.17, 0.48, 0.88);
+  let high = vec3<f32>(0.98, 0.54, 0.16);
+  let cool = mix(low, mid, smoothstep(0.0, 0.55, intensity));
+  let warm = mix(mid, high, smoothstep(0.35, 1.0, intensity));
+  let color = mix(cool, warm, smoothstep(0.45, 1.0, intensity));
+  let alpha = 0.12 + intensity * 0.88;
+  return vec4<f32>(color, alpha);
 }
 `;
 
@@ -86,7 +113,8 @@ const VIEWPORT_MIN_Y: f32 = 0.02;
 const VIEWPORT_MAX_Y: f32 = 0.98;
 const BODY_WIDTH_FACTOR: f32 = 0.38;
 const WICK_WIDTH_FACTOR: f32 = 0.06;
-const MIN_WICK_HALF_WIDTH: f32 = 0.0006;
+const MIN_BODY_HALF_WIDTH_PIXELS: f32 = 1.0;
+const MIN_WICK_HALF_WIDTH_PIXELS: f32 = 0.5;
 
 struct CandleTiming {
   time_offset: f32,
@@ -169,15 +197,27 @@ fn vertexMain(
   let time_span = max(chart.time_scale.x, 1.0);
   let candle_interval = chart.time_scale.y;
   let candle_slot_width = candle_interval / time_span;
-  let body_half_width = candle_slot_width * BODY_WIDTH_FACTOR;
-  let wick_half_width = max(candle_slot_width * WICK_WIDTH_FACTOR, MIN_WICK_HALF_WIDTH);
+  let min_body_half_width = MIN_BODY_HALF_WIDTH_PIXELS / max(chart.resolution.x, 1.0);
+  let min_wick_half_width = MIN_WICK_HALF_WIDTH_PIXELS / max(chart.resolution.x, 1.0);
+  let body_half_width = max(candle_slot_width * BODY_WIDTH_FACTOR, min_body_half_width);
+  let wick_half_width = max(candle_slot_width * WICK_WIDTH_FACTOR, min_wick_half_width);
   let open_y = to_viewport_y(candle.prices.open);
   let close_y = to_viewport_y(candle.prices.close);
-  let body_mid_y = (open_y + close_y) * 0.5;
   let min_body_height = 2.0 / max(chart.resolution.y, 1.0);
-  let body_half_height = max(abs(open_y - close_y), min_body_height) * 0.5;
-  let body_top = clamp(body_mid_y - body_half_height, VIEWPORT_MIN_Y, VIEWPORT_MAX_Y);
-  let body_bottom = clamp(body_mid_y + body_half_height, VIEWPORT_MIN_Y, VIEWPORT_MAX_Y);
+  let body_mid_y = (open_y + close_y) * 0.5;
+  let raw_body_top = min(open_y, close_y);
+  let raw_body_bottom = max(open_y, close_y);
+  let is_doji = abs(open_y - close_y) < 0.000001;
+  let body_top = select(
+    raw_body_top,
+    clamp(body_mid_y - min_body_height * 0.5, VIEWPORT_MIN_Y, VIEWPORT_MAX_Y),
+    is_doji,
+  );
+  let body_bottom = select(
+    raw_body_bottom,
+    clamp(body_mid_y + min_body_height * 0.5, VIEWPORT_MIN_Y, VIEWPORT_MAX_Y),
+    is_doji,
+  );
   let wick_top = min(to_viewport_y(candle.prices.high), body_top);
   let wick_bottom = max(to_viewport_y(candle.prices.low), body_bottom);
   let center_x = clamp(
@@ -234,21 +274,58 @@ export const initializeRenderer = async (
   }
 
   const format = gpu.getPreferredCanvasFormat();
-  const backgroundShaderModule = device.createShaderModule({
-    code: backgroundShader,
+  const heatmapShaderModule = device.createShaderModule({
+    code: heatmapShader,
   });
   const candleShaderModule = device.createShaderModule({
     code: candleShader,
   });
+  const chartBindGroupLayout = device.createBindGroupLayout({
+    entries: [
+      {
+        binding: 0,
+        visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
+        buffer: {
+          type: "uniform",
+        },
+      },
+    ],
+  });
+  const heatmapBindGroupLayout = device.createBindGroupLayout({
+    entries: [
+      {
+        binding: 0,
+        visibility: GPUShaderStage.FRAGMENT,
+        sampler: {
+          type: "filtering",
+        },
+      },
+      {
+        binding: 1,
+        visibility: GPUShaderStage.FRAGMENT,
+        texture: {
+          sampleType: "float",
+          viewDimension: "2d",
+          multisampled: false,
+        },
+      },
+    ],
+  });
+  const sharedPipelineLayout = device.createPipelineLayout({
+    bindGroupLayouts: [chartBindGroupLayout],
+  });
+  const heatmapPipelineLayout = device.createPipelineLayout({
+    bindGroupLayouts: [chartBindGroupLayout, heatmapBindGroupLayout],
+  });
 
-  const backgroundPipeline = device.createRenderPipeline({
-    layout: "auto",
+  const heatmapPipeline = device.createRenderPipeline({
+    layout: heatmapPipelineLayout,
     vertex: {
-      module: backgroundShaderModule,
+      module: heatmapShaderModule,
       entryPoint: "vertexMain",
     },
     fragment: {
-      module: backgroundShaderModule,
+      module: heatmapShaderModule,
       entryPoint: "fragmentMain",
       targets: [{ format }],
     },
@@ -258,7 +335,7 @@ export const initializeRenderer = async (
   });
 
   const candlePipeline = device.createRenderPipeline({
-    layout: "auto",
+    layout: sharedPipelineLayout,
     vertex: {
       module: candleShaderModule,
       entryPoint: "vertexMain",
@@ -295,13 +372,44 @@ export const initializeRenderer = async (
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
   });
   const chartBindGroup = device.createBindGroup({
-    layout: candlePipeline.getBindGroupLayout(0),
+    layout: chartBindGroupLayout,
     entries: [
       {
         binding: 0,
         resource: {
           buffer: chartUniformBuffer,
         },
+      },
+    ],
+  });
+  const heatmapSampler = device.createSampler({
+    magFilter: "linear",
+    minFilter: "linear",
+    mipmapFilter: "linear",
+    addressModeU: "clamp-to-edge",
+    addressModeV: "clamp-to-edge",
+  });
+  const heatmapTextureSize: [number, number] = [1, 1];
+  const heatmapTexture = device.createTexture({
+    size: {
+      width: heatmapTextureSize[0],
+      height: heatmapTextureSize[1],
+      depthOrArrayLayers: 1,
+    },
+    format: "rgba8unorm",
+    usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+  });
+  const heatmapTextureView = heatmapTexture.createView();
+  const heatmapBindGroup = device.createBindGroup({
+    layout: heatmapBindGroupLayout,
+    entries: [
+      {
+        binding: 0,
+        resource: heatmapSampler,
+      },
+      {
+        binding: 1,
+        resource: heatmapTextureView,
       },
     ],
   });
@@ -316,10 +424,15 @@ export const initializeRenderer = async (
     context,
     device,
     format,
-    backgroundPipeline,
+    heatmapPipeline,
     candlePipeline,
     chartUniformBuffer,
     chartBindGroup,
+    heatmapSampler,
+    heatmapTexture,
+    heatmapTextureView,
+    heatmapBindGroup,
+    heatmapTextureSize,
     candleInstanceBuffer,
     candleInstanceCapacity,
   };
@@ -367,6 +480,45 @@ const ensureCandleInstanceCapacity = (
   renderer.candleInstanceCapacity = nextCapacity;
 };
 
+const recreateHeatmapTexture = (
+  renderer: RendererState,
+  width: number,
+  height: number,
+): void => {
+  if (
+    width === renderer.heatmapTextureSize[0] &&
+    height === renderer.heatmapTextureSize[1]
+  ) {
+    return;
+  }
+
+  renderer.heatmapTexture.destroy();
+  renderer.heatmapTexture = renderer.device.createTexture({
+    size: {
+      width,
+      height,
+      depthOrArrayLayers: 1,
+    },
+    format: "rgba8unorm",
+    usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+  });
+  renderer.heatmapTextureView = renderer.heatmapTexture.createView();
+  renderer.heatmapBindGroup = renderer.device.createBindGroup({
+    layout: renderer.heatmapPipeline.getBindGroupLayout(1),
+    entries: [
+      {
+        binding: 0,
+        resource: renderer.heatmapSampler,
+      },
+      {
+        binding: 1,
+        resource: renderer.heatmapTextureView,
+      },
+    ],
+  });
+  renderer.heatmapTextureSize = [width, height];
+};
+
 export const writeChartUniforms = (
   renderer: RendererState,
   viewport: ChartViewport,
@@ -391,6 +543,105 @@ export const writeChartUniforms = (
       ...chartUniforms.timeScale,
       ...chartUniforms.padding,
     ]),
+  );
+};
+
+export const writeHeatmapTexture = (
+  renderer: RendererState,
+  orderBookHeatmap: OrderBookHeatmapEntry[],
+) => {
+  if (orderBookHeatmap.length === 0) {
+    return 0;
+  }
+
+  const width =
+    orderBookHeatmap.reduce(
+      (current, entry) => Math.max(current, entry.x),
+      -1,
+    ) + 1;
+  const height =
+    orderBookHeatmap.reduce(
+      (current, entry) => Math.max(current, entry.y),
+      -1,
+    ) + 1;
+  if (width <= 0 || height <= 0) {
+    return 0;
+  }
+
+  recreateHeatmapTexture(renderer, width, height);
+
+  const heatmapSizes = new Float32Array(width * height);
+  const activeColumns = new Array<boolean>(width).fill(false);
+  let maxSize = 0;
+
+  orderBookHeatmap.forEach((entry) => {
+    const offset = entry.y * width + entry.x;
+    heatmapSizes[offset] = entry.size;
+    activeColumns[entry.x] ||= entry.size > 0;
+    maxSize = Math.max(maxSize, entry.size);
+  });
+
+  const nearestActiveLeft = new Int32Array(width).fill(-1);
+  const nearestActiveRight = new Int32Array(width).fill(-1);
+  let lastActive = -1;
+  for (let x = 0; x < width; x += 1) {
+    if (activeColumns[x]) {
+      lastActive = x;
+    }
+    nearestActiveLeft[x] = lastActive;
+  }
+
+  lastActive = -1;
+  for (let x = width - 1; x >= 0; x -= 1) {
+    if (activeColumns[x]) {
+      lastActive = x;
+    }
+    nearestActiveRight[x] = lastActive;
+  }
+
+  const textureData = new Uint8Array(width * height * 4);
+
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const sourceOffset = y * width + x;
+      let size = heatmapSizes[sourceOffset];
+
+      if (!activeColumns[x]) {
+        const left = nearestActiveLeft[x];
+        const right = nearestActiveRight[x];
+
+        if (left >= 0 && right >= 0 && left !== right) {
+          const leftSize = heatmapSizes[y * width + left];
+          const rightSize = heatmapSizes[y * width + right];
+          const t = (x - left) / (right - left);
+          size = leftSize + (rightSize - leftSize) * t;
+        }
+      }
+
+      const intensity = maxSize > 0 ? Math.log1p(size) / Math.log1p(maxSize) : 0;
+      const row = height - 1 - y;
+      const textureOffset = (row * width + x) * 4;
+      const channel = Math.round(intensity * 255);
+      textureData[textureOffset] = channel;
+      textureData[textureOffset + 1] = channel;
+      textureData[textureOffset + 2] = channel;
+      textureData[textureOffset + 3] = 255;
+    }
+  }
+
+  renderer.device.queue.writeTexture(
+    { texture: renderer.heatmapTexture },
+    textureData,
+    {
+      offset: 0,
+      bytesPerRow: width * 4,
+      rowsPerImage: height,
+    },
+    {
+      width,
+      height,
+      depthOrArrayLayers: 1,
+    },
   );
 };
 
@@ -480,7 +731,9 @@ export const drawFrame = (
     ],
   });
 
-  renderPass.setPipeline(renderer.backgroundPipeline);
+  renderPass.setPipeline(renderer.heatmapPipeline);
+  renderPass.setBindGroup(0, renderer.chartBindGroup);
+  renderPass.setBindGroup(1, renderer.heatmapBindGroup);
   renderPass.draw(3);
 
   if (candleInstanceCount > 0) {
