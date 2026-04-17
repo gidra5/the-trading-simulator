@@ -1,8 +1,8 @@
 import type { Component } from "solid-js";
-import { Chart } from "./Chart";
+import { MarketChart } from "./MarketChart";
 
 const App: Component = () => {
-  return <Chart />;
+  return <MarketChart />;
 };
 
 export default App;

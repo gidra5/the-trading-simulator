@@ -18,6 +18,7 @@ type PriceHistoryEntry = {
   spread: PriceSpread;
 };
 export type PriceCandle = {
+  time: number;
   open: number;
   high: number;
   low: number;
@@ -212,7 +213,7 @@ export const priceHistoryCandle = (
   const high = prices.reduce((current, price) => Math.max(current, price));
   const low = prices.reduce((current, price) => Math.min(current, price));
 
-  return { open, high, low, close };
+  return { time: start, open, high, low, close };
 };
 
 // // for each order id, tradeHistory.filter(id).sum() == order.size
