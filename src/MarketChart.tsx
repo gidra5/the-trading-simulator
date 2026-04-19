@@ -13,6 +13,7 @@ import { Chart, type ChartViewport } from "./Chart";
 
 const pollingInterval = 200;
 const startDate = Date.now();
+const showFrameRate = true;
 
 export const MarketChart: Component = () => {
   const [priceSpread, setPriceSpread] = createSignal(marketPriceSpread());
@@ -21,7 +22,7 @@ export const MarketChart: Component = () => {
   const [heatmap, setHeatmap] = createSignal<OrderBookHeatmapEntry[]>([]);
   const [histogram, setHistogram] = createSignal<OrderBookHistogramEntry[]>([]);
   const [viewport, setViewport] = createSignal<ChartViewport>({
-    time: [startDate, startDate + 3 * 60 * 1000],
+    time: [startDate, startDate + 1 * 60 * 1000],
     price: [0.7, 1.3],
     resolution: [1, 1],
   });
@@ -122,6 +123,15 @@ export const MarketChart: Component = () => {
             {priceSpread().buy.toFixed(6)} / {priceSpread().sell.toFixed(6)}
           </p>
         </div>
+        <div class="max-w-xl rounded border border-slate-800 bg-slate-900/80 px-3 py-2 font-mono text-[11px] leading-5 text-slate-300">
+          <p class="mb-1 text-[10px] uppercase tracking-[0.2em] text-slate-500">
+            Controls
+          </p>
+          <p>
+            Drag: pan viewport. Wheel: scale time. Shift + wheel: scale price.
+            Ctrl + wheel: zoom both axes.
+          </p>
+        </div>
       </div>
       <div class="flex-1 min-h-0">
         <Chart
@@ -132,6 +142,7 @@ export const MarketChart: Component = () => {
           orderBookHistogram={histogram()}
           viewport={viewport()}
           onViewportChange={handleViewportChange}
+          showFrameRate={showFrameRate}
         />
       </div>
     </div>

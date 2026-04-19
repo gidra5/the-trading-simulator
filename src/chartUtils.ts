@@ -1,18 +1,11 @@
 import type { OrderBookHeatmapEntry, PriceCandle } from "./market";
 import type { ChartViewport } from "./Chart";
 
-const floatsPerCandleInstance = 8;
+const floatsPerCandleInstance = 5;
 const bytesPerFloat = 4;
 const bytesPerCandleInstance = floatsPerCandleInstance * bytesPerFloat;
 const floatsPerChartUniforms = 8;
 const bytesPerChartUniforms = floatsPerChartUniforms * bytesPerFloat;
-
-type CandleTiming = {
-  timeOffset: number;
-  padding0: number;
-  padding1: number;
-  padding2: number;
-};
 
 type CandlePrices = {
   open: number;
@@ -22,7 +15,7 @@ type CandlePrices = {
 };
 
 type CandleInstance = {
-  timing: CandleTiming;
+  timeOffset: number;
   prices: CandlePrices;
 };
 
@@ -113,15 +106,8 @@ const VIEWPORT_MIN_Y: f32 = 0.02;
 const VIEWPORT_MAX_Y: f32 = 0.98;
 const BODY_WIDTH_FACTOR: f32 = 0.38;
 const WICK_WIDTH_FACTOR: f32 = 0.06;
-const MIN_BODY_HALF_WIDTH_PIXELS: f32 = 1.0;
-const MIN_WICK_HALF_WIDTH_PIXELS: f32 = 0.5;
-
-struct CandleTiming {
-  time_offset: f32,
-  padding0: f32,
-  padding1: f32,
-  padding2: f32,
-};
+const MIN_BODY_WIDTH_PIXELS: f32 = 3.0;
+const MIN_WICK_WIDTH_PIXELS: f32 = 1.0;
 
 struct CandlePrices {
   open: f32,
@@ -131,7 +117,7 @@ struct CandlePrices {
 };
 
 struct CandleInstance {
-  timing: CandleTiming,
+  time_offset: f32,
   prices: CandlePrices,
 };
 
@@ -145,7 +131,7 @@ struct ChartUniforms {
 @group(0) @binding(0) var<uniform> chart: ChartUniforms;
 
 struct CandleInstanceInput {
-  @location(0) timing: vec4<f32>,
+  @location(0) time_offset: f32,
   @location(1) prices: vec4<f32>,
 };
 
@@ -156,12 +142,7 @@ struct VertexOutput {
 
 fn to_candle_instance(input: CandleInstanceInput) -> CandleInstance {
   return CandleInstance(
-    CandleTiming(
-      input.timing.x,
-      input.timing.y,
-      input.timing.z,
-      input.timing.w,
-    ),
+    input.time_offset,
     CandlePrices(
       input.prices.x,
       input.prices.y,
@@ -174,7 +155,7 @@ fn to_candle_instance(input: CandleInstanceInput) -> CandleInstance {
 fn to_viewport_y(price: f32) -> f32 {
   let span = max(chart.price_range.y - chart.price_range.x, 0.000001);
   let normalized = 1.0 - (price - chart.price_range.x) / span;
-  return clamp(normalized, VIEWPORT_MIN_Y, VIEWPORT_MAX_Y);
+  return normalized;
 }
 
 fn candle_color(candle: CandleInstance) -> vec4<f32> {
@@ -186,6 +167,17 @@ fn candle_color(candle: CandleInstance) -> vec4<f32> {
   );
 }
 
+fn align_odd_pixel_width(width_pixels: f32, minimum_width_pixels: f32) -> f32 {
+  let rounded_width = max(round(width_pixels), minimum_width_pixels);
+  let is_even_width = abs(fract(rounded_width * 0.5)) < 0.000001;
+  return rounded_width + select(0.0, 1.0, is_even_width);
+}
+
+fn snap_to_pixel_center(x: f32) -> f32 {
+  let resolution_x = max(chart.resolution.x, 1.0);
+  return (round(x * resolution_x - 0.5) + 0.5) / resolution_x;
+}
+
 @vertex
 fn vertexMain(
   @builtin(vertex_index) vertexIndex: u32,
@@ -194,13 +186,21 @@ fn vertexMain(
   let candle = to_candle_instance(input);
   let isWick = vertexIndex >= 6u;
   let localIndex = select(vertexIndex, vertexIndex - 6u, isWick);
-  let time_span = max(chart.time_scale.x, 1.0);
+  let time_span = chart.time_scale.x;
   let candle_interval = chart.time_scale.y;
   let candle_slot_width = candle_interval / time_span;
-  let min_body_half_width = MIN_BODY_HALF_WIDTH_PIXELS / max(chart.resolution.x, 1.0);
-  let min_wick_half_width = MIN_WICK_HALF_WIDTH_PIXELS / max(chart.resolution.x, 1.0);
-  let body_half_width = max(candle_slot_width * BODY_WIDTH_FACTOR, min_body_half_width);
-  let wick_half_width = max(candle_slot_width * WICK_WIDTH_FACTOR, min_wick_half_width);
+  let resolution_x = max(chart.resolution.x, 1.0);
+  let slot_width_pixels = candle_slot_width * resolution_x;
+  let body_width_pixels = align_odd_pixel_width(
+    slot_width_pixels * BODY_WIDTH_FACTOR * 2.0,
+    MIN_BODY_WIDTH_PIXELS,
+  );
+  let wick_width_pixels = align_odd_pixel_width(
+    slot_width_pixels * WICK_WIDTH_FACTOR * 2.0,
+    MIN_WICK_WIDTH_PIXELS,
+  );
+  let body_half_width = body_width_pixels * 0.5 / resolution_x;
+  let wick_half_width = wick_width_pixels * 0.5 / resolution_x;
   let open_y = to_viewport_y(candle.prices.open);
   let close_y = to_viewport_y(candle.prices.close);
   let min_body_height = 2.0 / max(chart.resolution.y, 1.0);
@@ -210,20 +210,18 @@ fn vertexMain(
   let is_doji = abs(open_y - close_y) < 0.000001;
   let body_top = select(
     raw_body_top,
-    clamp(body_mid_y - min_body_height * 0.5, VIEWPORT_MIN_Y, VIEWPORT_MAX_Y),
+    body_mid_y - min_body_height * 0.5,
     is_doji,
   );
   let body_bottom = select(
     raw_body_bottom,
-    clamp(body_mid_y + min_body_height * 0.5, VIEWPORT_MIN_Y, VIEWPORT_MAX_Y),
+    body_mid_y + min_body_height * 0.5,
     is_doji,
   );
   let wick_top = min(to_viewport_y(candle.prices.high), body_top);
   let wick_bottom = max(to_viewport_y(candle.prices.low), body_bottom);
-  let center_x = clamp(
-    (candle.timing.time_offset + candle_interval * 0.5) / time_span,
-    0.0,
-    1.0,
+  let center_x = snap_to_pixel_center(
+    (candle.time_offset + candle_interval * 0.5) / time_span,
   );
 
   var quad = array<vec2<f32>, 6>(
@@ -346,13 +344,13 @@ export const initializeRenderer = async (
           attributes: [
             {
               shaderLocation: 0,
-              format: "float32x4",
+              format: "float32",
               offset: 0,
             },
             {
               shaderLocation: 1,
               format: "float32x4",
-              offset: 16,
+              offset: bytesPerFloat,
             },
           ],
         },
@@ -618,7 +616,8 @@ export const writeHeatmapTexture = (
         }
       }
 
-      const intensity = maxSize > 0 ? Math.log1p(size) / Math.log1p(maxSize) : 0;
+      const intensity =
+        maxSize > 0 ? Math.log1p(size) / Math.log1p(maxSize) : 0;
       const row = height - 1 - y;
       const textureOffset = (row * width + x) * 4;
       const channel = Math.round(intensity * 255);
@@ -654,10 +653,7 @@ const writeCandleInstance = (
 
   target.set(
     [
-      candleInstance.timing.timeOffset,
-      candleInstance.timing.padding0,
-      candleInstance.timing.padding1,
-      candleInstance.timing.padding2,
+      candleInstance.timeOffset,
       candleInstance.prices.open,
       candleInstance.prices.high,
       candleInstance.prices.low,
@@ -690,12 +686,7 @@ export const writeCandleInstances = (
 
   visibleCandles.forEach((priceCandle, index) => {
     const candleInstance: CandleInstance = {
-      timing: {
-        timeOffset: priceCandle.time - viewport.time[0],
-        padding0: 0,
-        padding1: 0,
-        padding2: 0,
-      },
+      timeOffset: priceCandle.time - viewport.time[0],
       prices: {
         open: priceCandle.open,
         high: priceCandle.high,

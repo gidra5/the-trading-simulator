@@ -22,6 +22,7 @@ import {
   writeChartUniforms,
   writeHeatmapTexture,
 } from "./chartUtils";
+import { createChartControls } from "./chartControls";
 
 export type ChartViewport = {
   time: [from: number, to: number];
@@ -36,10 +37,21 @@ export type ChartProps = {
   viewport: ChartViewport;
   candleInterval: number;
   onViewportChange?: (viewport: ChartViewport) => void;
+  showFrameRate?: boolean;
   class?: string;
   style?: JSX.CSSProperties;
 };
 
+const viewportMatches = (left: ChartViewport, right: ChartViewport): boolean =>
+  left.time[0] === right.time[0] &&
+  left.time[1] === right.time[1] &&
+  left.price[0] === right.price[0] &&
+  left.price[1] === right.price[1] &&
+  left.resolution[0] === right.resolution[0] &&
+  left.resolution[1] === right.resolution[1];
+
+// todo: micro and macro candles to smoothly transition between scales
+// todo: side panel with order book histogram
 export const Chart: Component<ChartProps> = (props) => {
   let container: HTMLDivElement | undefined;
   let canvas: HTMLCanvasElement | undefined;
@@ -47,20 +59,47 @@ export const Chart: Component<ChartProps> = (props) => {
   let animationFrame = 0;
   let configuredWidth = 0;
   let configuredHeight = 0;
+  let lastReportedViewport: ChartViewport | undefined;
+  let frameRateWindowStart = 0;
+  let frameCount = 0;
 
   const [status, setStatus] = createSignal<string | null>(null);
+  const [isDragging, setIsDragging] = createSignal(false);
+  const [frameRate, setFrameRate] = createSignal<number | null>(null);
 
-  const reportViewport = () => {
+  const reportViewport = (viewport: Pick<ChartViewport, "time" | "price">) => {
     if (!canvas) {
       return;
     }
 
-    props.onViewportChange?.({
-      time: props.viewport.time,
-      price: props.viewport.price,
-      resolution: [canvas.width, canvas.height],
-    });
+    const nextViewport: ChartViewport = {
+      time: viewport.time,
+      price: viewport.price,
+      resolution: getCanvasResolution(canvas),
+    };
+
+    if (
+      lastReportedViewport &&
+      viewportMatches(lastReportedViewport, nextViewport)
+    ) {
+      return;
+    }
+
+    lastReportedViewport = nextViewport;
+    props.onViewportChange?.(nextViewport);
   };
+
+  const updateViewport = (
+    viewport: Pick<ChartViewport, "time" | "price">,
+  ): void => {
+    reportViewport(viewport);
+  };
+  const controls = createChartControls({
+    getCanvas: () => canvas,
+    getViewport: () => props.viewport,
+    setDragging: setIsDragging,
+    updateViewport,
+  });
 
   const syncCanvasSize = () => {
     if (!canvas || !renderer) {
@@ -84,7 +123,7 @@ export const Chart: Component<ChartProps> = (props) => {
       configuredHeight = height;
     }
 
-    reportViewport();
+    reportViewport(props.viewport);
     return true;
   };
 
@@ -109,7 +148,7 @@ export const Chart: Component<ChartProps> = (props) => {
   };
 
   onMount(() => {
-    reportViewport();
+    reportViewport(props.viewport);
 
     void (async () => {
       if (!canvas) {
@@ -125,8 +164,21 @@ export const Chart: Component<ChartProps> = (props) => {
           );
         });
 
-        const renderFrame = () => {
+        const renderFrame = (timestamp: number) => {
+          if (frameRateWindowStart === 0) {
+            frameRateWindowStart = timestamp;
+          }
+
           draw();
+          frameCount += 1;
+
+          const elapsed = timestamp - frameRateWindowStart;
+          if (elapsed >= 500) {
+            setFrameRate((frameCount * 1000) / elapsed);
+            frameCount = 0;
+            frameRateWindowStart = timestamp;
+          }
+
           animationFrame = window.requestAnimationFrame(renderFrame);
         };
 
@@ -145,9 +197,14 @@ export const Chart: Component<ChartProps> = (props) => {
         window.cancelAnimationFrame(animationFrame);
         animationFrame = 0;
       }
+      controls.dispose();
       renderer = undefined;
       configuredWidth = 0;
       configuredHeight = 0;
+      lastReportedViewport = undefined;
+      frameRateWindowStart = 0;
+      frameCount = 0;
+      setFrameRate(null);
     });
   });
 
@@ -157,13 +214,30 @@ export const Chart: Component<ChartProps> = (props) => {
       class={clsx(`relative overflow-hidden`, props.class ?? "")}
       style={props.style}
     >
-      <canvas ref={canvas} class="block h-full w-full" />
+      <canvas
+        ref={canvas}
+        class={clsx(
+          "block h-full w-full touch-none",
+          isDragging() && "cursor-grabbing",
+          !isDragging() && "cursor-grab",
+        )}
+        onPointerDown={controls.handlePointerDown}
+        onPointerMove={controls.handlePointerMove}
+        onPointerUp={controls.handlePointerUp}
+        onPointerCancel={controls.handlePointerCancel}
+        onWheel={controls.handleWheel}
+      />
       <Show when={status()}>
         {(message) => (
           <div class="pointer-events-none absolute inset-x-4 bottom-4 rounded border border-amber-300/30 bg-black/40 px-3 py-2 font-mono text-xs text-amber-100 backdrop-blur">
             {message()}
           </div>
         )}
+      </Show>
+      <Show when={props.showFrameRate && frameRate() !== null}>
+        <div class="pointer-events-none absolute right-4 top-4 rounded border border-cyan-300/20 bg-slate-950/75 px-2 py-1 font-mono text-[11px] text-cyan-100 backdrop-blur">
+          {frameRate()!.toFixed(1)} FPS
+        </div>
       </Show>
     </div>
   );
