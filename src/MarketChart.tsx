@@ -14,33 +14,67 @@ import { Chart, type ChartViewport } from "./Chart";
 const pollingInterval = 200;
 const startDate = Date.now();
 const showFrameRate = true;
+const formatCandleIntervalSeconds = (interval: number): string => String(interval / 1_000);
 
 export const MarketChart: Component = () => {
   const [priceSpread, setPriceSpread] = createSignal(marketPriceSpread());
   const [candleInterval, setCandleInterval] = createSignal(1_000);
+  const [candleIntervalInput, setCandleIntervalInput] = createSignal(formatCandleIntervalSeconds(1_000));
   const [candles, setCandles] = createSignal<PriceCandle[]>([]);
   const [heatmap, setHeatmap] = createSignal<OrderBookHeatmapEntry[]>([]);
   const [histogram, setHistogram] = createSignal<OrderBookHistogramEntry[]>([]);
+  const [isHeatmapEnabled, setIsHeatmapEnabled] = createSignal(false);
   const [viewport, setViewport] = createSignal<ChartViewport>({
     time: [startDate, startDate + 1 * 60 * 1000],
     price: [0.7, 1.3],
     resolution: [1, 1],
   });
 
-  const refreshOrderBookViews = () => {
-    setHeatmap(
-      getOrderBookRegion({
-        timestamp: viewport().time,
-        price: viewport().price,
-        resolution: viewport().resolution,
-      }),
-    );
+  const refreshOrderBookViews = (includeHeatmap = isHeatmapEnabled()) => {
+    if (includeHeatmap) {
+      setHeatmap(
+        getOrderBookRegion({
+          timestamp: viewport().time,
+          price: viewport().price,
+          resolution: viewport().resolution,
+        }),
+      );
+    }
+
     setHistogram(
       getOrderBookHistogram({
         price: viewport().price,
         resolution: viewport().resolution[1],
       }),
     );
+  };
+
+  const rebuildCandles = (interval: number, now = Date.now()): PriceCandle[] => {
+    const alignedStart = Math.floor(startDate / interval) * interval;
+    const rebuiltCandles: PriceCandle[] = [];
+
+    for (let candleStart = alignedStart; candleStart <= now; candleStart += interval) {
+      rebuiltCandles.push(priceHistoryCandle(candleStart, Math.min(candleStart + interval, now), "buy"));
+    }
+
+    return rebuiltCandles;
+  };
+
+  const updateCandleInterval = (nextInterval: number): void => {
+    setCandleInterval(nextInterval);
+    setCandleIntervalInput(formatCandleIntervalSeconds(nextInterval));
+    setCandles(rebuildCandles(nextInterval));
+  };
+
+  const handleCandleIntervalInput = (value: string): void => {
+    setCandleIntervalInput(value);
+
+    const nextIntervalSeconds = Number(value);
+    if (!Number.isFinite(nextIntervalSeconds) || nextIntervalSeconds <= 0) {
+      return;
+    }
+
+    updateCandleInterval(Math.round(nextIntervalSeconds * 1_000));
   };
 
   const poll = () => {
@@ -124,13 +158,31 @@ export const MarketChart: Component = () => {
           </p>
         </div>
         <div class="max-w-xl rounded border border-slate-800 bg-slate-900/80 px-3 py-2 font-mono text-[11px] leading-5 text-slate-300">
-          <p class="mb-1 text-[10px] uppercase tracking-[0.2em] text-slate-500">
-            Controls
-          </p>
-          <p>
-            Drag: pan viewport. Wheel: scale time. Shift + wheel: scale price.
-            Ctrl + wheel: zoom both axes.
-          </p>
+          <p class="mb-1 text-[10px] uppercase tracking-[0.2em] text-slate-500">Controls</p>
+          <p>Drag: pan viewport. Wheel: scale time. Shift + wheel: scale price. Ctrl + wheel: zoom both axes.</p>
+          <label class="mt-2 flex items-center gap-2 text-slate-200">
+            <span>Candle interval, s</span>
+            <input
+              class="w-20 rounded border border-slate-700 bg-slate-950 px-2 py-1 text-right text-slate-100 outline-none transition focus:border-cyan-400"
+              type="number"
+              step="0.1"
+              value={candleIntervalInput()}
+              onInput={(event) => handleCandleIntervalInput(event.currentTarget.value)}
+              onBlur={() => setCandleIntervalInput(formatCandleIntervalSeconds(candleInterval()))}
+            />
+          </label>
+          <label class="mt-2 flex items-center gap-2 text-slate-200">
+            <input
+              type="checkbox"
+              checked={isHeatmapEnabled()}
+              onInput={(event) => {
+                const enabled = event.currentTarget.checked;
+                setIsHeatmapEnabled(enabled);
+                refreshOrderBookViews(enabled);
+              }}
+            />
+            <span>Show heatmap</span>
+          </label>
         </div>
       </div>
       <div class="flex-1 min-h-0">
@@ -142,6 +194,7 @@ export const MarketChart: Component = () => {
           orderBookHistogram={histogram()}
           viewport={viewport()}
           onViewportChange={handleViewportChange}
+          showHeatmap={isHeatmapEnabled()}
           showFrameRate={showFrameRate}
         />
       </div>

@@ -706,10 +706,7 @@ export const writeCandleInstances = (
   return visibleCandles.length;
 };
 
-export const drawFrame = (
-  renderer: RendererState,
-  candleInstanceCount: number,
-): void => {
+export const drawFrame = (renderer: RendererState, candleInstanceCount: number, drawHeatmap: boolean): void => {
   const commandEncoder = renderer.device.createCommandEncoder();
   const renderPass = commandEncoder.beginRenderPass({
     colorAttachments: [
@@ -722,10 +719,12 @@ export const drawFrame = (
     ],
   });
 
-  renderPass.setPipeline(renderer.heatmapPipeline);
-  renderPass.setBindGroup(0, renderer.chartBindGroup);
-  renderPass.setBindGroup(1, renderer.heatmapBindGroup);
-  renderPass.draw(3);
+  if (drawHeatmap) {
+    renderPass.setPipeline(renderer.heatmapPipeline);
+    renderPass.setBindGroup(0, renderer.chartBindGroup);
+    renderPass.setBindGroup(1, renderer.heatmapBindGroup);
+    renderPass.draw(3);
+  }
 
   if (candleInstanceCount > 0) {
     renderPass.setPipeline(renderer.candlePipeline);

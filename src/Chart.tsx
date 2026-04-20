@@ -37,7 +37,8 @@ export type ChartProps = {
   viewport: ChartViewport;
   candleInterval: number;
   onViewportChange?: (viewport: ChartViewport) => void;
-  showFrameRate?: boolean;
+  showHeatmap: boolean;
+  showFrameRate: boolean;
   class?: string;
   style?: JSX.CSSProperties;
 };
@@ -137,14 +138,16 @@ export const Chart: Component<ChartProps> = (props) => {
     }
 
     writeChartUniforms(renderer, props.viewport, props.candleInterval);
-    writeHeatmapTexture(renderer, props.orderBookHeatmap);
+    if (props.showHeatmap) {
+      writeHeatmapTexture(renderer, props.orderBookHeatmap);
+    }
     const candleInstanceCount = writeCandleInstances(
       renderer,
       props.viewport,
       props.priceCandles,
       props.candleInterval,
     );
-    drawFrame(renderer, candleInstanceCount);
+    drawFrame(renderer, candleInstanceCount, props.showHeatmap);
   };
 
   onMount(() => {
