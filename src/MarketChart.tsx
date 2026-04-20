@@ -1,12 +1,10 @@
-import { createSignal, onCleanup, onMount, type Component } from "solid-js";
+import { createMemo, createSignal, onCleanup, onMount, type Component } from "solid-js";
 import {
   getOrderBookHistogram,
   getOrderBookRegion,
   marketPriceSpread,
   PriceCandle,
   priceHistoryCandle,
-  type OrderBookHeatmapEntry,
-  type OrderBookHistogramEntry,
 } from "./market";
 import { run } from "./simulation";
 import { Chart, type ChartViewport } from "./Chart";
@@ -21,33 +19,30 @@ export const MarketChart: Component = () => {
   const [candleInterval, setCandleInterval] = createSignal(1_000);
   const [candleIntervalInput, setCandleIntervalInput] = createSignal(formatCandleIntervalSeconds(1_000));
   const [candles, setCandles] = createSignal<PriceCandle[]>([]);
-  const [heatmap, setHeatmap] = createSignal<OrderBookHeatmapEntry[]>([]);
-  const [histogram, setHistogram] = createSignal<OrderBookHistogramEntry[]>([]);
   const [isHeatmapEnabled, setIsHeatmapEnabled] = createSignal(false);
+  const [isHistogramEnabled, setIsHistogramEnabled] = createSignal(false);
   const [viewport, setViewport] = createSignal<ChartViewport>({
     time: [startDate, startDate + 1 * 60 * 1000],
     price: [0.7, 1.3],
     resolution: [1, 1],
   });
 
-  const refreshOrderBookViews = (includeHeatmap = isHeatmapEnabled()) => {
-    if (includeHeatmap) {
-      setHeatmap(
-        getOrderBookRegion({
-          timestamp: viewport().time,
-          price: viewport().price,
-          resolution: viewport().resolution,
-        }),
-      );
-    }
+  const heatmap = createMemo(() => {
+    if (!isHeatmapEnabled()) return null;
+    return getOrderBookRegion({
+      timestamp: viewport().time,
+      price: viewport().price,
+      resolution: viewport().resolution,
+    });
+  });
 
-    setHistogram(
-      getOrderBookHistogram({
-        price: viewport().price,
-        resolution: viewport().resolution[1],
-      }),
-    );
-  };
+  const histogram = createMemo(() => {
+    if (!isHistogramEnabled()) return null;
+    return getOrderBookHistogram({
+      price: viewport().price,
+      resolution: viewport().resolution[1],
+    });
+  });
 
   const rebuildCandles = (interval: number, now = Date.now()): PriceCandle[] => {
     const alignedStart = Math.floor(startDate / interval) * interval;
@@ -101,20 +96,12 @@ export const MarketChart: Component = () => {
       }
 
       const missingCandles: PriceCandle[] = [];
-      for (
-        let missingStart = latestCandle.time + interval;
-        missingStart < candle.time;
-        missingStart += interval
-      ) {
-        missingCandles.push(
-          priceHistoryCandle(missingStart, missingStart + interval, "buy"),
-        );
+      for (let missingStart = latestCandle.time + interval; missingStart < candle.time; missingStart += interval) {
+        missingCandles.push(priceHistoryCandle(missingStart, missingStart + interval, "buy"));
       }
 
       return [...candles, ...missingCandles, candle];
     });
-
-    refreshOrderBookViews();
   };
 
   const handleViewportChange = (nextViewport: ChartViewport) => {
@@ -133,7 +120,6 @@ export const MarketChart: Component = () => {
       return nextViewport;
     });
 
-    refreshOrderBookViews();
   };
 
   onMount(() => {
@@ -178,7 +164,6 @@ export const MarketChart: Component = () => {
               onInput={(event) => {
                 const enabled = event.currentTarget.checked;
                 setIsHeatmapEnabled(enabled);
-                refreshOrderBookViews(enabled);
               }}
             />
             <span>Show heatmap</span>
@@ -191,10 +176,8 @@ export const MarketChart: Component = () => {
           candleInterval={candleInterval()}
           priceCandles={candles()}
           orderBookHeatmap={heatmap()}
-          orderBookHistogram={histogram()}
           viewport={viewport()}
           onViewportChange={handleViewportChange}
-          showHeatmap={isHeatmapEnabled()}
           showFrameRate={showFrameRate}
         />
       </div>

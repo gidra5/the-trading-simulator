@@ -32,12 +32,10 @@ export type ChartViewport = {
 
 export type ChartProps = {
   priceCandles: PriceCandle[];
-  orderBookHeatmap: OrderBookHeatmapEntry[];
-  orderBookHistogram: OrderBookHistogramEntry[];
+  orderBookHeatmap: OrderBookHeatmapEntry[] | null;
   viewport: ChartViewport;
   candleInterval: number;
   onViewportChange?: (viewport: ChartViewport) => void;
-  showHeatmap: boolean;
   showFrameRate: boolean;
   class?: string;
   style?: JSX.CSSProperties;
@@ -54,6 +52,7 @@ const viewportMatches = (left: ChartViewport, right: ChartViewport): boolean =>
 // todo: micro and macro candles to smoothly transition between scales
 // todo: side panel with order book histogram
 export const Chart: Component<ChartProps> = (props) => {
+
   let container: HTMLDivElement | undefined;
   let canvas: HTMLCanvasElement | undefined;
   let renderer: RendererState | undefined;
@@ -138,7 +137,7 @@ export const Chart: Component<ChartProps> = (props) => {
     }
 
     writeChartUniforms(renderer, props.viewport, props.candleInterval);
-    if (props.showHeatmap) {
+    if (props.orderBookHeatmap) {
       writeHeatmapTexture(renderer, props.orderBookHeatmap);
     }
     const candleInstanceCount = writeCandleInstances(
@@ -147,7 +146,7 @@ export const Chart: Component<ChartProps> = (props) => {
       props.priceCandles,
       props.candleInterval,
     );
-    drawFrame(renderer, candleInstanceCount, props.showHeatmap);
+    drawFrame(renderer, candleInstanceCount, props.orderBookHeatmap !== null);
   };
 
   onMount(() => {
