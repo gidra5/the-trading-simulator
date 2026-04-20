@@ -1,4 +1,4 @@
-import type { OrderBookHeatmapEntry, PriceCandle } from "./market";
+import type { OrderBookHeatmap, PriceCandle } from "./market";
 import type { ChartViewport } from "./Chart";
 
 const floatsPerCandleInstance = 5;
@@ -6,6 +6,8 @@ const bytesPerFloat = 4;
 const bytesPerCandleInstance = floatsPerCandleInstance * bytesPerFloat;
 const floatsPerChartUniforms = 8;
 const bytesPerChartUniforms = floatsPerChartUniforms * bytesPerFloat;
+const floatsPerHeatmapUniforms = 4;
+const bytesPerHeatmapUniforms = floatsPerHeatmapUniforms * bytesPerFloat;
 
 type CandlePrices = {
   open: number;
@@ -34,14 +36,28 @@ export type RendererState = {
   candlePipeline: GPURenderPipeline;
   chartUniformBuffer: GPUBuffer;
   chartBindGroup: GPUBindGroup;
-  heatmapSampler: GPUSampler;
-  heatmapTexture: GPUTexture;
-  heatmapTextureView: GPUTextureView;
+  heatmapUniformBuffer: GPUBuffer;
+  heatmapSizeTexture: GPUTexture;
+  heatmapSizeTextureView: GPUTextureView;
+  heatmapNearestTexture: GPUTexture;
+  heatmapNearestTextureView: GPUTextureView;
   heatmapBindGroup: GPUBindGroup;
   heatmapTextureSize: [width: number, height: number];
+  heatmapSizeUploadCache: Float32Array;
+  heatmapNearestUploadCache: Int32Array;
   candleInstanceBuffer: GPUBuffer;
   candleInstanceCapacity: number;
 };
+
+export type HeatmapTextureUploadStats = {
+  width: number;
+  height: number;
+  sizeTextureBytes: number;
+  nearestTextureBytes: number;
+  totalBytes: number;
+};
+
+const missingNearestHeatmapColumn = -2147483648;
 
 const heatmapShader = /* wgsl */ `
 struct VertexOutput {
@@ -57,8 +73,13 @@ struct ChartUniforms {
 };
 
 @group(0) @binding(0) var<uniform> chart: ChartUniforms;
-@group(1) @binding(0) var heatmapSampler: sampler;
-@group(1) @binding(1) var heatmapTexture: texture_2d<f32>;
+struct HeatmapUniforms {
+  values: vec4<f32>,
+};
+
+@group(1) @binding(0) var<uniform> heatmap: HeatmapUniforms;
+@group(1) @binding(1) var heatmapSizeTexture: texture_2d<f32>;
+@group(1) @binding(2) var heatmapNearestTexture: texture_2d<i32>;
 
 @vertex
 fn vertexMain(
@@ -80,16 +101,83 @@ fn vertexMain(
   return output;
 }
 
+fn load_heatmap_size(
+  column: i32,
+  row: i32,
+  dimensions: vec2<i32>,
+) -> f32 {
+  let clampedColumn = clamp(column, 0, dimensions.x - 1);
+  let clampedRow = clamp(row, 0, dimensions.y - 1);
+  return max(
+    textureLoad(heatmapSizeTexture, vec2<i32>(clampedColumn, clampedRow), 0).x,
+    0.0,
+  );
+}
+
+fn sample_heatmap_cell(
+  column: i32,
+  row: i32,
+  dimensions: vec2<i32>,
+) -> f32 {
+  let clampedColumn = clamp(column, 0, dimensions.x - 1);
+  let nearest = textureLoad(
+    heatmapNearestTexture,
+    vec2<i32>(clampedColumn, 0),
+    0,
+  ).xy;
+  if (nearest.x == clampedColumn && nearest.y == clampedColumn) {
+    return load_heatmap_size(clampedColumn, row, dimensions);
+  }
+  if (nearest.x >= 0 && nearest.y >= 0 && nearest.x != nearest.y) {
+    let leftSize = load_heatmap_size(nearest.x, row, dimensions);
+    let rightSize = load_heatmap_size(nearest.y, row, dimensions);
+    let span = max(nearest.y - nearest.x, 1);
+    let t = clamp(f32(clampedColumn - nearest.x) / f32(span), 0.0, 1.0);
+    return mix(leftSize, rightSize, t);
+  }
+  return 0.0;
+}
+
+fn to_heatmap_intensity(size: f32) -> f32 {
+  if (size <= 0.0 || heatmap.values.x <= 0.0) {
+    return 0.0;
+  }
+  return clamp(
+    log(1.0 + size) / log(1.0 + heatmap.values.x),
+    0.0,
+    1.0,
+  );
+}
+
+fn sample_heatmap_intensity(uv: vec2<f32>) -> f32 {
+  let safeUv = clamp(uv, vec2<f32>(0.0, 0.0), vec2<f32>(1.0, 1.0));
+  let dimensions = vec2<i32>(textureDimensions(heatmapSizeTexture));
+  let grid = vec2<f32>(
+    safeUv.x * f32(dimensions.x) - 0.5,
+    (1.0 - safeUv.y) * f32(dimensions.y) - 0.5,
+  );
+  let base = vec2<i32>(floor(grid));
+  let fraction = fract(grid);
+  let intensity00 = to_heatmap_intensity(
+    sample_heatmap_cell(base.x, base.y, dimensions),
+  );
+  let intensity10 = to_heatmap_intensity(
+    sample_heatmap_cell(base.x + 1, base.y, dimensions),
+  );
+  let intensity01 = to_heatmap_intensity(
+    sample_heatmap_cell(base.x, base.y + 1, dimensions),
+  );
+  let intensity11 = to_heatmap_intensity(
+    sample_heatmap_cell(base.x + 1, base.y + 1, dimensions),
+  );
+  let lowRow = mix(intensity00, intensity10, fraction.x);
+  let highRow = mix(intensity01, intensity11, fraction.x);
+  return mix(lowRow, highRow, fraction.y);
+}
+
 @fragment
 fn fragmentMain(input: VertexOutput) -> @location(0) vec4<f32> {
-  let textureSize = vec2<f32>(textureDimensions(heatmapTexture));
-  let texelSize = 1.0 / max(textureSize, vec2<f32>(1.0, 1.0));
-  let sampleUv = clamp(
-    input.uv * (1.0 - texelSize) + texelSize * 0.5,
-    texelSize * 0.5,
-    vec2<f32>(1.0, 1.0) - texelSize * 0.5,
-  );
-  let intensity = clamp(textureSampleLevel(heatmapTexture, heatmapSampler, sampleUv, 0.0).r, 0.0, 1.0);
+  let intensity = sample_heatmap_intensity(input.uv);
   let low = vec3<f32>(0.04, 0.09, 0.17);
   let mid = vec3<f32>(0.17, 0.48, 0.88);
   let high = vec3<f32>(0.98, 0.54, 0.16);
@@ -294,15 +382,24 @@ export const initializeRenderer = async (
       {
         binding: 0,
         visibility: GPUShaderStage.FRAGMENT,
-        sampler: {
-          type: "filtering",
+        buffer: {
+          type: "uniform",
         },
       },
       {
         binding: 1,
         visibility: GPUShaderStage.FRAGMENT,
         texture: {
-          sampleType: "float",
+          sampleType: "unfilterable-float",
+          viewDimension: "2d",
+          multisampled: false,
+        },
+      },
+      {
+        binding: 2,
+        visibility: GPUShaderStage.FRAGMENT,
+        texture: {
+          sampleType: "sint",
           viewDimension: "2d",
           multisampled: false,
         },
@@ -380,34 +477,51 @@ export const initializeRenderer = async (
       },
     ],
   });
-  const heatmapSampler = device.createSampler({
-    magFilter: "linear",
-    minFilter: "linear",
-    mipmapFilter: "linear",
-    addressModeU: "clamp-to-edge",
-    addressModeV: "clamp-to-edge",
+  const heatmapUniformBuffer = device.createBuffer({
+    size: bytesPerHeatmapUniforms,
+    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
   });
   const heatmapTextureSize: [number, number] = [1, 1];
-  const heatmapTexture = device.createTexture({
+  const heatmapSizeUploadCache = new Float32Array(1);
+  heatmapSizeUploadCache.fill(Number.NaN);
+  const heatmapSizeTexture = device.createTexture({
     size: {
       width: heatmapTextureSize[0],
       height: heatmapTextureSize[1],
       depthOrArrayLayers: 1,
     },
-    format: "rgba8unorm",
+    format: "r32float",
     usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
   });
-  const heatmapTextureView = heatmapTexture.createView();
+  const heatmapSizeTextureView = heatmapSizeTexture.createView();
+  const heatmapNearestUploadCache = new Int32Array(2);
+  heatmapNearestUploadCache.fill(missingNearestHeatmapColumn);
+  const heatmapNearestTexture = device.createTexture({
+    size: {
+      width: heatmapTextureSize[0],
+      height: 1,
+      depthOrArrayLayers: 1,
+    },
+    format: "rg32sint",
+    usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+  });
+  const heatmapNearestTextureView = heatmapNearestTexture.createView();
   const heatmapBindGroup = device.createBindGroup({
     layout: heatmapBindGroupLayout,
     entries: [
       {
         binding: 0,
-        resource: heatmapSampler,
+        resource: {
+          buffer: heatmapUniformBuffer,
+        },
       },
       {
         binding: 1,
-        resource: heatmapTextureView,
+        resource: heatmapSizeTextureView,
+      },
+      {
+        binding: 2,
+        resource: heatmapNearestTextureView,
       },
     ],
   });
@@ -426,11 +540,15 @@ export const initializeRenderer = async (
     candlePipeline,
     chartUniformBuffer,
     chartBindGroup,
-    heatmapSampler,
-    heatmapTexture,
-    heatmapTextureView,
+    heatmapUniformBuffer,
+    heatmapSizeTexture,
+    heatmapSizeTextureView,
+    heatmapNearestTexture,
+    heatmapNearestTextureView,
     heatmapBindGroup,
     heatmapTextureSize,
+    heatmapSizeUploadCache,
+    heatmapNearestUploadCache,
     candleInstanceBuffer,
     candleInstanceCapacity,
   };
@@ -478,7 +596,7 @@ const ensureCandleInstanceCapacity = (
   renderer.candleInstanceCapacity = nextCapacity;
 };
 
-const recreateHeatmapTexture = (
+const recreateHeatmapTextures = (
   renderer: RendererState,
   width: number,
   height: number,
@@ -490,31 +608,193 @@ const recreateHeatmapTexture = (
     return;
   }
 
-  renderer.heatmapTexture.destroy();
-  renderer.heatmapTexture = renderer.device.createTexture({
+  renderer.heatmapSizeTexture.destroy();
+  renderer.heatmapSizeTexture = renderer.device.createTexture({
     size: {
       width,
       height,
       depthOrArrayLayers: 1,
     },
-    format: "rgba8unorm",
+    format: "r32float",
     usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
   });
-  renderer.heatmapTextureView = renderer.heatmapTexture.createView();
+  renderer.heatmapSizeTextureView = renderer.heatmapSizeTexture.createView();
+  renderer.heatmapNearestTexture.destroy();
+  renderer.heatmapNearestTexture = renderer.device.createTexture({
+    size: {
+      width,
+      height: 1,
+      depthOrArrayLayers: 1,
+    },
+    format: "rg32sint",
+    usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+  });
+  renderer.heatmapNearestTextureView =
+    renderer.heatmapNearestTexture.createView();
   renderer.heatmapBindGroup = renderer.device.createBindGroup({
     layout: renderer.heatmapPipeline.getBindGroupLayout(1),
     entries: [
       {
         binding: 0,
-        resource: renderer.heatmapSampler,
+        resource: {
+          buffer: renderer.heatmapUniformBuffer,
+        },
       },
       {
         binding: 1,
-        resource: renderer.heatmapTextureView,
+        resource: renderer.heatmapSizeTextureView,
+      },
+      {
+        binding: 2,
+        resource: renderer.heatmapNearestTextureView,
       },
     ],
   });
   renderer.heatmapTextureSize = [width, height];
+  renderer.heatmapSizeUploadCache = new Float32Array(width * height);
+  renderer.heatmapSizeUploadCache.fill(Number.NaN);
+  renderer.heatmapNearestUploadCache = new Int32Array(width * 2);
+  renderer.heatmapNearestUploadCache.fill(missingNearestHeatmapColumn);
+};
+
+const collectDirtyColumnRanges = (
+  dirtyColumns: Uint8Array,
+): Array<[startColumn: number, endColumnExclusive: number]> => {
+  const ranges: Array<[startColumn: number, endColumnExclusive: number]> = [];
+  let rangeStart = -1;
+
+  for (let x = 0; x < dirtyColumns.length; x += 1) {
+    if (dirtyColumns[x] === 1) {
+      if (rangeStart < 0) {
+        rangeStart = x;
+      }
+      continue;
+    }
+
+    if (rangeStart >= 0) {
+      ranges.push([rangeStart, x]);
+      rangeStart = -1;
+    }
+  }
+
+  if (rangeStart >= 0) {
+    ranges.push([rangeStart, dirtyColumns.length]);
+  }
+
+  return ranges;
+};
+
+const toFloat32UploadBuffer = (
+  data: Float32Array,
+): Float32Array<ArrayBuffer> =>
+  data.buffer instanceof ArrayBuffer
+    ? (data as Float32Array<ArrayBuffer>)
+    : new Float32Array(data);
+
+const toInt32UploadBuffer = (
+  data: Int32Array,
+): Int32Array<ArrayBuffer> =>
+  data.buffer instanceof ArrayBuffer
+    ? (data as Int32Array<ArrayBuffer>)
+    : new Int32Array(data);
+
+const writeHeatmapSizeColumns = (
+  renderer: RendererState,
+  sizes: Float32Array,
+  width: number,
+  height: number,
+  startColumn: number,
+  endColumnExclusive: number,
+): number => {
+  const rangeWidth = endColumnExclusive - startColumn;
+  if (rangeWidth <= 0) {
+    return 0;
+  }
+
+  const data =
+    startColumn === 0 && endColumnExclusive === width
+      ? sizes
+      : new Float32Array(rangeWidth * height);
+
+  if (data !== sizes) {
+    for (let y = 0; y < height; y += 1) {
+      const sourceOffset = y * width + startColumn;
+      data.set(
+        sizes.subarray(sourceOffset, sourceOffset + rangeWidth),
+        y * rangeWidth,
+      );
+    }
+  }
+
+  renderer.device.queue.writeTexture(
+    {
+      texture: renderer.heatmapSizeTexture,
+      origin: { x: startColumn, y: 0, z: 0 },
+    },
+    toFloat32UploadBuffer(data),
+    {
+      offset: 0,
+      bytesPerRow: rangeWidth * bytesPerFloat,
+      rowsPerImage: height,
+    },
+    {
+      width: rangeWidth,
+      height,
+      depthOrArrayLayers: 1,
+    },
+  );
+
+  for (let y = 0; y < height; y += 1) {
+    const rowOffset = y * width + startColumn;
+    renderer.heatmapSizeUploadCache.set(
+      sizes.subarray(rowOffset, rowOffset + rangeWidth),
+      rowOffset,
+    );
+  }
+
+  return rangeWidth * height * bytesPerFloat;
+};
+
+const writeHeatmapNearestColumns = (
+  renderer: RendererState,
+  nearestActiveColumns: Int32Array,
+  width: number,
+  startColumn: number,
+  endColumnExclusive: number,
+): number => {
+  const rangeWidth = endColumnExclusive - startColumn;
+  if (rangeWidth <= 0) {
+    return 0;
+  }
+
+  const sourceOffset = startColumn * 2;
+  const data = toInt32UploadBuffer(
+    nearestActiveColumns.subarray(sourceOffset, endColumnExclusive * 2),
+  );
+  renderer.device.queue.writeTexture(
+    {
+      texture: renderer.heatmapNearestTexture,
+      origin: { x: startColumn, y: 0, z: 0 },
+    },
+    data,
+    {
+      offset: 0,
+      bytesPerRow: rangeWidth * bytesPerFloat * 2,
+      rowsPerImage: 1,
+    },
+    {
+      width: rangeWidth,
+      height: 1,
+      depthOrArrayLayers: 1,
+    },
+  );
+
+  renderer.heatmapNearestUploadCache.set(
+    nearestActiveColumns.subarray(sourceOffset, endColumnExclusive * 2),
+    sourceOffset,
+  );
+
+  return rangeWidth * bytesPerFloat * 2;
 };
 
 export const writeChartUniforms = (
@@ -546,102 +826,92 @@ export const writeChartUniforms = (
 
 export const writeHeatmapTexture = (
   renderer: RendererState,
-  orderBookHeatmap: OrderBookHeatmapEntry[],
-) => {
-  if (orderBookHeatmap.length === 0) {
-    return 0;
-  }
-
-  const width =
-    orderBookHeatmap.reduce(
-      (current, entry) => Math.max(current, entry.x),
-      -1,
-    ) + 1;
-  const height =
-    orderBookHeatmap.reduce(
-      (current, entry) => Math.max(current, entry.y),
-      -1,
-    ) + 1;
+  orderBookHeatmap: OrderBookHeatmap,
+): HeatmapTextureUploadStats | null => {
+  const { width, height, sizes, activeColumns, maxSize } = orderBookHeatmap;
   if (width <= 0 || height <= 0) {
-    return 0;
+    return null;
   }
 
-  recreateHeatmapTexture(renderer, width, height);
+  recreateHeatmapTextures(renderer, width, height);
 
-  const heatmapSizes = new Float32Array(width * height);
-  const activeColumns = new Array<boolean>(width).fill(false);
-  let maxSize = 0;
-
-  orderBookHeatmap.forEach((entry) => {
-    const offset = entry.y * width + entry.x;
-    heatmapSizes[offset] = entry.size;
-    activeColumns[entry.x] ||= entry.size > 0;
-    maxSize = Math.max(maxSize, entry.size);
-  });
-
-  const nearestActiveLeft = new Int32Array(width).fill(-1);
-  const nearestActiveRight = new Int32Array(width).fill(-1);
+  const nearestActiveColumns = new Int32Array(width * 2).fill(-1);
   let lastActive = -1;
   for (let x = 0; x < width; x += 1) {
-    if (activeColumns[x]) {
+    if (activeColumns[x] === 1) {
       lastActive = x;
     }
-    nearestActiveLeft[x] = lastActive;
+    nearestActiveColumns[x * 2] = lastActive;
   }
 
   lastActive = -1;
   for (let x = width - 1; x >= 0; x -= 1) {
-    if (activeColumns[x]) {
+    if (activeColumns[x] === 1) {
       lastActive = x;
     }
-    nearestActiveRight[x] = lastActive;
+    nearestActiveColumns[x * 2 + 1] = lastActive;
   }
 
-  const textureData = new Uint8Array(width * height * 4);
+  renderer.device.queue.writeBuffer(
+    renderer.heatmapUniformBuffer,
+    0,
+    new Float32Array([maxSize, 0, 0, 0]),
+  );
 
-  for (let y = 0; y < height; y += 1) {
-    for (let x = 0; x < width; x += 1) {
-      const sourceOffset = y * width + x;
-      let size = heatmapSizes[sourceOffset];
-
-      if (!activeColumns[x]) {
-        const left = nearestActiveLeft[x];
-        const right = nearestActiveRight[x];
-
-        if (left >= 0 && right >= 0 && left !== right) {
-          const leftSize = heatmapSizes[y * width + left];
-          const rightSize = heatmapSizes[y * width + right];
-          const t = (x - left) / (right - left);
-          size = leftSize + (rightSize - leftSize) * t;
-        }
-      }
-
-      const intensity =
-        maxSize > 0 ? Math.log1p(size) / Math.log1p(maxSize) : 0;
-      const row = height - 1 - y;
-      const textureOffset = (row * width + x) * 4;
-      const channel = Math.round(intensity * 255);
-      textureData[textureOffset] = channel;
-      textureData[textureOffset + 1] = channel;
-      textureData[textureOffset + 2] = channel;
-      textureData[textureOffset + 3] = 255;
+  const sizeDirtyColumns = new Uint8Array(width);
+  for (let offset = 0; offset < sizes.length; offset += 1) {
+    if (renderer.heatmapSizeUploadCache[offset] !== sizes[offset]) {
+      sizeDirtyColumns[offset % width] = 1;
     }
   }
 
-  renderer.device.queue.writeTexture(
-    { texture: renderer.heatmapTexture },
-    textureData,
-    {
-      offset: 0,
-      bytesPerRow: width * 4,
-      rowsPerImage: height,
-    },
-    {
+  let sizeTextureBytes = 0;
+  for (const [startColumn, endColumnExclusive] of collectDirtyColumnRanges(
+    sizeDirtyColumns,
+  )) {
+    sizeTextureBytes += writeHeatmapSizeColumns(
+      renderer,
+      sizes,
       width,
       height,
-      depthOrArrayLayers: 1,
-    },
-  );
+      startColumn,
+      endColumnExclusive,
+    );
+  }
+
+  const nearestDirtyColumns = new Uint8Array(width);
+  for (let x = 0; x < width; x += 1) {
+    const offset = x * 2;
+    if (
+      renderer.heatmapNearestUploadCache[offset] !==
+        nearestActiveColumns[offset] ||
+      renderer.heatmapNearestUploadCache[offset + 1] !==
+        nearestActiveColumns[offset + 1]
+    ) {
+      nearestDirtyColumns[x] = 1;
+    }
+  }
+
+  let nearestTextureBytes = 0;
+  for (const [startColumn, endColumnExclusive] of collectDirtyColumnRanges(
+    nearestDirtyColumns,
+  )) {
+    nearestTextureBytes += writeHeatmapNearestColumns(
+      renderer,
+      nearestActiveColumns,
+      width,
+      startColumn,
+      endColumnExclusive,
+    );
+  }
+
+  return {
+    width,
+    height,
+    sizeTextureBytes,
+    nearestTextureBytes,
+    totalBytes: sizeTextureBytes + nearestTextureBytes,
+  };
 };
 
 const writeCandleInstance = (

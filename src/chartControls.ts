@@ -1,4 +1,5 @@
 import type { ChartViewport } from "./Chart";
+import { clamp } from "./utils";
 
 type DragState = {
   pointerId: number;
@@ -33,26 +34,13 @@ type ChartControls = {
 };
 
 const zoomIntensity = 0.0015;
-const minTimeSpanMs = 1_000;
-const minPriceSpan = 0.000_001;
 
-const clamp = (value: number, min: number, max: number): number =>
-  Math.min(Math.max(value, min), max);
-
-const scaleRange = (
-  range: readonly [number, number],
-  anchor: number,
-  scale: number,
-  minimumSpan: number,
-): [number, number] => {
-  const span = Math.max(range[1] - range[0], minimumSpan);
-  const nextSpan = Math.max(minimumSpan, span * scale);
+const scaleRange = (range: readonly [number, number], anchor: number, scale: number): [number, number] => {
+  const span = range[1] - range[0];
+  const nextSpan = span * scale;
   const anchorValue = range[0] + span * anchor;
 
-  return [
-    anchorValue - nextSpan * anchor,
-    anchorValue + nextSpan * (1 - anchor),
-  ];
+  return [anchorValue - nextSpan * anchor, anchorValue + nextSpan * (1 - anchor)];
 };
 
 export const createChartControls = (
@@ -123,14 +111,8 @@ export const createChartControls = (
 
     const width = Math.max(canvas.clientWidth, 1);
     const height = Math.max(canvas.clientHeight, 1);
-    const timeSpan = Math.max(
-      dragState.viewport.time[1] - dragState.viewport.time[0],
-      minTimeSpanMs,
-    );
-    const priceSpan = Math.max(
-      dragState.viewport.price[1] - dragState.viewport.price[0],
-      minPriceSpan,
-    );
+    const timeSpan = dragState.viewport.time[1] - dragState.viewport.time[0];
+    const priceSpan = dragState.viewport.price[1] - dragState.viewport.price[0];
     const deltaX = event.clientX - dragState.startX;
     const deltaY = event.clientY - dragState.startY;
     const timeOffset = (deltaX / width) * timeSpan;
@@ -177,12 +159,8 @@ export const createChartControls = (
     const scalePrice = event.ctrlKey || event.shiftKey;
 
     options.updateViewport({
-      time: scaleTime
-        ? scaleRange(viewport.time, anchorX, zoomFactor, minTimeSpanMs)
-        : viewport.time,
-      price: scalePrice
-        ? scaleRange(viewport.price, priceAnchor, zoomFactor, minPriceSpan)
-        : viewport.price,
+      time: scaleTime ? scaleRange(viewport.time, anchorX, zoomFactor) : viewport.time,
+      price: scalePrice ? scaleRange(viewport.price, priceAnchor, zoomFactor) : viewport.price,
     });
 
     event.preventDefault();

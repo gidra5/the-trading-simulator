@@ -19,9 +19,13 @@ app.config.timestamp_*.js
 .classpath
 *.launch
 .settings/
+.codex
+.serena
 
 # Temp
 gitignore
+playwright-report
+test-results
 
 # System Files
 .DS_Store

@@ -3,9 +3,10 @@ import {
   getOrderBookHistogram,
   getOrderBookRegion,
   marketPriceSpread,
+  type OrderBookHeatmap,
+  type OrderBookHeatmapProfile,
   PriceCandle,
   priceHistoryCandle,
-  type OrderBookHeatmapEntry,
   type OrderBookHistogramEntry,
 } from "./market";
 import { run } from "./simulation";
@@ -14,12 +15,39 @@ import { Chart, type ChartViewport } from "./Chart";
 const pollingInterval = 200;
 const startDate = Date.now();
 const showFrameRate = true;
+const isFullViewportProfile = (): boolean =>
+  typeof window !== "undefined" &&
+  new URLSearchParams(window.location.search).get("profile") ===
+    "full-viewport";
+
+const emptyHeatmap: OrderBookHeatmap = {
+  width: 1,
+  height: 1,
+  sizes: new Float32Array(1),
+  activeColumns: new Uint8Array(1),
+  maxSize: 0,
+  profile: {
+    computeMs: 0,
+    width: 1,
+    height: 1,
+    cellCount: 1,
+    checkpointCount: 1,
+    checkpointDeltaIndex: 0,
+    replayedDeltaCount: 0,
+    inRangeDeltaCount: 0,
+    columnsAccumulated: 0,
+    accumulatedLevelCount: 0,
+    levelCountAtReplayStart: 0,
+    levelCountAtReplayEnd: 0,
+  } satisfies OrderBookHeatmapProfile,
+};
 
 export const MarketChart: Component = () => {
+  const fullViewportProfile = isFullViewportProfile();
   const [priceSpread, setPriceSpread] = createSignal(marketPriceSpread());
   const [candleInterval, setCandleInterval] = createSignal(1_000);
   const [candles, setCandles] = createSignal<PriceCandle[]>([]);
-  const [heatmap, setHeatmap] = createSignal<OrderBookHeatmapEntry[]>([]);
+  const [heatmap, setHeatmap] = createSignal(emptyHeatmap);
   const [histogram, setHistogram] = createSignal<OrderBookHistogramEntry[]>([]);
   const [viewport, setViewport] = createSignal<ChartViewport>({
     time: [startDate, startDate + 1 * 60 * 1000],
@@ -114,6 +142,27 @@ export const MarketChart: Component = () => {
     });
   });
 
+  const chart = (
+    <Chart
+      class="h-full w-full"
+      candleInterval={candleInterval()}
+      priceCandles={candles()}
+      orderBookHeatmap={heatmap()}
+      orderBookHistogram={histogram()}
+      viewport={viewport()}
+      onViewportChange={handleViewportChange}
+      showFrameRate={showFrameRate}
+    />
+  );
+
+  if (fullViewportProfile) {
+    return (
+      <div class="fixed inset-0 overflow-hidden bg-slate-950 text-slate-100">
+        {chart}
+      </div>
+    );
+  }
+
   return (
     <div class="flex h-full w-full flex-col gap-4 bg-slate-950 p-4 text-slate-100">
       <div class="flex flex-wrap items-end justify-between gap-3">
@@ -133,18 +182,7 @@ export const MarketChart: Component = () => {
           </p>
         </div>
       </div>
-      <div class="flex-1 min-h-0">
-        <Chart
-          class="h-full w-full"
-          candleInterval={candleInterval()}
-          priceCandles={candles()}
-          orderBookHeatmap={heatmap()}
-          orderBookHistogram={histogram()}
-          viewport={viewport()}
-          onViewportChange={handleViewportChange}
-          showFrameRate={showFrameRate}
-        />
-      </div>
+      <div class="flex-1 min-h-0">{chart}</div>
     </div>
   );
 };

@@ -11,6 +11,7 @@ const fear = 0.5;
 const orderSpread = 0.02;
 const orderBias = 0;
 
+// todo: time speed regulation
 // https://chatgpt.com/c/69e01063-a9c8-8390-a2db-4f314b4d59f1
 const tick = () => {
   for (let i = 0; i < 100; i++) {
