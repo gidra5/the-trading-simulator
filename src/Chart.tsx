@@ -6,10 +6,7 @@ import {
   type Component,
   type JSX,
 } from "solid-js";
-import type {
-  OrderBookHeatmapEntry,
-  PriceCandle,
-} from "./market";
+import type { OrderBookHeatmapEntry, PriceCandle } from "./market";
 import clsx from "clsx";
 import {
   drawFrame,
@@ -47,10 +44,11 @@ const viewportMatches = (left: ChartViewport, right: ChartViewport): boolean =>
   left.resolution[0] === right.resolution[0] &&
   left.resolution[1] === right.resolution[1];
 
-// todo: micro and macro candles to smoothly transition between scales
-// todo: side panel with order book histogram
+// TODO: price/time marks
+// TODO: fixed candle interval relative to viewport
+// TODO: micro and macro candles to smoothly transition between scales
+// TODO: side panel with order book histogram
 export const Chart: Component<ChartProps> = (props) => {
-
   let container: HTMLDivElement | undefined;
   let canvas: HTMLCanvasElement | undefined;
   let renderer: RendererState | undefined;

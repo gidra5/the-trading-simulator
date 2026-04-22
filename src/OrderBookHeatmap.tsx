@@ -62,7 +62,6 @@ const heatmapColor = (intensity: number): string => {
   return `hsla(${hue}, ${saturation}%, ${lightness}%, ${alpha})`;
 };
 
-// todo: cumulative views
 export const OrderBookHeatmap: Component<OrderBookHeatmapProps> = (props) => {
   let canvas: HTMLCanvasElement | undefined;
 

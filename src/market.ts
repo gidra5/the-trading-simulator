@@ -179,7 +179,7 @@ const recordMarketState = () => {
 
 const candleHistoryEntries = (start: number, end: number): PriceHistoryEntry[] => {
   const open = (() => {
-    // todo: binary search or add some kind of index
+    // TODO: binary search or add some kind of index
     for (let i = priceHistory.length - 1; i >= 0; i -= 1) {
       const entry = priceHistory[i];
       if (entry.timestamp <= start) {
@@ -323,7 +323,7 @@ export const cancelOrder = (id: number, side?: OrderSide): RegisteredOrder | nul
     }
   }
 
-  if (orderIndex === -1) return null; // todo: assert
+  if (orderIndex === -1) return null; // TODO: assert
   const order = orderBook()[side].splice(orderIndex, 1);
 
   recordMarketState();
