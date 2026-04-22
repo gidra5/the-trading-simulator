@@ -1,5 +1,4 @@
 import {
-  createEffect,
   createSignal,
   onCleanup,
   onMount,
@@ -9,7 +8,6 @@ import {
 } from "solid-js";
 import type {
   OrderBookHeatmapEntry,
-  OrderBookHistogramEntry,
   PriceCandle,
 } from "./market";
 import clsx from "clsx";

@@ -179,6 +179,7 @@ const recordMarketState = () => {
 
 const candleHistoryEntries = (start: number, end: number): PriceHistoryEntry[] => {
   const open = (() => {
+    // todo: binary search or add some kind of index
     for (let i = priceHistory.length - 1; i >= 0; i -= 1) {
       const entry = priceHistory[i];
       if (entry.timestamp <= start) {
@@ -306,6 +307,27 @@ export const takeOrder = (side: OrderSide, size: number, price?: number): { id: 
   commitOrderBook();
   recordMarketState();
   return { id, fulfilled };
+};
+
+export const cancelOrder = (id: number, side?: OrderSide): RegisteredOrder | null => {
+  let orderIndex: number;
+  if (side) {
+    orderIndex = orderBook()[side].findIndex((order) => order.id === id);
+  } else {
+    side = "buy";
+    orderIndex = orderBook()[side].findIndex((order) => order.id === id);
+
+    if (orderIndex === -1 && !side) {
+      side = "sell";
+      orderIndex = orderBook()[side].findIndex((order) => order.id === id);
+    }
+  }
+
+  if (orderIndex === -1) return null; // todo: assert
+  const order = orderBook()[side].splice(orderIndex, 1);
+
+  recordMarketState();
+  return order[0]!;
 };
 
 export const marketPriceSpread = (): PriceSpread => {

@@ -1,5 +1,5 @@
 import { createEffect, type Component, type JSX } from "solid-js";
-import type { OrderBookHeatmapEntry, OrderBookHistogramEntry } from "./market";
+import type { OrderBookHeatmapEntry } from "./market";
 
 type CanvasProps = {
   width: number;
@@ -11,10 +11,6 @@ type CanvasProps = {
 type OrderBookHeatmapProps = CanvasProps & {
   data: OrderBookHeatmapEntry[];
   resolution: [time: number, price: number];
-};
-
-type OrderBookHistogramProps = CanvasProps & {
-  data: OrderBookHistogramEntry[];
 };
 
 const resizeCanvas = (
@@ -107,57 +103,6 @@ export const OrderBookHeatmap: Component<OrderBookHeatmapProps> = (props) => {
         Math.ceil(cellWidth) + 1,
         Math.ceil(cellHeight) + 1,
       );
-    }
-  });
-
-  return <canvas ref={canvas} class={props.class} style={props.style} />;
-};
-
-export const OrderBookHistogram: Component<OrderBookHistogramProps> = (
-  props,
-) => {
-  let canvas: HTMLCanvasElement | undefined;
-
-  createEffect(() => {
-    if (!canvas) {
-      return;
-    }
-
-    const context = resizeCanvas(canvas, props.width, props.height);
-    if (!context) {
-      return;
-    }
-
-    const maxSize = props.data.reduce(
-      (current, entry) => Math.max(current, entry.size),
-      0,
-    );
-    if (maxSize <= 0) {
-      return;
-    }
-
-    const rowCount =
-      props.data.reduce((current, entry) => Math.max(current, entry.y), -1) + 1;
-    const rowHeight = props.height / Math.max(rowCount, 1);
-    const leftEdgeX = 2;
-    const maxBarWidth = props.width - 8;
-
-    context.fillStyle = "rgba(148, 163, 184, 0.2)";
-    context.fillRect(leftEdgeX, 0, 1, props.height);
-
-    for (const entry of props.data) {
-      const y = props.height - (entry.y + 1) * rowHeight;
-      const barHeight = Math.max(1, Math.ceil(rowHeight) - 1);
-      if (entry.size <= 0) {
-        continue;
-      }
-
-      const width = normalizeLogarithmically(entry.size, maxSize) * maxBarWidth;
-      context.fillStyle =
-        entry.kind === "buy"
-          ? "rgba(0, 255, 0, 0.72)"
-          : "rgba(248, 0, 0, 0.72)";
-      context.fillRect(leftEdgeX, y, width, barHeight);
     }
   });
 
