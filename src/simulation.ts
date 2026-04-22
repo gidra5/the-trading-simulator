@@ -3,11 +3,13 @@ import { cancelOrder, hasOrder, makeOrder, marketPriceSpread, oppositeSide, take
 const tickTime = 200;
 const maxElapsedTime = 1_000;
 const interest = 500; // event rate per second
-const patience = 0.5;
-const greed = 0.6;
-const fear = 0.5;
-const orderSpread = 0.02;
-const orderBias = 0;
+const patience = 0.5; // cancellation prob
+const greed = 0.6; // market order prob
+const fear = 0.5; // sell order prob
+const minOrderSize = 20;
+const maxOrderSize = 400;
+const orderSizeExponent = 1.4;
+const meanPriceDistance = 0.01;
 
 type RestingOrder = {
   id: number;
@@ -47,6 +49,21 @@ const samplePoisson = (mean: number, interval: number): number => {
   return count - 1;
 };
 
+const samplePowerLaw = (min: number, max: number, exponent: number): number => {
+  const clampedMin = Math.max(min, Number.MIN_VALUE);
+  const clampedMax = Math.max(max, clampedMin);
+  const u = Math.random();
+  const maxTerm = (clampedMin / clampedMax) ** exponent;
+
+  return clampedMin / (1 - u * (1 - maxTerm)) ** (1 / exponent);
+};
+
+const sampleExponential = (mean: number): number => {
+  const u = Math.max(1 - Math.random(), Number.MIN_VALUE);
+
+  return -mean * Math.log(u);
+};
+
 const pruneInactiveOrders = () => {
   for (let i = restingOrders.length - 1; i >= 0; i -= 1) {
     const order = restingOrders[i];
@@ -81,22 +98,22 @@ const simulateOrderEvent = (now: number) => {
   // TODO: depend on recent returns for buy/sell with two "populations" of trend following and contrarians
   const isMaker = Math.random() < greed;
   const side = Math.random() > fear ? "buy" : "sell";
-  // TODO: fee (percent from what you buy) and slippage (difference between expected and actual)
+  // TODO: fee (percent from what you get) and slippage (difference between expected and actual)
   // TODO: simulate account internal state (bounded balance)
   // TODO: make depend on spread, book depth, volatlity, uncertainty.
-  // TODO: replace with power law distribution
   // TODO: simulate order spitting for large ones
   // TODO: stop loss, take profit liquidation simulations
   // TODO: increase size if many wins for one actor, decrease for losses (or vice versa, depending on the gamblingness?)
   // TODO: anchoring
   // TODO: delays in price reaction
-  const size = Math.random() * 100;
+  const size = samplePowerLaw(minOrderSize, maxOrderSize, orderSizeExponent);
 
   // TODO: simulate initial interest
   if (isMaker) {
-    // TODO: bias distance depending on the limit/market and direction
-    const distance = Math.random() * 2 - 1 + orderBias; // TODO: replace with exponential distribution
-    const price = marketPriceSpread()[oppositeSide(side)] * (1 + distance * orderSpread); // +-1% of market price
+    const referencePrice = marketPriceSpread()[oppositeSide(side)];
+    const distance = Math.max(sampleExponential(meanPriceDistance), 0);
+    const price =
+      side === "buy" ? Math.max(referencePrice * (1 - distance), Number.MIN_VALUE) : referencePrice * (1 + distance);
     const result = makeOrder(side, { price, size });
 
     if (result.restingSize > 0) {
@@ -107,7 +124,7 @@ const simulateOrderEvent = (now: number) => {
   }
 
   takeOrder(side, size);
-};
+};;
 
 const simulateCancellationEvent = (now: number) => {
   while (restingOrders.length > 0) {
