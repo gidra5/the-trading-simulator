@@ -113,12 +113,17 @@ export const MarketChart: Component = () => {
         return currentCandles;
       }
 
+      const finalizedLatestCandle = priceHistoryCandle(
+        latestCandle.time,
+        latestCandle.time + interval,
+        "buy",
+      );
       const missingCandles: PriceCandle[] = [];
       for (let missingStart = latestCandle.time + interval; missingStart < candle.time; missingStart += interval) {
         missingCandles.push(priceHistoryCandle(missingStart, missingStart + interval, "buy"));
       }
 
-      return [...currentCandles, ...missingCandles, candle];
+      return [...currentCandles.slice(0, -1), finalizedLatestCandle, ...missingCandles, candle];
     });
   };
 
