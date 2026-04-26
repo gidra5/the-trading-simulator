@@ -33,6 +33,23 @@ export const samplePowerLaw = (exponent: number): number => {
   return (1 - Math.random()) ** -exponent;
 };
 
+export const sampleLogNormal = (median: number, volatility: number): number => {
+  if (
+    !Number.isFinite(median) ||
+    !Number.isFinite(volatility) ||
+    median <= 0 ||
+    volatility < 0
+  ) {
+    return 0;
+  }
+
+  const radius = Math.sqrt(-2 * Math.log(1 - Math.random()));
+  const angle = 2 * Math.PI * Math.random();
+  const normal = radius * Math.cos(angle);
+
+  return median * Math.exp(volatility * normal);
+};
+
 export const samplePoisson = (lambda: number): number => {
   if (!Number.isFinite(lambda) || lambda <= 0) return 0;
 

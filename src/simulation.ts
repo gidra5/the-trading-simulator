@@ -9,19 +9,35 @@ import {
 import {
   sampleBernoulli,
   sampleExponential,
+  sampleLogNormal,
   samplePowerLaw,
   samplePoissonProcessEvents,
+  sampleUniform,
   sampleUniformInteger,
 } from "./distributions";
 
+export type OrderSizeDistribution =
+  | "uniform"
+  | "log-normal"
+  | "power-law"
+  | "exponential";
+
 const tickTime = 200;
 const publicInterest = 250; // event rate per second
-const patience = 0.95; // cancellation prob
-const greed = 0.5; // market order prob
+const patience = 0.98; // cancellation prob
+const greed = 0.4; // market order prob
 const fear = 0.5; // sell order prob
 const orderSpread = 0.02; // a volatility parameter
-const orderSizeScale = 1; // a kind of average wealth paremeter
-const orderSizeTail = 0.8; // a kind of wealthInequality parameter
+const orderSizeScale = 100; // mean order size
+const orderSizeTail = 1.5; // size dispersion: higher = more tiny and huge orders
+
+let orderSizeDistribution: OrderSizeDistribution = "exponential";
+
+export const setOrderSizeDistribution = (
+  distribution: OrderSizeDistribution,
+): void => {
+  orderSizeDistribution = distribution;
+};
 
 type RestingOrder = {
   id: number;
@@ -99,7 +115,18 @@ const simulateOrderEvent = () => {
   // TODO: increase size if many wins for one actor, decrease for losses (or vice versa, depending on the gamblingness?)
   // TODO: anchoring
   // TODO: delays in price reaction
-  const size = orderSizeScale * samplePowerLaw(orderSizeTail);
+  const size = (() => {
+    switch (orderSizeDistribution) {
+      case "uniform":
+        return sampleUniform(0, orderSizeScale * 2);
+      case "log-normal":
+        return sampleLogNormal(orderSizeScale, orderSizeTail);
+      case "power-law":
+        return orderSizeScale * samplePowerLaw(orderSizeTail);
+      case "exponential":
+        return sampleExponential(orderSizeScale);
+    }
+  })();
 
   // TODO: simulate initial interest
   if (isMaker) {
@@ -121,6 +148,8 @@ const simulateOrderEvent = () => {
 // TODO: external factors like news, events, reports, etc. All infer a "sentiment" of the market
 // https://chatgpt.com/c/69e01063-a9c8-8390-a2db-4f314b4d59f1
 const tick = () => {
+  // TODO: hawkes
+  // TODO: then multivariate hawkes process (market sell/buy, order sell/buy, cancels, a matrix for cross correlation)
   const events = samplePoissonProcessEvents(publicInterest, tickTime);
 
   for (let i = 0; i < events; i++) {

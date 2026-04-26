@@ -1,4 +1,5 @@
 import {
+  For,
   Show,
   createMemo,
   createSignal,
@@ -17,12 +18,25 @@ import {
   OrderBookHistogram,
   HistogramNormalization,
 } from "./OrderBookHistogram";
-import { run } from "./simulation";
+import {
+  run,
+  setOrderSizeDistribution,
+  type OrderSizeDistribution,
+} from "./simulation";
 import { Chart, type ChartViewport } from "./Chart";
 
 const pollingInterval = 200;
 const startDate = Date.now();
 const showFrameRate = true;
+const orderSizeDistributions: {
+  value: OrderSizeDistribution;
+  label: string;
+}[] = [
+  { value: "uniform", label: "Uniform" },
+  { value: "log-normal", label: "Log normal" },
+  { value: "power-law", label: "Power law" },
+  { value: "exponential", label: "Exponential" },
+];
 const formatCandleIntervalSeconds = (interval: number): string =>
   String(interval / 1_000);
 const formatHistogramWindowFraction = (windowFraction: number): string =>
@@ -38,6 +52,8 @@ export const MarketChart: Component = () => {
   const [isHeatmapEnabled, setIsHeatmapEnabled] = createSignal(false);
   const [isHistogramEnabled, setIsHistogramEnabled] = createSignal(true);
   const [isHistogramCumulative, setIsHistogramCumulative] = createSignal(true);
+  const [selectedOrderSizeDistribution, setSelectedOrderSizeDistribution] =
+    createSignal<OrderSizeDistribution>("exponential");
   const [histogramNormalization, setHistogramNormalization] =
     createSignal<HistogramNormalization>(HistogramNormalization.Linear);
   const [histogramWindowFraction, setHistogramWindowFraction] =
@@ -117,6 +133,13 @@ export const MarketChart: Component = () => {
     }
 
     setHistogramWindowFraction(nextWindowFraction);
+  };
+
+  const updateOrderSizeDistribution = (
+    distribution: OrderSizeDistribution,
+  ): void => {
+    setSelectedOrderSizeDistribution(distribution);
+    setOrderSizeDistribution(distribution);
   };
 
   const poll = () => {
@@ -298,6 +321,29 @@ export const MarketChart: Component = () => {
                 disabled={isHistogramCumulative()}
               />
             </label>
+            <div class="flex items-center gap-2 text-slate-200">
+              <span>Order size</span>
+              <div class="flex overflow-hidden rounded border border-slate-700">
+                <For each={orderSizeDistributions}>
+                  {(distribution) => (
+                    <button
+                      class="border-l border-slate-700 px-2 py-1 text-slate-300 transition first:border-l-0 hover:bg-slate-800 hover:text-slate-100"
+                      classList={{
+                        "bg-cyan-500 text-slate-950 hover:bg-cyan-400 hover:text-slate-950":
+                          selectedOrderSizeDistribution() ===
+                          distribution.value,
+                      }}
+                      type="button"
+                      onClick={() =>
+                        updateOrderSizeDistribution(distribution.value)
+                      }
+                    >
+                      {distribution.label}
+                    </button>
+                  )}
+                </For>
+              </div>
+            </div>
           </div>
         </div>
       </div>
