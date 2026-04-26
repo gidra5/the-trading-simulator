@@ -20,7 +20,9 @@ import {
 } from "./OrderBookHistogram";
 import {
   run,
+  setOrderPriceDistribution,
   setOrderSizeDistribution,
+  type OrderPriceDistribution,
   type OrderSizeDistribution,
 } from "./simulation";
 import { Chart, type ChartViewport } from "./Chart";
@@ -28,6 +30,17 @@ import { Chart, type ChartViewport } from "./Chart";
 const pollingInterval = 200;
 const startDate = Date.now();
 const showFrameRate = true;
+const orderPriceDistributions: {
+  value: OrderPriceDistribution;
+  label: string;
+}[] = [
+  { value: "uniform", label: "Uniform" },
+  { value: "symmetric-uniform", label: "Sym uniform" },
+  { value: "normal", label: "Normal" },
+  { value: "log-normal", label: "Log normal" },
+  { value: "power-law", label: "Power law" },
+  { value: "exponential", label: "Exponential" },
+];
 const orderSizeDistributions: {
   value: OrderSizeDistribution;
   label: string;
@@ -52,6 +65,8 @@ export const MarketChart: Component = () => {
   const [isHeatmapEnabled, setIsHeatmapEnabled] = createSignal(false);
   const [isHistogramEnabled, setIsHistogramEnabled] = createSignal(true);
   const [isHistogramCumulative, setIsHistogramCumulative] = createSignal(true);
+  const [selectedOrderPriceDistribution, setSelectedOrderPriceDistribution] =
+    createSignal<OrderPriceDistribution>("exponential");
   const [selectedOrderSizeDistribution, setSelectedOrderSizeDistribution] =
     createSignal<OrderSizeDistribution>("exponential");
   const [histogramNormalization, setHistogramNormalization] =
@@ -133,6 +148,13 @@ export const MarketChart: Component = () => {
     }
 
     setHistogramWindowFraction(nextWindowFraction);
+  };
+
+  const updateOrderPriceDistribution = (
+    distribution: OrderPriceDistribution,
+  ): void => {
+    setSelectedOrderPriceDistribution(distribution);
+    setOrderPriceDistribution(distribution);
   };
 
   const updateOrderSizeDistribution = (
@@ -336,6 +358,29 @@ export const MarketChart: Component = () => {
                       type="button"
                       onClick={() =>
                         updateOrderSizeDistribution(distribution.value)
+                      }
+                    >
+                      {distribution.label}
+                    </button>
+                  )}
+                </For>
+              </div>
+            </div>
+            <div class="flex items-center gap-2 text-slate-200">
+              <span>Order price</span>
+              <div class="flex overflow-hidden rounded border border-slate-700">
+                <For each={orderPriceDistributions}>
+                  {(distribution) => (
+                    <button
+                      class="border-l border-slate-700 px-2 py-1 text-slate-300 transition first:border-l-0 hover:bg-slate-800 hover:text-slate-100"
+                      classList={{
+                        "bg-cyan-500 text-slate-950 hover:bg-cyan-400 hover:text-slate-950":
+                          selectedOrderPriceDistribution() ===
+                          distribution.value,
+                      }}
+                      type="button"
+                      onClick={() =>
+                        updateOrderPriceDistribution(distribution.value)
                       }
                     >
                       {distribution.label}

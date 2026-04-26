@@ -10,6 +10,7 @@ import {
   sampleBernoulli,
   sampleExponential,
   sampleLogNormal,
+  sampleNormal,
   samplePowerLaw,
   samplePoissonProcessEvents,
   sampleUniform,
@@ -21,17 +22,32 @@ export type OrderSizeDistribution =
   | "log-normal"
   | "power-law"
   | "exponential";
+export type OrderPriceDistribution =
+  | "uniform"
+  | "symmetric-uniform"
+  | "normal"
+  | "log-normal"
+  | "power-law"
+  | "exponential";
 
 const tickTime = 200;
 const publicInterest = 250; // event rate per second
 const patience = 0.98; // cancellation prob
 const greed = 0.4; // market order prob
 const fear = 0.5; // sell order prob
-const orderSpread = 0.02; // a volatility parameter
+const orderSpread = 0.02; // mean maker price distance
+const orderPriceTail = 1.5; // distance dispersion: higher = more tiny and far orders
 const orderSizeScale = 100; // mean order size
 const orderSizeTail = 1.5; // size dispersion: higher = more tiny and huge orders
 
+let orderPriceDistribution: OrderPriceDistribution = "exponential";
 let orderSizeDistribution: OrderSizeDistribution = "exponential";
+
+export const setOrderPriceDistribution = (
+  distribution: OrderPriceDistribution,
+): void => {
+  orderPriceDistribution = distribution;
+};
 
 export const setOrderSizeDistribution = (
   distribution: OrderSizeDistribution,
@@ -46,8 +62,33 @@ type RestingOrder = {
 
 const restingOrders: RestingOrder[] = [];
 
+const sampleOrderDistance = (
+  distribution: OrderPriceDistribution,
+  scale: number,
+  tail: number,
+): number => {
+  switch (distribution) {
+    case "uniform":
+      return sampleUniform(0, scale * 2);
+    case "symmetric-uniform":
+      return sampleUniform(-scale, scale);
+    case "normal":
+      return sampleNormal(0, scale);
+    case "log-normal":
+      return sampleLogNormal(scale, tail);
+    case "power-law":
+      return scale * samplePowerLaw(tail);
+    case "exponential":
+      return sampleExponential(scale);
+  }
+};
+
 const sampleMakerOrderPrice = (side: OrderSide): number => {
-  const jitter = sampleExponential(orderSpread);
+  const jitter = sampleOrderDistance(
+    orderPriceDistribution,
+    orderSpread,
+    orderPriceTail,
+  );
   const bestPrice = marketPriceSpread()[side];
   const direction = side === "buy" ? -1 : 1;
   return bestPrice * (1 + jitter) ** direction;

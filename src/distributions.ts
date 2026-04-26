@@ -50,6 +50,22 @@ export const sampleLogNormal = (median: number, volatility: number): number => {
   return median * Math.exp(volatility * normal);
 };
 
+export const sampleNormal = (mean: number, standardDeviation: number): number => {
+  if (
+    !Number.isFinite(mean) ||
+    !Number.isFinite(standardDeviation) ||
+    standardDeviation < 0
+  ) {
+    return 0;
+  }
+
+  const radius = Math.sqrt(-2 * Math.log(1 - Math.random()));
+  const angle = 2 * Math.PI * Math.random();
+  const normal = radius * Math.cos(angle);
+
+  return mean + standardDeviation * normal;
+};
+
 export const samplePoisson = (lambda: number): number => {
   if (!Number.isFinite(lambda) || lambda <= 0) return 0;
 
