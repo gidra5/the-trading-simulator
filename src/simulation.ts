@@ -6,18 +6,34 @@ import {
 } from "./market";
 
 const tickTime = 200;
-const publicInterest = 500; // event rate per second
+const publicInterest = 25; // event rate per second
 const patience = 0.5; // cancellation prob
 const greed = 0.6; // market order prob
 const fear = 0.5; // sell order prob
 const orderSpread = 0.02;
 const orderBias = 0;
 
-// TODO: Trading at certain times of the day
-// TODO: Trading character defined by what parameters and features a particular actor uses
-// TODO: external factors like news, events, reports, etc. All infer a "sentiment" of the market
-// https://chatgpt.com/c/69e01063-a9c8-8390-a2db-4f314b4d59f1
-const tick = () => {
+const samplePoisson = (lambda: number): number => {
+  if (!Number.isFinite(lambda) || lambda <= 0) return 0;
+
+  const limit = Math.exp(-lambda);
+  let events = 0;
+  let probability = 1;
+
+  do {
+    events += 1;
+    probability *= Math.random();
+  } while (probability > limit);
+
+  return events - 1;
+};
+
+const samplePoissonProcessEvents = (
+  ratePerSecond: number,
+  intervalMs: number,
+): number => samplePoisson((ratePerSecond * intervalMs) / 1000);
+
+const simulateOrderEvent = () => {
   // TODO: psychology, like preferring round prices
   // TODO: depend on recent returns for buy/sell with two "populations" of trend following and contrarians
   const isMaker = Math.random() < greed;
@@ -50,6 +66,18 @@ const tick = () => {
   }
 
   takeOrder(side, size);
+};
+
+// TODO: Trading at certain times of the day
+// TODO: Trading character defined by what parameters and features a particular actor uses
+// TODO: external factors like news, events, reports, etc. All infer a "sentiment" of the market
+// https://chatgpt.com/c/69e01063-a9c8-8390-a2db-4f314b4d59f1
+const tick = () => {
+  const events = samplePoissonProcessEvents(publicInterest, tickTime);
+
+  for (let i = 0; i < events; i++) {
+    simulateOrderEvent();
+  }
 };
 
 // todo: move to a worker
