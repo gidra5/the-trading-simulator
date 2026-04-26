@@ -5,6 +5,11 @@ type Order = {
   size: number;
 };
 type RegisteredOrder = Order & { id: number };
+export type MakeOrderResult = {
+  id: number;
+  fulfilled: number;
+  restingSize: number;
+};
 type TradeHistoryEntry = {
   buyOrderId: number;
   sellOrderId: number;
@@ -208,24 +213,35 @@ export const priceHistoryCandle = (start: number, end: number, side: OrderSide):
 // const tradeHistory: TradeHistoryEntry[] = [];
 
 let nextOrderId = 0;
-export const makeOrder = (side: OrderSide, order: Order): number => {
+const findOrderLocation = (
+  id: number,
+  side?: OrderSide,
+): { side: OrderSide; index: number } | null => {
+  const sides = side ? [side] : (["buy", "sell"] as const);
+
+  for (const candidateSide of sides) {
+    const index = orderBook()[candidateSide].findIndex((order) => order.id === id);
+    if (index !== -1) {
+      return { side: candidateSide, index };
+    }
+  }
+
+  return null;
+};
+
+export const hasOrder = (id: number, side?: OrderSide): boolean => findOrderLocation(id, side) !== null;
+
+export const makeOrder = (side: OrderSide, order: Order): MakeOrderResult => {
   const id = nextOrderId++;
   const orderWithId = { ...order, id };
   const result = takeOrder(side, order.size, order.price);
-  if (result.fulfilled === order.size) {
-    return id;
+  const restingSize = order.size - result.fulfilled;
+
+  if (restingSize === 0) {
+    return { id, fulfilled: result.fulfilled, restingSize };
   }
 
-  orderWithId.size = order.size - result.fulfilled;
-
-  // setOrderBook((orderBook) => {
-
-  // orderBook[side].push(orderWithId);
-  // orderBook[side].sort((a, b) =>
-  //   side === "sell" ? b.price - a.price : a.price - b.price,
-  // );
-  //   return { ...orderBook };
-  // })
+  orderWithId.size = restingSize;
 
   const nextOrders = [...orderBook()[side], orderWithId].sort((a, b) =>
     side === "sell" ? b.price - a.price : a.price - b.price,
@@ -234,8 +250,8 @@ export const makeOrder = (side: OrderSide, order: Order): number => {
 
   recordMarketState();
 
-  return id;
-};;
+  return { id, fulfilled: result.fulfilled, restingSize };
+};
 
 export const takeOrder = (side: OrderSide, size: number, price?: number): { id: number; fulfilled: number } => {
   let fulfilled = 0;
@@ -310,24 +326,19 @@ export const takeOrder = (side: OrderSide, size: number, price?: number): { id: 
 };
 
 export const cancelOrder = (id: number, side?: OrderSide): RegisteredOrder | null => {
-  let orderIndex: number;
-  if (side) {
-    orderIndex = orderBook()[side].findIndex((order) => order.id === id);
-  } else {
-    side = "buy";
-    orderIndex = orderBook()[side].findIndex((order) => order.id === id);
+  const location = findOrderLocation(id, side);
 
-    if (orderIndex === -1 && !side) {
-      side = "sell";
-      orderIndex = orderBook()[side].findIndex((order) => order.id === id);
-    }
-  }
+  if (!location) return null;
 
-  if (orderIndex === -1) return null; // TODO: assert
-  const order = orderBook()[side].splice(orderIndex, 1);
+  const nextOrders = [...orderBook()[location.side]];
+  const [order] = nextOrders.splice(location.index, 1);
+
+  if (!order) return null;
+
+  setOrderBookSide(location.side, nextOrders);
 
   recordMarketState();
-  return order[0]!;
+  return order;
 };
 
 export const marketPriceSpread = (): PriceSpread => {
@@ -340,4 +351,10 @@ export const marketPriceSpread = (): PriceSpread => {
   };
 };
 
-export const oppositeSide = (side: OrderSide): OrderSide => (side === "buy" ? "sell" : "buy");
+export const oppositeSide = (side: OrderSide): OrderSide =>
+  side === "buy" ? "sell" : "buy";
+
+export const midPrice = (): number => {
+  const spread = marketPriceSpread();
+  return (spread.buy + spread.sell) / 2;
+};

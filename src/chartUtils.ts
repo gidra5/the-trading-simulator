@@ -207,7 +207,7 @@ fn vertexMain(
   let body_mid_y = (open_y + close_y) * 0.5;
   let raw_body_top = min(open_y, close_y);
   let raw_body_bottom = max(open_y, close_y);
-  let is_doji = abs(open_y - close_y) < 0.000001;
+  let is_doji = abs(open_y - close_y) < min_body_height;
   let body_top = select(
     raw_body_top,
     body_mid_y - min_body_height * 0.5,
