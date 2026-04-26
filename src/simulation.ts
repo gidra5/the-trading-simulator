@@ -3,25 +3,25 @@ import {
   hasOrder,
   makeOrder,
   marketPriceSpread,
-  oppositeSide,
   type OrderSide,
   takeOrder,
 } from "./market";
 import {
   sampleBernoulli,
   sampleExponential,
+  samplePowerLaw,
   samplePoissonProcessEvents,
-  sampleUniform,
   sampleUniformInteger,
 } from "./distributions";
 
 const tickTime = 200;
 const publicInterest = 250; // event rate per second
-const patience = 0.9; // cancellation prob
-const greed = 0.4; // market order prob
+const patience = 0.95; // cancellation prob
+const greed = 0.5; // market order prob
 const fear = 0.5; // sell order prob
-const orderSpread = 0.02;
-const orderBias = 0;
+const orderSpread = 0.02; // a volatility parameter
+const orderSizeScale = 1; // a kind of average wealth paremeter
+const orderSizeTail = 0.8; // a kind of wealthInequality parameter
 
 type RestingOrder = {
   id: number;
@@ -31,9 +31,10 @@ type RestingOrder = {
 const restingOrders: RestingOrder[] = [];
 
 const sampleMakerOrderPrice = (side: OrderSide): number => {
-  // todo: exponential distribution
-  const jitter = Math.random() * 2 - 1 + orderBias;
-  return marketPriceSpread()[oppositeSide(side)] * (1 + jitter * orderSpread); // +-1% of market price
+  const jitter = sampleExponential(orderSpread);
+  const bestPrice = marketPriceSpread()[side];
+  const direction = side === "buy" ? -1 : 1;
+  return bestPrice * (1 + jitter) ** direction;
 };
 
 const trackRestingOrder = (order: RestingOrder): void => {
@@ -69,6 +70,9 @@ const randomRestingOrder = (): {
   return null;
 };
 
+// TODO: also account for distance from current price (both far and near),
+// TODO: if price moved away recently, side and density of orders, spread, volatility, imbalance
+// TODO: weight by how long ago the order was created
 const simulateCancellationEvent = (): boolean => {
   const candidate = randomRestingOrder();
 
@@ -95,12 +99,7 @@ const simulateOrderEvent = () => {
   // TODO: increase size if many wins for one actor, decrease for losses (or vice versa, depending on the gamblingness?)
   // TODO: anchoring
   // TODO: delays in price reaction
-  // TODO: replace with power law distribution
-  const size = sampleUniform(0, 100);
-
-  // TODO: also account for distance from current price (both far and near),
-  // TODO: if price moved away recently, side and density of orders, spread, volatility, imbalance
-  // TODO: weight by how long ago the order was created
+  const size = orderSizeScale * samplePowerLaw(orderSizeTail);
 
   // TODO: simulate initial interest
   if (isMaker) {

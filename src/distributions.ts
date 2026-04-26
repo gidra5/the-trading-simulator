@@ -10,12 +10,27 @@ export const sampleUniform = (min: number, max: number): number => {
   return min + Math.random() * (max - min);
 };
 
-export const sampleUniformInteger = (min: number, maxExclusive: number): number => {
-  if (!Number.isFinite(min) || !Number.isFinite(maxExclusive) || maxExclusive <= min) {
+export const sampleUniformInteger = (
+  min: number,
+  maxExclusive: number,
+): number => {
+  if (
+    !Number.isFinite(min) ||
+    !Number.isFinite(maxExclusive) ||
+    maxExclusive <= min
+  ) {
     return min;
   }
 
   return Math.floor(sampleUniform(min, maxExclusive));
+};
+
+export const samplePowerLaw = (exponent: number): number => {
+  if (!Number.isFinite(exponent) || exponent <= 0) {
+    return 0;
+  }
+
+  return (1 - Math.random()) ** -exponent;
 };
 
 export const samplePoisson = (lambda: number): number => {

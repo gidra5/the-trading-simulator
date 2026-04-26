@@ -1,4 +1,11 @@
-import { Show, createMemo, createSignal, onCleanup, onMount, type Component } from "solid-js";
+import {
+  Show,
+  createMemo,
+  createSignal,
+  onCleanup,
+  onMount,
+  type Component,
+} from "solid-js";
 import {
   getOrderBookHistogram,
   getOrderBookRegion,
@@ -6,31 +13,37 @@ import {
   type PriceCandle,
   priceHistoryCandle,
 } from "./market";
-import { OrderBookHistogram, HistogramNormalization } from "./OrderBookHistogram";
+import {
+  OrderBookHistogram,
+  HistogramNormalization,
+} from "./OrderBookHistogram";
 import { run } from "./simulation";
 import { Chart, type ChartViewport } from "./Chart";
 
 const pollingInterval = 200;
 const startDate = Date.now();
 const showFrameRate = true;
-const formatCandleIntervalSeconds = (interval: number): string => String(interval / 1_000);
-const formatHistogramWindowFraction = (windowFraction: number): string => String(windowFraction);
+const formatCandleIntervalSeconds = (interval: number): string =>
+  String(interval / 1_000);
+const formatHistogramWindowFraction = (windowFraction: number): string =>
+  String(windowFraction);
 
 export const MarketChart: Component = () => {
   const priceSpread = createMemo(marketPriceSpread);
   const [candleInterval, setCandleInterval] = createSignal(1_000);
-  const [candleIntervalInput, setCandleIntervalInput] = createSignal(formatCandleIntervalSeconds(1_000));
+  const [candleIntervalInput, setCandleIntervalInput] = createSignal(
+    formatCandleIntervalSeconds(1_000),
+  );
   const [candles, setCandles] = createSignal<PriceCandle[]>([]);
   const [isHeatmapEnabled, setIsHeatmapEnabled] = createSignal(false);
   const [isHistogramEnabled, setIsHistogramEnabled] = createSignal(true);
   const [isHistogramCumulative, setIsHistogramCumulative] = createSignal(true);
-  const [histogramNormalization, setHistogramNormalization] = createSignal<HistogramNormalization>(
-    HistogramNormalization.Linear,
-  );
-  const [histogramWindowFraction, setHistogramWindowFraction] = createSignal(0.01);
-  const [histogramWindowFractionInput, setHistogramWindowFractionInput] = createSignal(
-    formatHistogramWindowFraction(0.01),
-  );
+  const [histogramNormalization, setHistogramNormalization] =
+    createSignal<HistogramNormalization>(HistogramNormalization.Linear);
+  const [histogramWindowFraction, setHistogramWindowFraction] =
+    createSignal(0.01);
+  const [histogramWindowFractionInput, setHistogramWindowFractionInput] =
+    createSignal(formatHistogramWindowFraction(0.01));
   const [viewport, setViewport] = createSignal<ChartViewport>({
     time: [startDate, startDate + 1 * 60 * 1000],
     price: [0.7, 1.3],
@@ -54,12 +67,25 @@ export const MarketChart: Component = () => {
     });
   });
 
-  const rebuildCandles = (interval: number, now = Date.now()): PriceCandle[] => {
+  const rebuildCandles = (
+    interval: number,
+    now = Date.now(),
+  ): PriceCandle[] => {
     const alignedStart = Math.floor(startDate / interval) * interval;
     const rebuiltCandles: PriceCandle[] = [];
 
-    for (let candleStart = alignedStart; candleStart <= now; candleStart += interval) {
-      rebuiltCandles.push(priceHistoryCandle(candleStart, Math.min(candleStart + interval, now), "buy"));
+    for (
+      let candleStart = alignedStart;
+      candleStart <= now;
+      candleStart += interval
+    ) {
+      rebuiltCandles.push(
+        priceHistoryCandle(
+          candleStart,
+          Math.min(candleStart + interval, now),
+          "buy",
+        ),
+      );
     }
 
     return rebuiltCandles;
@@ -119,11 +145,22 @@ export const MarketChart: Component = () => {
         "buy",
       );
       const missingCandles: PriceCandle[] = [];
-      for (let missingStart = latestCandle.time + interval; missingStart < candle.time; missingStart += interval) {
-        missingCandles.push(priceHistoryCandle(missingStart, missingStart + interval, "buy"));
+      for (
+        let missingStart = latestCandle.time + interval;
+        missingStart < candle.time;
+        missingStart += interval
+      ) {
+        missingCandles.push(
+          priceHistoryCandle(missingStart, missingStart + interval, "buy"),
+        );
       }
 
-      return [...currentCandles.slice(0, -1), finalizedLatestCandle, ...missingCandles, candle];
+      return [
+        ...currentCandles.slice(0, -1),
+        finalizedLatestCandle,
+        ...missingCandles,
+        candle,
+      ];
     });
   };
 
@@ -161,13 +198,19 @@ export const MarketChart: Component = () => {
       <div class="flex flex-wrap items-end justify-between gap-3">
         <div class="flex flex-col gap-1">
           <p class="text-xl tracking-[0.3em] text-slate-400">Market Sim</p>
+          <p class="font-mono text-xs">buy / sell</p>
           <p class="font-mono text-xs">
             {priceSpread().buy.toFixed(6)} / {priceSpread().sell.toFixed(6)}
           </p>
         </div>
         <div class="max-w-3xl rounded border border-slate-800 bg-slate-900/80 px-3 py-2 font-mono text-[11px] leading-5 text-slate-300">
-          <p class="mb-1 text-[10px] uppercase tracking-[0.2em] text-slate-500">Controls</p>
-          <p>Drag: pan viewport. Wheel: scale time. Shift + wheel: scale price. Ctrl + wheel: zoom both axes.</p>
+          <p class="mb-1 text-[10px] uppercase tracking-[0.2em] text-slate-500">
+            Controls
+          </p>
+          <p>
+            Drag: pan viewport. Wheel: scale time. Shift + wheel: scale price.
+            Ctrl + wheel: zoom both axes.
+          </p>
           <div class="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
             <label class="flex items-center gap-2 text-slate-200">
               <span>Candle interval, s</span>
@@ -176,8 +219,14 @@ export const MarketChart: Component = () => {
                 type="number"
                 step="0.1"
                 value={candleIntervalInput()}
-                onInput={(event) => handleCandleIntervalInput(event.currentTarget.value)}
-                onBlur={() => setCandleIntervalInput(formatCandleIntervalSeconds(candleInterval()))}
+                onInput={(event) =>
+                  handleCandleIntervalInput(event.currentTarget.value)
+                }
+                onBlur={() =>
+                  setCandleIntervalInput(
+                    formatCandleIntervalSeconds(candleInterval()),
+                  )
+                }
               />
             </label>
             <label class="flex items-center gap-2 text-slate-200">
@@ -216,10 +265,15 @@ export const MarketChart: Component = () => {
             <label class="flex items-center gap-2 text-slate-200">
               <input
                 type="checkbox"
-                checked={histogramNormalization() === HistogramNormalization.Logarithmic}
+                checked={
+                  histogramNormalization() ===
+                  HistogramNormalization.Logarithmic
+                }
                 onInput={(event) => {
                   setHistogramNormalization(
-                    event.currentTarget.checked ? HistogramNormalization.Logarithmic : HistogramNormalization.Linear,
+                    event.currentTarget.checked
+                      ? HistogramNormalization.Logarithmic
+                      : HistogramNormalization.Linear,
                   );
                 }}
               />
@@ -233,8 +287,14 @@ export const MarketChart: Component = () => {
                 min="0"
                 step="0.001"
                 value={histogramWindowFractionInput()}
-                onInput={(event) => handleHistogramWindowFractionInput(event.currentTarget.value)}
-                onBlur={() => setHistogramWindowFractionInput(formatHistogramWindowFraction(histogramWindowFraction()))}
+                onInput={(event) =>
+                  handleHistogramWindowFractionInput(event.currentTarget.value)
+                }
+                onBlur={() =>
+                  setHistogramWindowFractionInput(
+                    formatHistogramWindowFraction(histogramWindowFraction()),
+                  )
+                }
                 disabled={isHistogramCumulative()}
               />
             </label>
