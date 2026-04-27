@@ -65,16 +65,19 @@ const normalizeExcitationMatrix = (
   });
 
 const publicInterestRate = 20; // total event rate per second before self-excitation
-const patience = 1; // probability of placing an order instead of canceling
-const greed = 0.1; // market order prob
+const patience = 0.99; // probability of placing an order instead of canceling
+const greed = 0.4; // market order prob
 const fear = 0.5; // sell order prob
+const marketPressure = patience * greed;
+const orderPressure = patience * (1 - greed);
+const cancelPressure = 1 - patience;
 const publicInterest = eventVector({
-  "market-buy": patience * greed * (1 - fear),
-  "market-sell": patience * greed * fear,
-  "order-buy": patience * (1 - greed) * (1 - fear),
-  "order-sell": patience * (1 - greed) * fear,
-  "cancel-buy": (1 - patience) * (1 - fear),
-  "cancel-sell": (1 - patience) * fear,
+  "market-buy": marketPressure * (1 - fear),
+  "market-sell": marketPressure * fear,
+  "order-buy": orderPressure * (1 - fear),
+  "order-sell": orderPressure * fear,
+  "cancel-buy": cancelPressure * (1 - fear),
+  "cancel-sell": cancelPressure * fear,
 }).map((v) => publicInterestRate * v); // event rates per second before self-excitation
 
 const excitementHalfLife = eventVector({
@@ -88,8 +91,8 @@ const excitementHalfLife = eventVector({
 const excitementDecay = excitementHalfLife.map(halfLifeToDecay);
 
 const branchingRatio = eventVector({
-  "market-buy": 0.5,
-  "market-sell": 0.5,
+  "market-buy": 1,
+  "market-sell": 1,
   "order-buy": 0.15,
   "order-sell": 0.15,
   "cancel-buy": 0.25,
@@ -97,62 +100,65 @@ const branchingRatio = eventVector({
 }); // expected total child events caused by one event
 const reflexivity = 1; // same event excites same event
 const contrarianism = 0.12; // buy excites sell, sell excites buy
-const liquidityResponse = 0.25; // market orders excite limit orders
-const liquidityWithdrawal = 0.15; // market orders excite cancels
-const cancellationContagion = 0.8; // cancels excite more cancels
-const sideSymmetry = 1; // 1 = equal buy/sell reactions
-const buyExcitement = positiveFiniteOrZero(sideSymmetry);
-const sellExcitement = sideSymmetry > 0 && Number.isFinite(sideSymmetry) ? 1 / sideSymmetry : 1;
+const passiveMirroring = 0.2; // limit buy excites limit sell, and vice versa
+const liquidityChasing = 0.25; // market events excite same-side limit orders
+const liquidityFading = 0.15; // market events excite same-side cancels
+const adverseSelection = 0.1; // market buys pull asks, market sells pull bids
+const orderCrowding = 0.3; // limit orders excite same-side limit orders
+const passiveAdverseSelection = 0.05; // limit orders can make same-side liquidity pull back
+const cancelCrowding = 0.8; // cancels excite same-side cancels
+const bookRebalancing = 0.1; // cancels excite opposite-side limit orders
+const cancelPanic = 0.05; // cancels can trigger opposite-side market pressure
 // Keep excitations low relative to decay rates for a stable market, otherwise
 // the event counts can explode exponentially.
 const excitationMatrix = eventExcitationMatrix({
   "market-buy": {
-    "market-buy": reflexivity * buyExcitement,
-    "market-sell": contrarianism * sellExcitement,
-    "order-buy": liquidityResponse * buyExcitement,
-    "order-sell": 0,
-    "cancel-buy": liquidityWithdrawal * buyExcitement,
-    "cancel-sell": 0,
+    "market-buy": reflexivity * (1 - fear),
+    "market-sell": contrarianism * fear,
+    "order-buy": liquidityChasing * (1 - fear),
+    "order-sell": passiveMirroring * fear,
+    "cancel-buy": liquidityFading * (1 - fear),
+    "cancel-sell": adverseSelection * fear,
   },
   "market-sell": {
-    "market-buy": contrarianism * buyExcitement,
-    "market-sell": reflexivity * sellExcitement,
-    "order-buy": 0,
-    "order-sell": liquidityResponse * sellExcitement,
-    "cancel-buy": 0,
-    "cancel-sell": liquidityWithdrawal * sellExcitement,
+    "market-buy": contrarianism * (1 - fear),
+    "market-sell": reflexivity * fear,
+    "order-buy": passiveMirroring * (1 - fear),
+    "order-sell": liquidityChasing * fear,
+    "cancel-buy": adverseSelection * (1 - fear),
+    "cancel-sell": liquidityFading * fear,
   },
   "order-buy": {
-    "market-buy": 0,
-    "market-sell": contrarianism * sellExcitement,
-    "order-buy": reflexivity * buyExcitement,
-    "order-sell": 0,
-    "cancel-buy": 0,
-    "cancel-sell": 0,
+    "market-buy": reflexivity * (1 - fear),
+    "market-sell": contrarianism * fear,
+    "order-buy": orderCrowding * (1 - fear),
+    "order-sell": passiveMirroring * fear,
+    "cancel-buy": passiveAdverseSelection * (1 - fear),
+    "cancel-sell": adverseSelection * fear,
   },
   "order-sell": {
-    "market-buy": contrarianism * buyExcitement,
-    "market-sell": 0,
-    "order-buy": 0,
-    "order-sell": reflexivity * sellExcitement,
-    "cancel-buy": 0,
-    "cancel-sell": 0,
+    "market-buy": contrarianism * (1 - fear),
+    "market-sell": reflexivity * fear,
+    "order-buy": passiveMirroring * (1 - fear),
+    "order-sell": orderCrowding * fear,
+    "cancel-buy": adverseSelection * (1 - fear),
+    "cancel-sell": passiveAdverseSelection * fear,
   },
   "cancel-buy": {
-    "market-buy": 0,
-    "market-sell": 0,
-    "order-buy": 0,
-    "order-sell": 0,
-    "cancel-buy": cancellationContagion * buyExcitement,
-    "cancel-sell": 0,
+    "market-buy": contrarianism * (1 - fear),
+    "market-sell": cancelPanic * fear,
+    "order-buy": reflexivity * (1 - fear),
+    "order-sell": bookRebalancing * fear,
+    "cancel-buy": cancelCrowding * (1 - fear),
+    "cancel-sell": passiveMirroring * fear,
   },
   "cancel-sell": {
-    "market-buy": 0,
-    "market-sell": 0,
-    "order-buy": 0,
-    "order-sell": 0,
-    "cancel-buy": 0,
-    "cancel-sell": cancellationContagion * sellExcitement,
+    "market-buy": cancelPanic * (1 - fear),
+    "market-sell": contrarianism * fear,
+    "order-buy": bookRebalancing * (1 - fear),
+    "order-sell": reflexivity * fear,
+    "cancel-buy": passiveMirroring * (1 - fear),
+    "cancel-sell": cancelCrowding * fear,
   },
 }); // row event adds rates to column events before branching-ratio scaling
 const interestExcitation = normalizeExcitationMatrix(excitationMatrix, excitementDecay, branchingRatio);
