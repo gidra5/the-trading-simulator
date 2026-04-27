@@ -1,5 +1,4 @@
 import {
-  For,
   Show,
   createMemo,
   createSignal,
@@ -18,64 +17,29 @@ import {
   OrderBookHistogram,
   HistogramNormalization,
 } from "./OrderBookHistogram";
-import {
-  run,
-  setOrderPriceDistribution,
-  setOrderSizeDistribution,
-  type OrderPriceDistribution,
-  type OrderSizeDistribution,
-} from "./simulation";
+import { run } from "./simulation";
 import { Chart, type ChartViewport } from "./Chart";
+import { ChartSettings } from "./ChartSettings";
+import { MarketSettings } from "./MarketSettings";
 
 const pollingInterval = 200;
 const startDate = Date.now();
 const showFrameRate = true;
-const orderPriceDistributions: {
-  value: OrderPriceDistribution;
-  label: string;
-}[] = [
-  { value: "uniform", label: "Uniform" },
-  { value: "symmetric-uniform", label: "Sym uniform" },
-  { value: "normal", label: "Normal" },
-  { value: "abs-normal", label: "Abs normal" },
-  { value: "log-normal", label: "Log normal" },
-  { value: "power-law", label: "Power law" },
-  { value: "exponential", label: "Exponential" },
-];
-const orderSizeDistributions: {
-  value: OrderSizeDistribution;
-  label: string;
-}[] = [
-  { value: "uniform", label: "Uniform" },
-  { value: "log-normal", label: "Log normal" },
-  { value: "power-law", label: "Power law" },
-  { value: "exponential", label: "Exponential" },
-];
-const formatCandleIntervalSeconds = (interval: number): string =>
-  String(interval / 1_000);
-const formatHistogramWindowFraction = (windowFraction: number): string =>
-  String(windowFraction);
+type SettingsTab = "chart" | "market";
 
 export const MarketChart: Component = () => {
   const priceSpread = createMemo(marketPriceSpread);
+  const [activeSettingsTab, setActiveSettingsTab] =
+    createSignal<SettingsTab>("chart");
   const [candleInterval, setCandleInterval] = createSignal(1_000);
-  const [candleIntervalInput, setCandleIntervalInput] = createSignal(
-    formatCandleIntervalSeconds(1_000),
-  );
   const [candles, setCandles] = createSignal<PriceCandle[]>([]);
   const [isHeatmapEnabled, setIsHeatmapEnabled] = createSignal(false);
   const [isHistogramEnabled, setIsHistogramEnabled] = createSignal(true);
   const [isHistogramCumulative, setIsHistogramCumulative] = createSignal(true);
-  const [selectedOrderPriceDistribution, setSelectedOrderPriceDistribution] =
-    createSignal<OrderPriceDistribution>("abs-normal");
-  const [selectedOrderSizeDistribution, setSelectedOrderSizeDistribution] =
-    createSignal<OrderSizeDistribution>("uniform");
   const [histogramNormalization, setHistogramNormalization] =
     createSignal<HistogramNormalization>(HistogramNormalization.Linear);
   const [histogramWindowFraction, setHistogramWindowFraction] =
     createSignal(0.01);
-  const [histogramWindowFractionInput, setHistogramWindowFractionInput] =
-    createSignal(formatHistogramWindowFraction(0.01));
   const [viewport, setViewport] = createSignal<ChartViewport>({
     time: [startDate, startDate + 1 * 60 * 1000],
     price: [0.7, 1.3],
@@ -125,44 +89,7 @@ export const MarketChart: Component = () => {
 
   const updateCandleInterval = (nextInterval: number): void => {
     setCandleInterval(nextInterval);
-    setCandleIntervalInput(formatCandleIntervalSeconds(nextInterval));
     setCandles(rebuildCandles(nextInterval));
-  };
-
-  const handleCandleIntervalInput = (value: string): void => {
-    setCandleIntervalInput(value);
-
-    const nextIntervalSeconds = Number(value);
-    if (!Number.isFinite(nextIntervalSeconds) || nextIntervalSeconds <= 0) {
-      return;
-    }
-
-    updateCandleInterval(Math.round(nextIntervalSeconds * 1_000));
-  };
-
-  const handleHistogramWindowFractionInput = (value: string): void => {
-    setHistogramWindowFractionInput(value);
-
-    const nextWindowFraction = Number(value);
-    if (!Number.isFinite(nextWindowFraction) || nextWindowFraction < 0) {
-      return;
-    }
-
-    setHistogramWindowFraction(nextWindowFraction);
-  };
-
-  const updateOrderPriceDistribution = (
-    distribution: OrderPriceDistribution,
-  ): void => {
-    setSelectedOrderPriceDistribution(distribution);
-    setOrderPriceDistribution(distribution);
-  };
-
-  const updateOrderSizeDistribution = (
-    distribution: OrderSizeDistribution,
-  ): void => {
-    setSelectedOrderSizeDistribution(distribution);
-    setOrderSizeDistribution(distribution);
   };
 
   const poll = () => {
@@ -249,148 +176,55 @@ export const MarketChart: Component = () => {
             {priceSpread().buy.toFixed(6)} / {priceSpread().sell.toFixed(6)}
           </p>
         </div>
-        <div class="max-w-3xl rounded border border-slate-800 bg-slate-900/80 px-3 py-2 font-mono text-[11px] leading-5 text-slate-300">
-          <p class="mb-1 text-[10px] uppercase tracking-[0.2em] text-slate-500">
-            Controls
-          </p>
-          <p>
-            Drag: pan viewport. Wheel: scale time. Shift + wheel: scale price.
-            Ctrl + wheel: zoom both axes.
-          </p>
-          <div class="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
-            <label class="flex items-center gap-2 text-slate-200">
-              <span>Candle interval, s</span>
-              <input
-                class="w-20 rounded border border-slate-700 bg-slate-950 px-2 py-1 text-right text-slate-100 outline-none transition focus:border-cyan-400"
-                type="number"
-                step="0.1"
-                value={candleIntervalInput()}
-                onInput={(event) =>
-                  handleCandleIntervalInput(event.currentTarget.value)
-                }
-                onBlur={() =>
-                  setCandleIntervalInput(
-                    formatCandleIntervalSeconds(candleInterval()),
-                  )
-                }
-              />
-            </label>
-            <label class="flex items-center gap-2 text-slate-200">
-              <input
-                type="checkbox"
-                checked={isHeatmapEnabled()}
-                onInput={(event) => {
-                  const enabled = event.currentTarget.checked;
-                  setIsHeatmapEnabled(enabled);
+        <div class="max-w-5xl rounded border border-slate-800 bg-slate-900/80 px-3 py-2 font-mono text-[11px] leading-5 text-slate-300">
+          <div class="mb-2 flex items-center justify-between gap-3">
+            <p class="text-[10px] uppercase tracking-[0.2em] text-slate-500">
+              Controls
+            </p>
+            <div class="flex overflow-hidden rounded border border-slate-700">
+              <button
+                class="border-l border-slate-700 px-2 py-1 text-slate-300 transition first:border-l-0 hover:bg-slate-800 hover:text-slate-100"
+                classList={{
+                  "bg-cyan-500 text-slate-950 hover:bg-cyan-400 hover:text-slate-950":
+                    activeSettingsTab() === "chart",
                 }}
-              />
-              <span>Show heatmap</span>
-            </label>
-            <label class="flex items-center gap-2 text-slate-200">
-              <input
-                type="checkbox"
-                checked={isHistogramEnabled()}
-                onInput={(event) => {
-                  const enabled = event.currentTarget.checked;
-                  setIsHistogramEnabled(enabled);
+                type="button"
+                onClick={() => setActiveSettingsTab("chart")}
+              >
+                Chart
+              </button>
+              <button
+                class="border-l border-slate-700 px-2 py-1 text-slate-300 transition first:border-l-0 hover:bg-slate-800 hover:text-slate-100"
+                classList={{
+                  "bg-cyan-500 text-slate-950 hover:bg-cyan-400 hover:text-slate-950":
+                    activeSettingsTab() === "market",
                 }}
-              />
-              <span>Show histogram</span>
-            </label>
-            <label class="flex items-center gap-2 text-slate-200">
-              <input
-                type="checkbox"
-                checked={isHistogramCumulative()}
-                onInput={(event) => {
-                  const enabled = event.currentTarget.checked;
-                  setIsHistogramCumulative(enabled);
-                }}
-              />
-              <span>Cumulative histogram</span>
-            </label>
-            <label class="flex items-center gap-2 text-slate-200">
-              <input
-                type="checkbox"
-                checked={
-                  histogramNormalization() ===
-                  HistogramNormalization.Logarithmic
-                }
-                onInput={(event) => {
-                  setHistogramNormalization(
-                    event.currentTarget.checked
-                      ? HistogramNormalization.Logarithmic
-                      : HistogramNormalization.Linear,
-                  );
-                }}
-              />
-              <span>Log histogram normalization</span>
-            </label>
-            <label class="flex items-center gap-2 text-slate-200">
-              <span>Histogram window fraction</span>
-              <input
-                class="w-20 rounded border border-slate-700 bg-slate-950 px-2 py-1 text-right text-slate-100 outline-none transition focus:border-cyan-400 disabled:cursor-not-allowed disabled:border-slate-800 disabled:text-slate-500"
-                type="number"
-                min="0"
-                step="0.001"
-                value={histogramWindowFractionInput()}
-                onInput={(event) =>
-                  handleHistogramWindowFractionInput(event.currentTarget.value)
-                }
-                onBlur={() =>
-                  setHistogramWindowFractionInput(
-                    formatHistogramWindowFraction(histogramWindowFraction()),
-                  )
-                }
-                disabled={isHistogramCumulative()}
-              />
-            </label>
-            <div class="flex items-center gap-2 text-slate-200">
-              <span>Order size</span>
-              <div class="flex overflow-hidden rounded border border-slate-700">
-                <For each={orderSizeDistributions}>
-                  {(distribution) => (
-                    <button
-                      class="border-l border-slate-700 px-2 py-1 text-slate-300 transition first:border-l-0 hover:bg-slate-800 hover:text-slate-100"
-                      classList={{
-                        "bg-cyan-500 text-slate-950 hover:bg-cyan-400 hover:text-slate-950":
-                          selectedOrderSizeDistribution() ===
-                          distribution.value,
-                      }}
-                      type="button"
-                      onClick={() =>
-                        updateOrderSizeDistribution(distribution.value)
-                      }
-                    >
-                      {distribution.label}
-                    </button>
-                  )}
-                </For>
-              </div>
-            </div>
-            <div class="flex items-center gap-2 text-slate-200">
-              <span>Order price</span>
-              <div class="flex overflow-hidden rounded border border-slate-700">
-                <For each={orderPriceDistributions}>
-                  {(distribution) => (
-                    <button
-                      class="border-l border-slate-700 px-2 py-1 text-slate-300 transition first:border-l-0 hover:bg-slate-800 hover:text-slate-100"
-                      classList={{
-                        "bg-cyan-500 text-slate-950 hover:bg-cyan-400 hover:text-slate-950":
-                          selectedOrderPriceDistribution() ===
-                          distribution.value,
-                      }}
-                      type="button"
-                      onClick={() =>
-                        updateOrderPriceDistribution(distribution.value)
-                      }
-                    >
-                      {distribution.label}
-                    </button>
-                  )}
-                </For>
-              </div>
+                type="button"
+                onClick={() => setActiveSettingsTab("market")}
+              >
+                Market
+              </button>
             </div>
           </div>
+          <Show when={activeSettingsTab() === "chart"}>
+            <ChartSettings
+              candleInterval={candleInterval}
+              onCandleIntervalChange={updateCandleInterval}
+              isHeatmapEnabled={isHeatmapEnabled}
+              setIsHeatmapEnabled={setIsHeatmapEnabled}
+              isHistogramEnabled={isHistogramEnabled}
+              setIsHistogramEnabled={setIsHistogramEnabled}
+              isHistogramCumulative={isHistogramCumulative}
+              setIsHistogramCumulative={setIsHistogramCumulative}
+              histogramNormalization={histogramNormalization}
+              setHistogramNormalization={setHistogramNormalization}
+              histogramWindowFraction={histogramWindowFraction}
+              setHistogramWindowFraction={setHistogramWindowFraction}
+            />
+          </Show>
+          <Show when={activeSettingsTab() === "market"}>
+            <MarketSettings />
+          </Show>
         </div>
       </div>
       <div class="flex-1 min-h-0">

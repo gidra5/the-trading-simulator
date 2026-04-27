@@ -34,6 +34,44 @@ const simulationEventTypes = [
 type SimulationEventType = (typeof simulationEventTypes)[number];
 type SimulationEventVector = Record<SimulationEventType, number>;
 type SimulationExcitationMatrix = Record<SimulationEventType, SimulationEventVector>;
+export type MarketBehaviorSettings = {
+  publicInterestRate: number;
+  patience: number;
+  greed: number;
+  fear: number;
+  excitementHalfLife: SimulationEventVector;
+  branchingRatio: SimulationEventVector;
+  reflexivity: number;
+  contrarianism: number;
+  passiveMirroring: number;
+  liquidityChasing: number;
+  liquidityFading: number;
+  adverseSelection: number;
+  orderCrowding: number;
+  passiveAdverseSelection: number;
+  cancelCrowding: number;
+  bookRebalancing: number;
+  cancelPanic: number;
+  orderSpread: number;
+  orderPriceTail: number;
+  inSpreadOrderProbability: number;
+  orderSizeScale: number;
+  orderSizeTail: number;
+  anchorPreference: number;
+  liquidityWallAnchorPreference: number;
+  liquidityWallAnchorRange: number;
+  liquidityWallHistogramResolution: number;
+  roundPricePreference: number;
+  roundPriceAnchorMinMidDistance: number;
+  cancellationPriceMovementWindow: number;
+  cancellationNearTouchDistance: number;
+  cancellationPriceMovementBoost: number;
+  cancellationPriceMovementOrderDecay: number;
+  cancellationLocalVolumeWindow: number;
+  cancellationFarOrderWindow: number;
+  cancellationFarOrderRamp: number;
+  cancellationFarOrderMinAge: number;
+};
 
 const eventVector = (vector: SimulationEventVector): number[] =>
   simulationEventTypes.map((eventType) => vector[eventType]);
@@ -66,54 +104,123 @@ const normalizeExcitationMatrix = (
     return row.map((excitation) => positiveFiniteOrZero(excitation) * scale);
   });
 
-const publicInterestRate = 200; // total event rate per second before self-excitation
-const patience = 0.9; // probability of placing an order instead of canceling
-const greed = 0.3; // market order prob
-const fear = 0.5; // sell order prob
-const marketPressure = patience * greed;
-const orderPressure = patience * (1 - greed);
-const cancelPressure = 1 - patience;
-const publicInterest = eventVector({
-  "market-buy": marketPressure * (1 - fear),
-  "market-sell": marketPressure * fear,
-  "order-buy": orderPressure * (1 - fear),
-  "order-sell": orderPressure * fear,
-  "cancel-buy": cancelPressure * (1 - fear),
-  "cancel-sell": cancelPressure * fear,
-}).map((v) => publicInterestRate * v); // event rates per second before self-excitation
+export const defaultMarketBehaviorSettings: MarketBehaviorSettings = {
+  publicInterestRate: 200, // total event rate per second before self-excitation
+  patience: 0.9, // probability of placing an order instead of canceling
+  greed: 0.3, // market order prob
+  fear: 0.5, // sell order prob
+  excitementHalfLife: {
+    "market-buy": 0.2,
+    "market-sell": 0.2,
+    "order-buy": 1,
+    "order-sell": 1,
+    "cancel-buy": 0.05,
+    "cancel-sell": 0.05,
+  }, // seconds until extra interest halves
+  branchingRatio: {
+    "market-buy": 1,
+    "market-sell": 1,
+    "order-buy": 0.15,
+    "order-sell": 0.15,
+    "cancel-buy": 0.25,
+    "cancel-sell": 0.25,
+  }, // expected total child events caused by one event
+  reflexivity: 1, // same event excites same event
+  contrarianism: 0.12, // buy excites sell, sell excites buy
+  passiveMirroring: 0.2, // limit buy excites limit sell, and vice versa
+  liquidityChasing: 0.25, // market events excite same-side limit orders
+  liquidityFading: 0.15, // market events excite same-side cancels
+  adverseSelection: 0.1, // market buys pull asks, market sells pull bids
+  orderCrowding: 0.3, // limit orders excite same-side limit orders
+  passiveAdverseSelection: 0.05, // limit orders can make same-side liquidity pull back
+  cancelCrowding: 0.8, // cancels excite same-side cancels
+  bookRebalancing: 0.1, // cancels excite opposite-side limit orders
+  cancelPanic: 0.05, // cancels can trigger opposite-side market pressure
+  orderSpread: 0.15, // mean maker price distance percent
+  orderPriceTail: 0.1, // distance dispersion: higher = more tiny and far orders
+  inSpreadOrderProbability: 0.5,
+  orderSizeScale: 100, // mean order size
+  orderSizeTail: 0.8, // size dispersion: higher = more tiny and huge orders
+  anchorPreference: 0.35,
+  liquidityWallAnchorPreference: 0.2,
+  liquidityWallAnchorRange: 0.001,
+  liquidityWallHistogramResolution: 64,
+  roundPricePreference: 0.45,
+  roundPriceAnchorMinMidDistance: 0.005,
+  cancellationPriceMovementWindow: 5_000,
+  cancellationNearTouchDistance: 0.005,
+  cancellationPriceMovementBoost: 4,
+  cancellationPriceMovementOrderDecay: 5_000,
+  cancellationLocalVolumeWindow: 0.001,
+  cancellationFarOrderWindow: 0.15,
+  cancellationFarOrderRamp: 0.15,
+  cancellationFarOrderMinAge: 60_000,
+};
+let marketBehaviorSettings: MarketBehaviorSettings = {
+  ...defaultMarketBehaviorSettings,
+  excitementHalfLife: { ...defaultMarketBehaviorSettings.excitementHalfLife },
+  branchingRatio: { ...defaultMarketBehaviorSettings.branchingRatio },
+};
 
-const excitementHalfLife = eventVector({
-  "market-buy": 0.2,
-  "market-sell": 0.2,
-  "order-buy": 1,
-  "order-sell": 1,
-  "cancel-buy": 0.05,
-  "cancel-sell": 0.05,
-}); // seconds until extra interest halves
-const excitementDecay = excitementHalfLife.map(halfLifeToDecay);
+export const getMarketBehaviorSettings = (): MarketBehaviorSettings => ({
+  ...marketBehaviorSettings,
+  excitementHalfLife: { ...marketBehaviorSettings.excitementHalfLife },
+  branchingRatio: { ...marketBehaviorSettings.branchingRatio },
+});
 
-const branchingRatio = eventVector({
-  "market-buy": 1,
-  "market-sell": 1,
-  "order-buy": 0.15,
-  "order-sell": 0.15,
-  "cancel-buy": 0.25,
-  "cancel-sell": 0.25,
-}); // expected total child events caused by one event
-const reflexivity = 1; // same event excites same event
-const contrarianism = 0.12; // buy excites sell, sell excites buy
-const passiveMirroring = 0.2; // limit buy excites limit sell, and vice versa
-const liquidityChasing = 0.25; // market events excite same-side limit orders
-const liquidityFading = 0.15; // market events excite same-side cancels
-const adverseSelection = 0.1; // market buys pull asks, market sells pull bids
-const orderCrowding = 0.3; // limit orders excite same-side limit orders
-const passiveAdverseSelection = 0.05; // limit orders can make same-side liquidity pull back
-const cancelCrowding = 0.8; // cancels excite same-side cancels
-const bookRebalancing = 0.1; // cancels excite opposite-side limit orders
-const cancelPanic = 0.05; // cancels can trigger opposite-side market pressure
-// Keep excitations low relative to decay rates for a stable market, otherwise
-// the event counts can explode exponentially.
-const excitationMatrix = eventExcitationMatrix({
+export const setMarketBehaviorSetting = <Key extends keyof MarketBehaviorSettings>(
+  key: Key,
+  value: MarketBehaviorSettings[Key],
+): void => {
+  marketBehaviorSettings = { ...marketBehaviorSettings, [key]: value };
+};
+
+export const setMarketBehaviorEventSetting = (
+  group: "excitementHalfLife" | "branchingRatio",
+  eventType: SimulationEventType,
+  value: number,
+): void => {
+  marketBehaviorSettings = {
+    ...marketBehaviorSettings,
+    [group]: { ...marketBehaviorSettings[group], [eventType]: value },
+  };
+};
+
+const publicInterestVector = (): number[] => {
+  const { publicInterestRate, patience, greed, fear } = marketBehaviorSettings;
+  const marketPressure = patience * greed;
+  const orderPressure = patience * (1 - greed);
+  const cancelPressure = 1 - patience;
+
+  return eventVector({
+    "market-buy": marketPressure * (1 - fear),
+    "market-sell": marketPressure * fear,
+    "order-buy": orderPressure * (1 - fear),
+    "order-sell": orderPressure * fear,
+    "cancel-buy": cancelPressure * (1 - fear),
+    "cancel-sell": cancelPressure * fear,
+  }).map((v) => publicInterestRate * v); // event rates per second before self-excitation
+};
+
+const excitementDecayVector = (): number[] => eventVector(marketBehaviorSettings.excitementHalfLife).map(halfLifeToDecay);
+
+const excitationMatrix = (): number[][] => {
+  const {
+    fear,
+    reflexivity,
+    contrarianism,
+    passiveMirroring,
+    liquidityChasing,
+    liquidityFading,
+    adverseSelection,
+    orderCrowding,
+    passiveAdverseSelection,
+    cancelCrowding,
+    bookRebalancing,
+    cancelPanic,
+  } = marketBehaviorSettings;
+
+  return eventExcitationMatrix({
   "market-buy": {
     "market-buy": reflexivity * (1 - fear),
     "market-sell": contrarianism * fear,
@@ -162,28 +269,12 @@ const excitationMatrix = eventExcitationMatrix({
     "cancel-buy": passiveMirroring * (1 - fear),
     "cancel-sell": cancelCrowding * fear,
   },
-}); // row event adds rates to column events before branching-ratio scaling
-const interestExcitation = normalizeExcitationMatrix(excitationMatrix, excitementDecay, branchingRatio);
-const orderSpread = 0.15; // mean maker price distance percent
-const orderPriceTail = 0.1; // distance dispersion: higher = more tiny and far orders
-const inSpreadOrderProbability = 0.5;
-const orderSizeScale = 100; // mean order size
-const orderSizeTail = 0.8; // size dispersion: higher = more tiny and huge orders
-const anchorPreference = 0.35;
-const liquidityWallAnchorPreference = 0.2;
-const liquidityWallAnchorRange = 0.001;
-const liquidityWallHistogramResolution = 64;
-const roundPricePreference = 0.45;
-const roundPriceAnchorMinMidDistance = 0.005;
+  }); // row event adds rates to column events before branching-ratio scaling
+};
+
+const interestExcitationMatrix = (decay: number[]): number[][] =>
+  normalizeExcitationMatrix(excitationMatrix(), decay, eventVector(marketBehaviorSettings.branchingRatio));
 const priceAnchorIntervals = [60_000, 600_000, 1_800_000, 3_600_000] as const;
-const cancellationPriceMovementWindow = 5_000;
-const cancellationNearTouchDistance = 0.005;
-const cancellationPriceMovementBoost = 4;
-const cancellationPriceMovementOrderDecay = 5_000;
-const cancellationLocalVolumeWindow = 0.001;
-const cancellationFarOrderWindow = 0.15;
-const cancellationFarOrderRamp = 0.15;
-const cancellationFarOrderMinAge = 60_000;
 
 let orderPriceDistribution: OrderPriceDistribution = "power-law";
 let orderSizeDistribution: OrderSizeDistribution = "power-law";
@@ -196,9 +287,13 @@ export const setOrderPriceDistribution = (distribution: OrderPriceDistribution):
   orderPriceDistribution = distribution;
 };
 
+export const getOrderPriceDistribution = (): OrderPriceDistribution => orderPriceDistribution;
+
 export const setOrderSizeDistribution = (distribution: OrderSizeDistribution): void => {
   orderSizeDistribution = distribution;
 };
+
+export const getOrderSizeDistribution = (): OrderSizeDistribution => orderSizeDistribution;
 
 export const setCancellationTimeWeighting = (weighting: number): void => {
   cancellationTimeWeighting = clamp(weighting, 0, 1);
@@ -292,12 +387,18 @@ const sampleInSpreadOrderPrice = (spread: ReturnType<typeof marketPriceSpread>):
 
 const sampleMakerOrderPrice = (side: OrderSide): number => {
   const spread = marketPriceSpread();
-  const inSpreadPrice = sampleBernoulli(inSpreadOrderProbability) ? sampleInSpreadOrderPrice(spread) : null;
+  const inSpreadPrice = sampleBernoulli(marketBehaviorSettings.inSpreadOrderProbability)
+    ? sampleInSpreadOrderPrice(spread)
+    : null;
 
   if (inSpreadPrice !== null) return inSpreadPrice;
 
   const bestPrice = spread[side];
-  const jitter = sampleOrderDistance(orderPriceDistribution, orderSpread, orderPriceTail);
+  const jitter = sampleOrderDistance(
+    orderPriceDistribution,
+    marketBehaviorSettings.orderSpread,
+    marketBehaviorSettings.orderPriceTail,
+  );
   const direction = side === "buy" ? -1 : 1;
   return bestPrice * (1 + jitter) ** direction;
 };
@@ -318,7 +419,7 @@ const isNearMidPrice = (price: number, spread: ReturnType<typeof marketPriceSpre
 
   if (!Number.isFinite(price) || !Number.isFinite(midPrice) || midPrice <= 0) return false;
 
-  return Math.abs(price - midPrice) / midPrice <= roundPriceAnchorMinMidDistance;
+  return Math.abs(price - midPrice) / midPrice <= marketBehaviorSettings.roundPriceAnchorMinMidDistance;
 };
 
 const compactPricePoints = (points: PricePoint[], offset: number): number => {
@@ -360,7 +461,7 @@ const updateRecentPriceAnchors = (spread = marketPriceSpread(), time = Date.now(
 };
 
 const updateTouchPriceHistory = (spread = marketPriceSpread(), time = Date.now()): void => {
-  const expiresBefore = time - cancellationPriceMovementWindow;
+  const expiresBefore = time - marketBehaviorSettings.cancellationPriceMovementWindow;
 
   for (const side of ["buy", "sell"] as const) {
     const price = spread[side];
@@ -386,7 +487,7 @@ const priceMovedAwayFromOrder = (order: RestingOrder, spread = marketPriceSpread
 
   const currentDistance = Math.abs(currentTouch - order.price) / currentTouch;
 
-  if (currentDistance > cancellationNearTouchDistance) return false;
+  if (currentDistance > marketBehaviorSettings.cancellationNearTouchDistance) return false;
 
   const previousDistance = Math.abs(previousTouch - order.price) / previousTouch;
 
@@ -398,18 +499,18 @@ const farOrderCancellationProbability = (
   now = Date.now(),
   spread = marketPriceSpread(),
 ): number => {
-  if (now - order.createdAt < cancellationFarOrderMinAge) return 0;
+  if (now - order.createdAt < marketBehaviorSettings.cancellationFarOrderMinAge) return 0;
 
   const midPrice = (spread.buy + spread.sell) / 2;
 
   if (!Number.isFinite(midPrice) || midPrice <= 0) return 0;
 
   const distance = Math.abs(order.price - midPrice) / midPrice;
-  const excessDistance = distance - cancellationFarOrderWindow;
+  const excessDistance = distance - marketBehaviorSettings.cancellationFarOrderWindow;
 
   if (excessDistance <= 0) return 0;
 
-  return 1 - Math.exp(-excessDistance / cancellationFarOrderRamp);
+  return 1 - Math.exp(-excessDistance / marketBehaviorSettings.cancellationFarOrderRamp);
 };
 
 const sampleRecentHighLowAnchor = (side: OrderSide): number | null => {
@@ -439,14 +540,14 @@ const sampleSupportResistanceAnchor = (
   const padding = Math.max((priceMax - priceMin) * 0.5, currentPrice * 0.05);
   const rangeMin = Math.max(Number.MIN_VALUE, priceMin - padding);
   const rangeMax = priceMax + padding;
-  const cellHeight = (rangeMax - rangeMin) / liquidityWallHistogramResolution;
+  const cellHeight = (rangeMax - rangeMin) / marketBehaviorSettings.liquidityWallHistogramResolution;
   const histogram = getOrderBookHistogram({
     price: [rangeMin, rangeMax],
-    resolution: liquidityWallHistogramResolution,
+    resolution: marketBehaviorSettings.liquidityWallHistogramResolution,
   });
   let closestLevelPrice = 0;
   let closestDistance = Number.POSITIVE_INFINITY;
-  const sizes = new Array<number>(liquidityWallHistogramResolution).fill(0);
+  const sizes = new Array<number>(marketBehaviorSettings.liquidityWallHistogramResolution).fill(0);
   let totalSize = 0;
 
   for (const entry of histogram) {
@@ -456,7 +557,7 @@ const sampleSupportResistanceAnchor = (
     }
   }
 
-  const meanSize = totalSize / liquidityWallHistogramResolution;
+  const meanSize = totalSize / marketBehaviorSettings.liquidityWallHistogramResolution;
 
   for (let index = 0; index < histogram.length; index += 1) {
     const entry = histogram[index];
@@ -485,8 +586,8 @@ const sampleSupportResistanceAnchor = (
   if (closestDistance === Number.POSITIVE_INFINITY) return null;
 
   return side === "buy"
-    ? closestLevelPrice * sampleUniform(1, 1 + liquidityWallAnchorRange)
-    : closestLevelPrice * sampleUniform(1 - liquidityWallAnchorRange, 1);
+    ? closestLevelPrice * sampleUniform(1, 1 + marketBehaviorSettings.liquidityWallAnchorRange)
+    : closestLevelPrice * sampleUniform(1 - marketBehaviorSettings.liquidityWallAnchorRange, 1);
 };
 
 const applyOrderPricePsychology = (side: OrderSide, price: number): number => {
@@ -497,7 +598,7 @@ const applyOrderPricePsychology = (side: OrderSide, price: number): number => {
 
   let adjustedPrice = price;
 
-  if (Math.random() < anchorPreference) {
+  if (Math.random() < marketBehaviorSettings.anchorPreference) {
     const anchor = sampleRecentHighLowAnchor(side);
 
     if (anchor !== null) {
@@ -505,7 +606,7 @@ const applyOrderPricePsychology = (side: OrderSide, price: number): number => {
     }
   }
 
-  if (Math.random() < liquidityWallAnchorPreference) {
+  if (Math.random() < marketBehaviorSettings.liquidityWallAnchorPreference) {
     const anchor = sampleSupportResistanceAnchor(side, adjustedPrice, spread);
 
     if (anchor !== null) {
@@ -513,7 +614,7 @@ const applyOrderPricePsychology = (side: OrderSide, price: number): number => {
     }
   }
 
-  if (!isNearMidPrice(adjustedPrice, spread) && Math.random() < roundPricePreference) {
+  if (!isNearMidPrice(adjustedPrice, spread) && Math.random() < marketBehaviorSettings.roundPricePreference) {
     const step = roundPriceStep(adjustedPrice);
 
     if (step > 0) {
@@ -527,13 +628,13 @@ const applyOrderPricePsychology = (side: OrderSide, price: number): number => {
 const sampleOrderSize = () => {
   switch (orderSizeDistribution) {
     case "uniform":
-      return sampleUniform(0, orderSizeScale * 2);
+      return sampleUniform(0, marketBehaviorSettings.orderSizeScale * 2);
     case "log-normal":
-      return sampleLogNormal(orderSizeScale, orderSizeTail);
+      return sampleLogNormal(marketBehaviorSettings.orderSizeScale, marketBehaviorSettings.orderSizeTail);
     case "power-law":
-      return orderSizeScale * samplePowerLaw(orderSizeTail);
+      return marketBehaviorSettings.orderSizeScale * samplePowerLaw(marketBehaviorSettings.orderSizeTail);
     case "exponential":
-      return sampleExponential(orderSizeScale);
+      return sampleExponential(marketBehaviorSettings.orderSizeScale);
   }
 };
 
@@ -584,8 +685,8 @@ const randomRestingOrder = (
 
     for (let index = 0; index < priceSortedCandidates.length; index += 1) {
       const candidate = priceSortedCandidates[index]!;
-      const minPrice = candidate.order.price * (1 - cancellationLocalVolumeWindow);
-      const maxPrice = candidate.order.price * (1 + cancellationLocalVolumeWindow);
+      const minPrice = candidate.order.price * (1 - marketBehaviorSettings.cancellationLocalVolumeWindow);
+      const maxPrice = candidate.order.price * (1 + marketBehaviorSettings.cancellationLocalVolumeWindow);
 
       while (rightIndex < priceSortedCandidates.length && priceSortedCandidates[rightIndex]!.order.price <= maxPrice) {
         localVolume += priceSortedCandidates[rightIndex]!.order.size;
@@ -606,9 +707,9 @@ const randomRestingOrder = (
 
     if (weightByPriceMovement && priceMovedAwayFromOrder(candidate.order, spread)) {
       const age = Math.max(0, now - candidate.order.createdAt);
-      const recency = Math.exp(-age / cancellationPriceMovementOrderDecay);
+      const recency = Math.exp(-age / marketBehaviorSettings.cancellationPriceMovementOrderDecay);
 
-      weight *= 1 + (cancellationPriceMovementBoost - 1) * recency;
+      weight *= 1 + (marketBehaviorSettings.cancellationPriceMovementBoost - 1) * recency;
     }
 
     if (weightByFarOrder) {
@@ -714,9 +815,10 @@ const simulateEvent = (eventType: SimulationEventType): void => {
 // TODO: external factors like news, events, reports, etc. All infer a "sentiment" of the market
 // https://chatgpt.com/c/69e01063-a9c8-8390-a2db-4f314b4d59f1
 const tick = () => {
+  const excitementDecay = excitementDecayVector();
   const { events, excitedInterest: nextExcitedInterest } = sampleMultivariateHawkesProcessEventTimes(
-    publicInterest,
-    interestExcitation,
+    publicInterestVector(),
+    interestExcitationMatrix(excitementDecay),
     excitementDecay,
     tickTime,
     excitedInterest,
@@ -740,4 +842,3 @@ export const run = () => {
     clearInterval(intervalId);
   };
 };
-
