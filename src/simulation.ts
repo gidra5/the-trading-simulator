@@ -172,13 +172,16 @@ const liquidityWallAnchorPreference = 0.2;
 const liquidityWallAnchorRange = 0.001;
 const liquidityWallHistogramResolution = 64;
 const roundPricePreference = 0.45;
+const roundPriceAnchorMinMidDistance = 0.005;
 const priceAnchorIntervals = [60_000, 600_000, 1_800_000, 3_600_000] as const;
 const cancellationPriceMovementWindow = 5_000;
 const cancellationNearTouchDistance = 0.005;
 const cancellationPriceMovementBoost = 4;
+const cancellationPriceMovementOrderDecay = 5_000;
 const cancellationLocalVolumeWindow = 0.001;
 const cancellationFarOrderWindow = 0.15;
 const cancellationFarOrderRamp = 0.15;
+const cancellationFarOrderMinAge = 60_000;
 
 let orderPriceDistribution: OrderPriceDistribution = "uniform";
 let orderSizeDistribution: OrderSizeDistribution = "uniform";
@@ -287,6 +290,14 @@ const roundPriceStep = (price: number): number => {
   return magnitude * 0.01;
 };
 
+const isNearMidPrice = (price: number, spread: ReturnType<typeof marketPriceSpread>): boolean => {
+  const midPrice = (spread.buy + spread.sell) / 2;
+
+  if (!Number.isFinite(price) || !Number.isFinite(midPrice) || midPrice <= 0) return false;
+
+  return Math.abs(price - midPrice) / midPrice <= roundPriceAnchorMinMidDistance;
+};
+
 const compactPricePoints = (points: PricePoint[], offset: number): number => {
   if (offset < 64 || offset * 2 < points.length) return offset;
 
@@ -359,7 +370,13 @@ const priceMovedAwayFromOrder = (order: RestingOrder, spread = marketPriceSpread
   return currentDistance > previousDistance;
 };
 
-const farOrderCancellationProbability = (order: RestingOrder, spread = marketPriceSpread()): number => {
+const farOrderCancellationProbability = (
+  order: RestingOrder,
+  now = Date.now(),
+  spread = marketPriceSpread(),
+): number => {
+  if (now - order.createdAt < cancellationFarOrderMinAge) return 0;
+
   const midPrice = (spread.buy + spread.sell) / 2;
 
   if (!Number.isFinite(midPrice) || midPrice <= 0) return 0;
@@ -473,7 +490,7 @@ const applyOrderPricePsychology = (side: OrderSide, price: number): number => {
     }
   }
 
-  if (Math.random() < roundPricePreference) {
+  if (!isNearMidPrice(adjustedPrice, spread) && Math.random() < roundPricePreference) {
     const step = roundPriceStep(adjustedPrice);
 
     if (step > 0) {
@@ -565,11 +582,14 @@ const randomRestingOrder = (
     let weight = weightByLocalVolume ? (localVolumeByCandidateIndex.get(candidate.index) ?? Number.EPSILON) : 1;
 
     if (weightByPriceMovement && priceMovedAwayFromOrder(candidate.order, spread)) {
-      weight *= cancellationPriceMovementBoost;
+      const age = Math.max(0, now - candidate.order.createdAt);
+      const recency = Math.exp(-age / cancellationPriceMovementOrderDecay);
+
+      weight *= 1 + (cancellationPriceMovementBoost - 1) * recency;
     }
 
     if (weightByFarOrder) {
-      weight *= farOrderCancellationProbability(candidate.order, spread);
+      weight *= farOrderCancellationProbability(candidate.order, now, spread);
     }
 
     if (weightByAge) {
