@@ -247,6 +247,106 @@ export const sampleHawkesProcessEvents = (
   return { events, excitedInterest };
 };
 
+export type MultivariateHawkesProcessEvent = {
+  time: number;
+  type: number;
+};
+
+export type MultivariateHawkesProcessEventTimes = {
+  events: MultivariateHawkesProcessEvent[];
+  excitedInterest: number[];
+};
+
+const positiveFiniteOrZero = (value: number): number =>
+  Number.isFinite(value) && value > 0 ? value : 0;
+
+export const sampleMultivariateHawkesProcessEventTimes = (
+  baselineRatePerSecond: number[],
+  excitationPerEvent: number[][],
+  decayPerSecond: number[],
+  intervalMs: number,
+  initialExcitedRatePerSecond: number[] = [],
+): MultivariateHawkesProcessEventTimes => {
+  const dimension = baselineRatePerSecond.length;
+  const emptyResult: MultivariateHawkesProcessEventTimes = {
+    events: [],
+    excitedInterest: new Array(dimension).fill(0),
+  };
+
+  if (dimension === 0 || !Number.isFinite(intervalMs) || intervalMs <= 0) {
+    return emptyResult;
+  }
+
+  const intervalSeconds = intervalMs / 1000;
+  const baselineRate = baselineRatePerSecond.map(positiveFiniteOrZero);
+  const decayRate = baselineRate.map((_, index) =>
+    positiveFiniteOrZero(decayPerSecond[index] ?? 0),
+  );
+  const excitedRate = baselineRate.map((_, index) =>
+    positiveFiniteOrZero(initialExcitedRatePerSecond[index] ?? 0),
+  );
+  const eventExcitation = baselineRate.map((_, sourceIndex) =>
+    baselineRate.map((__, targetIndex) =>
+      positiveFiniteOrZero(excitationPerEvent[sourceIndex]?.[targetIndex] ?? 0),
+    ),
+  );
+  const events: MultivariateHawkesProcessEvent[] = [];
+  let time = 0;
+
+  while (time < intervalSeconds) {
+    const intensityUpperBound = baselineRate.reduce(
+      (total, baseline, index) => total + baseline + excitedRate[index],
+      0,
+    );
+
+    if (intensityUpperBound <= 0) break;
+
+    const waitingTime = sampleExponential(1 / intensityUpperBound);
+    const nextTime = time + waitingTime;
+    const elapsedTime =
+      nextTime >= intervalSeconds ? intervalSeconds - time : waitingTime;
+
+    for (let index = 0; index < dimension; index += 1) {
+      if (decayRate[index] > 0) {
+        excitedRate[index] *= Math.exp(-decayRate[index] * elapsedTime);
+      }
+    }
+
+    if (nextTime >= intervalSeconds) break;
+
+    time = nextTime;
+
+    const totalIntensity = baselineRate.reduce(
+      (total, baseline, index) => total + baseline + excitedRate[index],
+      0,
+    );
+
+    if (!sampleBernoulli(totalIntensity / intensityUpperBound)) {
+      continue;
+    }
+
+    let eventType = 0;
+    let cursor = sampleUniform(0, totalIntensity);
+
+    for (let index = 0; index < dimension; index += 1) {
+      cursor -= baselineRate[index] + excitedRate[index];
+
+      if (cursor <= 0) {
+        eventType = index;
+        break;
+      }
+    }
+
+    events.push({ time: time * 1000, type: eventType });
+
+    for (let index = 0; index < dimension; index += 1) {
+      excitedRate[index] += eventExcitation[eventType][index];
+    }
+  }
+
+  return { events, excitedInterest: excitedRate };
+};
+
 export const sampleExponential = (mean: number): number => {
   if (!Number.isFinite(mean) || mean <= 0) return 0;
 
