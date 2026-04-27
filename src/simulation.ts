@@ -16,6 +16,7 @@ export type OrderPriceDistribution =
   | "uniform"
   | "symmetric-uniform"
   | "normal"
+  | "abs-normal"
   | "log-normal"
   | "power-law"
   | "exponential";
@@ -164,9 +165,9 @@ const excitationMatrix = eventExcitationMatrix({
 }); // row event adds rates to column events before branching-ratio scaling
 const interestExcitation = normalizeExcitationMatrix(excitationMatrix, excitementDecay, branchingRatio);
 const orderSpread = 0.15; // mean maker price distance percent
-const orderPriceTail = 1.5; // distance dispersion: higher = more tiny and far orders
+const orderPriceTail = 0.1; // distance dispersion: higher = more tiny and far orders
 const orderSizeScale = 100; // mean order size
-const orderSizeTail = 1.5; // size dispersion: higher = more tiny and huge orders
+const orderSizeTail = 0.1; // size dispersion: higher = more tiny and huge orders
 const anchorPreference = 0.35;
 const liquidityWallAnchorPreference = 0.2;
 const liquidityWallAnchorRange = 0.001;
@@ -183,7 +184,7 @@ const cancellationFarOrderWindow = 0.15;
 const cancellationFarOrderRamp = 0.15;
 const cancellationFarOrderMinAge = 60_000;
 
-let orderPriceDistribution: OrderPriceDistribution = "uniform";
+let orderPriceDistribution: OrderPriceDistribution = "abs-normal";
 let orderSizeDistribution: OrderSizeDistribution = "uniform";
 let cancellationTimeWeighting = 0.5;
 let cancellationPriceMovementWeighting = 0.5;
@@ -263,6 +264,8 @@ const sampleOrderDistance = (distribution: OrderPriceDistribution, scale: number
       return sampleUniform(-scale, scale);
     case "normal":
       return sampleNormal(0, scale);
+    case "abs-normal":
+      return Math.abs(sampleNormal(0, scale));
     case "log-normal":
       return sampleLogNormal(scale, tail);
     case "power-law":

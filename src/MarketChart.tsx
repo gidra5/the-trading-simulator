@@ -37,6 +37,7 @@ const orderPriceDistributions: {
   { value: "uniform", label: "Uniform" },
   { value: "symmetric-uniform", label: "Sym uniform" },
   { value: "normal", label: "Normal" },
+  { value: "abs-normal", label: "Abs normal" },
   { value: "log-normal", label: "Log normal" },
   { value: "power-law", label: "Power law" },
   { value: "exponential", label: "Exponential" },
@@ -66,9 +67,9 @@ export const MarketChart: Component = () => {
   const [isHistogramEnabled, setIsHistogramEnabled] = createSignal(true);
   const [isHistogramCumulative, setIsHistogramCumulative] = createSignal(true);
   const [selectedOrderPriceDistribution, setSelectedOrderPriceDistribution] =
-    createSignal<OrderPriceDistribution>("exponential");
+    createSignal<OrderPriceDistribution>("abs-normal");
   const [selectedOrderSizeDistribution, setSelectedOrderSizeDistribution] =
-    createSignal<OrderSizeDistribution>("exponential");
+    createSignal<OrderSizeDistribution>("uniform");
   const [histogramNormalization, setHistogramNormalization] =
     createSignal<HistogramNormalization>(HistogramNormalization.Linear);
   const [histogramWindowFraction, setHistogramWindowFraction] =
