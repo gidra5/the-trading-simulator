@@ -1,7 +1,7 @@
-export const sampleBernoulli = (probability: number): boolean => {
-  if (!Number.isFinite(probability)) return false;
+import { clamp } from "./utils";
 
-  return Math.random() < Math.min(Math.max(probability, 0), 1);
+export const sampleBernoulli = (probability: number): boolean => {
+  return Math.random() < probability;
 };
 
 export const sampleUniform = (min: number, max: number): number => {
@@ -10,15 +10,8 @@ export const sampleUniform = (min: number, max: number): number => {
   return min + Math.random() * (max - min);
 };
 
-export const sampleUniformInteger = (
-  min: number,
-  maxExclusive: number,
-): number => {
-  if (
-    !Number.isFinite(min) ||
-    !Number.isFinite(maxExclusive) ||
-    maxExclusive <= min
-  ) {
+export const sampleUniformInteger = (min: number, maxExclusive: number): number => {
+  if (!Number.isFinite(min) || !Number.isFinite(maxExclusive) || maxExclusive <= min) {
     return min;
   }
 
@@ -34,12 +27,7 @@ export const samplePowerLaw = (exponent: number): number => {
 };
 
 export const sampleLogNormal = (median: number, volatility: number): number => {
-  if (
-    !Number.isFinite(median) ||
-    !Number.isFinite(volatility) ||
-    median <= 0 ||
-    volatility < 0
-  ) {
+  if (!Number.isFinite(median) || !Number.isFinite(volatility) || median <= 0 || volatility < 0) {
     return 0;
   }
 
@@ -51,11 +39,7 @@ export const sampleLogNormal = (median: number, volatility: number): number => {
 };
 
 export const sampleNormal = (mean: number, standardDeviation: number): number => {
-  if (
-    !Number.isFinite(mean) ||
-    !Number.isFinite(standardDeviation) ||
-    standardDeviation < 0
-  ) {
+  if (!Number.isFinite(mean) || !Number.isFinite(standardDeviation) || standardDeviation < 0) {
     return 0;
   }
 
@@ -81,10 +65,8 @@ export const samplePoisson = (lambda: number): number => {
   return events - 1;
 };
 
-export const samplePoissonProcessEvents = (
-  ratePerSecond: number,
-  intervalMs: number,
-): number => samplePoisson((ratePerSecond * intervalMs) / 1000);
+export const samplePoissonProcessEvents = (ratePerSecond: number, intervalMs: number): number =>
+  samplePoisson((ratePerSecond * intervalMs) / 1000);
 
 export const sampleExponential = (mean: number): number => {
   if (!Number.isFinite(mean) || mean <= 0) return 0;

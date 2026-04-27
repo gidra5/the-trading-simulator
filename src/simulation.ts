@@ -16,6 +16,7 @@ import {
   sampleUniform,
   sampleUniformInteger,
 } from "./distributions";
+import { assert } from "./utils";
 
 export type OrderSizeDistribution =
   | "uniform"
@@ -113,11 +114,7 @@ const trackRestingOrder = (order: RestingOrder): void => {
 
 const removeRestingOrder = (index: number): RestingOrder => {
   const [order] = restingOrders.splice(index, 1);
-
-  // todo: assert
-  if (!order) {
-    throw new Error("Expected tracked resting order to exist");
-  }
+  assert(order, "Expected tracked resting order to exist");
 
   return order;
 };

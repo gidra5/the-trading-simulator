@@ -1,4 +1,5 @@
 import type { ChartViewport } from "./Chart";
+import { clamp } from "./utils";
 
 type DragState = {
   pointerId: number;
@@ -35,9 +36,6 @@ type ChartControls = {
 const zoomIntensity = 0.0015;
 const minTimeSpanMs = 1_000;
 const minPriceSpan = 0.000_001;
-
-const clamp = (value: number, min: number, max: number): number =>
-  Math.min(Math.max(value, min), max);
 
 const scaleRange = (
   range: readonly [number, number],
