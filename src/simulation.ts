@@ -66,9 +66,9 @@ const normalizeExcitationMatrix = (
     return row.map((excitation) => positiveFiniteOrZero(excitation) * scale);
   });
 
-const publicInterestRate = 20; // total event rate per second before self-excitation
-const patience = 0.99; // probability of placing an order instead of canceling
-const greed = 0.4; // market order prob
+const publicInterestRate = 200; // total event rate per second before self-excitation
+const patience = 0.9; // probability of placing an order instead of canceling
+const greed = 0.3; // market order prob
 const fear = 0.5; // sell order prob
 const marketPressure = patience * greed;
 const orderPressure = patience * (1 - greed);
@@ -83,10 +83,10 @@ const publicInterest = eventVector({
 }).map((v) => publicInterestRate * v); // event rates per second before self-excitation
 
 const excitementHalfLife = eventVector({
-  "market-buy": 0.02,
-  "market-sell": 0.02,
-  "order-buy": 0.05,
-  "order-sell": 0.05,
+  "market-buy": 0.2,
+  "market-sell": 0.2,
+  "order-buy": 1,
+  "order-sell": 1,
   "cancel-buy": 0.05,
   "cancel-sell": 0.05,
 }); // seconds until extra interest halves
@@ -166,8 +166,9 @@ const excitationMatrix = eventExcitationMatrix({
 const interestExcitation = normalizeExcitationMatrix(excitationMatrix, excitementDecay, branchingRatio);
 const orderSpread = 0.15; // mean maker price distance percent
 const orderPriceTail = 0.1; // distance dispersion: higher = more tiny and far orders
+const inSpreadOrderProbability = 0.5;
 const orderSizeScale = 100; // mean order size
-const orderSizeTail = 0.1; // size dispersion: higher = more tiny and huge orders
+const orderSizeTail = 0.8; // size dispersion: higher = more tiny and huge orders
 const anchorPreference = 0.35;
 const liquidityWallAnchorPreference = 0.2;
 const liquidityWallAnchorRange = 0.001;
@@ -184,8 +185,8 @@ const cancellationFarOrderWindow = 0.15;
 const cancellationFarOrderRamp = 0.15;
 const cancellationFarOrderMinAge = 60_000;
 
-let orderPriceDistribution: OrderPriceDistribution = "abs-normal";
-let orderSizeDistribution: OrderSizeDistribution = "uniform";
+let orderPriceDistribution: OrderPriceDistribution = "power-law";
+let orderSizeDistribution: OrderSizeDistribution = "power-law";
 let cancellationTimeWeighting = 0.5;
 let cancellationPriceMovementWeighting = 0.5;
 let cancellationLocalVolumeWeighting = 0.5;
@@ -275,8 +276,27 @@ const sampleOrderDistance = (distribution: OrderPriceDistribution, scale: number
   }
 };
 
+const inSpreadReach = -0.01;
+const sampleInSpreadOrderPrice = (spread: ReturnType<typeof marketPriceSpread>): number | null => {
+  const bestBid = spread.sell;
+  const bestAsk = spread.buy;
+
+  if (!Number.isFinite(bestBid) || !Number.isFinite(bestAsk) || bestBid <= 0 || bestAsk <= bestBid) return null;
+
+  const padding = (bestAsk - bestBid) * inSpreadReach;
+  const minPrice = bestBid + padding;
+  const maxPrice = bestAsk - padding;
+
+  return maxPrice > minPrice ? sampleUniform(minPrice, maxPrice) : (bestBid + bestAsk) / 2;
+};
+
 const sampleMakerOrderPrice = (side: OrderSide): number => {
-  const bestPrice = marketPriceSpread()[side];
+  const spread = marketPriceSpread();
+  const inSpreadPrice = sampleBernoulli(inSpreadOrderProbability) ? sampleInSpreadOrderPrice(spread) : null;
+
+  if (inSpreadPrice !== null) return inSpreadPrice;
+
+  const bestPrice = spread[side];
   const jitter = sampleOrderDistance(orderPriceDistribution, orderSpread, orderPriceTail);
   const direction = side === "buy" ? -1 : 1;
   return bestPrice * (1 + jitter) ** direction;
@@ -720,3 +740,4 @@ export const run = () => {
     clearInterval(intervalId);
   };
 };
+
