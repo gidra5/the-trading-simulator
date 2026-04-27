@@ -1,4 +1,4 @@
-import { cancelOrder, hasOrder, makeOrder, marketPriceSpread, type OrderSide, takeOrder } from "./market";
+import { cancelOrder, getOrderBookHistogram, hasOrder, makeOrder, marketPriceSpread, type OrderSide, takeOrder } from "./market";
 import {
   sampleExponential,
   sampleLogNormal,
@@ -8,7 +8,7 @@ import {
   sampleUniform,
   sampleUniformInteger,
 } from "./distributions";
-import { assert } from "./utils";
+import { assert, clamp } from "./utils";
 
 export type OrderSizeDistribution = "uniform" | "log-normal" | "power-law" | "exponential";
 export type OrderPriceDistribution =
@@ -162,10 +162,16 @@ const excitationMatrix = eventExcitationMatrix({
   },
 }); // row event adds rates to column events before branching-ratio scaling
 const interestExcitation = normalizeExcitationMatrix(excitationMatrix, excitementDecay, branchingRatio);
-const orderSpread = 0.02; // mean maker price distance
+const orderSpread = 0.15; // mean maker price distance percent
 const orderPriceTail = 1.5; // distance dispersion: higher = more tiny and far orders
 const orderSizeScale = 100; // mean order size
 const orderSizeTail = 1.5; // size dispersion: higher = more tiny and huge orders
+const anchorPreference = 0.35;
+const liquidityWallAnchorPreference = 0.2;
+const liquidityWallAnchorRange = 0.001;
+const liquidityWallHistogramResolution = 64;
+const roundPricePreference = 0.45;
+const priceAnchorIntervals = [60_000, 600_000, 1_800_000, 3_600_000] as const;
 
 let orderPriceDistribution: OrderPriceDistribution = "uniform";
 let orderSizeDistribution: OrderSizeDistribution = "uniform";
@@ -182,8 +188,26 @@ type RestingOrder = {
   id: number;
   side: OrderSide;
 };
+type PricePoint = {
+  time: number;
+  price: number;
+};
+type PriceAnchorWindow = {
+  durationMs: number;
+  highs: PricePoint[];
+  lows: PricePoint[];
+  highOffset: number;
+  lowOffset: number;
+};
 
 const restingOrders: RestingOrder[] = [];
+const priceAnchorWindows: PriceAnchorWindow[] = priceAnchorIntervals.map((durationMs) => ({
+  durationMs,
+  highs: [],
+  lows: [],
+  highOffset: 0,
+  lowOffset: 0,
+}));
 
 let excitedInterest = eventVector({
   "market-buy": 0,
@@ -212,10 +236,171 @@ const sampleOrderDistance = (distribution: OrderPriceDistribution, scale: number
 };
 
 const sampleMakerOrderPrice = (side: OrderSide): number => {
-  const jitter = sampleOrderDistance(orderPriceDistribution, orderSpread, orderPriceTail);
   const bestPrice = marketPriceSpread()[side];
+  const jitter = sampleOrderDistance(orderPriceDistribution, orderSpread, orderPriceTail);
   const direction = side === "buy" ? -1 : 1;
   return bestPrice * (1 + jitter) ** direction;
+};
+
+const roundPriceStep = (price: number): number => {
+  if (!Number.isFinite(price) || price <= 0) return 0;
+
+  const magnitude = 10 ** Math.floor(Math.log10(price));
+  const roll = Math.random();
+
+  if (roll < 0.15) return magnitude * 0.1;
+  if (roll < 0.45) return magnitude * 0.05;
+  return magnitude * 0.01;
+};
+
+const compactPricePoints = (points: PricePoint[], offset: number): number => {
+  if (offset < 64 || offset * 2 < points.length) return offset;
+
+  points.splice(0, offset);
+  return 0;
+};
+
+const updateRecentPriceAnchors = (spread = marketPriceSpread(), time = Date.now()): void => {
+  const price = (spread.buy + spread.sell) / 2;
+
+  if (!Number.isFinite(price) || price <= 0) return;
+
+  for (const window of priceAnchorWindows) {
+    const expiresBefore = time - window.durationMs;
+
+    while (window.highOffset < window.highs.length && window.highs[window.highOffset]!.time < expiresBefore) {
+      window.highOffset += 1;
+    }
+
+    while (window.lowOffset < window.lows.length && window.lows[window.lowOffset]!.time < expiresBefore) {
+      window.lowOffset += 1;
+    }
+
+    while (window.highs.length > window.highOffset && window.highs[window.highs.length - 1]!.price <= price) {
+      window.highs.pop();
+    }
+
+    while (window.lows.length > window.lowOffset && window.lows[window.lows.length - 1]!.price >= price) {
+      window.lows.pop();
+    }
+
+    window.highs.push({ time, price });
+    window.lows.push({ time, price });
+    window.highOffset = compactPricePoints(window.highs, window.highOffset);
+    window.lowOffset = compactPricePoints(window.lows, window.lowOffset);
+  }
+};
+
+const sampleRecentHighLowAnchor = (side: OrderSide): number | null => {
+  const window = priceAnchorWindows[sampleUniformInteger(0, priceAnchorWindows.length)];
+
+  if (!window) return null;
+
+  const high = window.highs[window.highOffset]?.price;
+  const low = window.lows[window.lowOffset]?.price;
+  const preferSideAnchor = Math.random() < 0.7;
+  const anchor = preferSideAnchor === (side === "buy") ? low : high;
+
+  return Number.isFinite(anchor) && anchor > 0 ? anchor : null;
+};
+
+const sampleSupportResistanceAnchor = (
+  side: OrderSide,
+  candidatePrice: number,
+  spread: ReturnType<typeof marketPriceSpread>,
+): number | null => {
+  const currentPrice = (spread.buy + spread.sell) / 2;
+
+  if (!Number.isFinite(currentPrice) || currentPrice <= 0 || !Number.isFinite(candidatePrice)) return null;
+
+  const priceMin = Math.min(spread.buy, spread.sell, candidatePrice);
+  const priceMax = Math.max(spread.buy, spread.sell, candidatePrice);
+  const padding = Math.max((priceMax - priceMin) * 0.5, currentPrice * 0.05);
+  const rangeMin = Math.max(Number.MIN_VALUE, priceMin - padding);
+  const rangeMax = priceMax + padding;
+  const cellHeight = (rangeMax - rangeMin) / liquidityWallHistogramResolution;
+  const histogram = getOrderBookHistogram({
+    price: [rangeMin, rangeMax],
+    resolution: liquidityWallHistogramResolution,
+  });
+  let closestLevelPrice = 0;
+  let closestDistance = Number.POSITIVE_INFINITY;
+  const sizes = new Array<number>(liquidityWallHistogramResolution).fill(0);
+  let totalSize = 0;
+
+  for (const entry of histogram) {
+    if (entry.kind === side) {
+      sizes[entry.y] = entry.size;
+      totalSize += entry.size;
+    }
+  }
+
+  const meanSize = totalSize / liquidityWallHistogramResolution;
+
+  for (let index = 0; index < histogram.length; index += 1) {
+    const entry = histogram[index];
+
+    if (!entry || entry.kind !== side || entry.size <= meanSize || entry.size <= 0) continue;
+
+    const previousSize = sizes[entry.y - 1] ?? 0;
+    const nextSize = sizes[entry.y + 1] ?? 0;
+
+    if (entry.size < previousSize * 1.5 && entry.size < nextSize * 1.5) continue;
+
+    const levelPrice = rangeMin + (entry.y + 0.5) * cellHeight;
+    const isSupport = side === "buy" && levelPrice < currentPrice;
+    const isResistance = side === "sell" && levelPrice > currentPrice;
+
+    if (isSupport || isResistance) {
+      const distance = Math.abs(levelPrice - candidatePrice);
+
+      if (distance < closestDistance) {
+        closestLevelPrice = levelPrice;
+        closestDistance = distance;
+      }
+    }
+  }
+
+  if (closestDistance === Number.POSITIVE_INFINITY) return null;
+
+  return side === "buy"
+    ? closestLevelPrice * sampleUniform(1, 1 + liquidityWallAnchorRange)
+    : closestLevelPrice * sampleUniform(1 - liquidityWallAnchorRange, 1);
+};
+
+const applyOrderPricePsychology = (side: OrderSide, price: number): number => {
+  if (!Number.isFinite(price) || price <= 0) return price;
+
+  const spread = marketPriceSpread();
+  updateRecentPriceAnchors(spread);
+
+  let adjustedPrice = price;
+
+  if (Math.random() < anchorPreference) {
+    const anchor = sampleRecentHighLowAnchor(side);
+
+    if (anchor !== null) {
+      adjustedPrice += (anchor - adjustedPrice) * sampleUniform(0.15, 0.6);
+    }
+  }
+
+  if (Math.random() < liquidityWallAnchorPreference) {
+    const anchor = sampleSupportResistanceAnchor(side, adjustedPrice, spread);
+
+    if (anchor !== null) {
+      adjustedPrice = anchor;
+    }
+  }
+
+  if (Math.random() < roundPricePreference) {
+    const step = roundPriceStep(adjustedPrice);
+
+    if (step > 0) {
+      adjustedPrice = Math.round(adjustedPrice / step) * step;
+    }
+  }
+
+  return side === "buy" ? clamp(adjustedPrice, Number.MIN_VALUE, spread.buy) : Math.max(adjustedPrice, spread.sell);
 };
 
 const sampleOrderSize = () => {
@@ -278,7 +463,6 @@ const simulateCancellationEvent = (side: OrderSide): boolean => {
 };
 
 const simulateLimitOrderEvent = (side: OrderSide) => {
-  // TODO: psychology, like preferring round prices
   // TODO: depend on recent returns for buy/sell with two "populations" of trend following and contrarians
   // TODO: fee (percent from what you buy) and slippage (difference between expected and actual)
   // TODO: simulate account internal state (bounded balance)
@@ -286,12 +470,11 @@ const simulateLimitOrderEvent = (side: OrderSide) => {
   // TODO: simulate order spitting for large ones
   // TODO: stop loss, take profit liquidation simulations
   // TODO: increase size if many wins for one actor, decrease for losses (or vice versa, depending on the gamblingness?)
-  // TODO: anchoring
   // TODO: delays in price reaction
   const size = sampleOrderSize();
 
   // TODO: simulate initial interest
-  const price = sampleMakerOrderPrice(side);
+  const price = applyOrderPricePsychology(side, sampleMakerOrderPrice(side));
   const order = makeOrder(side, { price, size });
 
   if (order.restingSize > 0) {
@@ -308,25 +491,30 @@ const simulateEvent = (eventType: SimulationEventType): void => {
   switch (eventType) {
     case "market-buy":
       simulateMarketOrderEvent("buy");
-      return;
+      break;
     case "market-sell":
       simulateMarketOrderEvent("sell");
-      return;
+      break;
     case "order-buy":
       simulateLimitOrderEvent("buy");
-      return;
+      break;
     case "order-sell":
       simulateLimitOrderEvent("sell");
-      return;
+      break;
     case "cancel-buy":
       simulateCancellationEvent("buy");
-      return;
+      break;
     case "cancel-sell":
       simulateCancellationEvent("sell");
-      return;
+      break;
   }
+
+  updateRecentPriceAnchors();
 };
 
+// TODO: separate economy simulation model to allow for news impacts
+// TODO: separate trading platform model for complex market behavior
+// TODO: separate market agent model to simulate individual behavior
 // TODO: Trading at certain times of the day
 // TODO: Trading character defined by what parameters and features a particular actor uses
 // TODO: external factors like news, events, reports, etc. All infer a "sentiment" of the market
@@ -346,7 +534,7 @@ const tick = () => {
   }
 };
 
-// todo: move to a worker
+// TODO: move to a worker
 export const run = () => {
   excitedInterest = excitedInterest.map(() => 0);
   const intervalId = setInterval(tick, tickTime);
