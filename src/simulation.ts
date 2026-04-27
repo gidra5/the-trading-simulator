@@ -173,10 +173,19 @@ const liquidityWallAnchorRange = 0.001;
 const liquidityWallHistogramResolution = 64;
 const roundPricePreference = 0.45;
 const priceAnchorIntervals = [60_000, 600_000, 1_800_000, 3_600_000] as const;
+const cancellationPriceMovementWindow = 5_000;
+const cancellationNearTouchDistance = 0.005;
+const cancellationPriceMovementBoost = 4;
+const cancellationLocalVolumeWindow = 0.001;
+const cancellationFarOrderWindow = 0.15;
+const cancellationFarOrderRamp = 0.15;
 
 let orderPriceDistribution: OrderPriceDistribution = "uniform";
 let orderSizeDistribution: OrderSizeDistribution = "uniform";
-let cancellationTimeWeighting = 1;
+let cancellationTimeWeighting = 0.5;
+let cancellationPriceMovementWeighting = 0.5;
+let cancellationLocalVolumeWeighting = 0.5;
+let cancellationFarOrderWeighting = 0.5;
 
 export const setOrderPriceDistribution = (distribution: OrderPriceDistribution): void => {
   orderPriceDistribution = distribution;
@@ -190,9 +199,23 @@ export const setCancellationTimeWeighting = (weighting: number): void => {
   cancellationTimeWeighting = clamp(weighting, 0, 1);
 };
 
+export const setCancellationPriceMovementWeighting = (weighting: number): void => {
+  cancellationPriceMovementWeighting = clamp(weighting, 0, 1);
+};
+
+export const setCancellationLocalVolumeWeighting = (weighting: number): void => {
+  cancellationLocalVolumeWeighting = clamp(weighting, 0, 1);
+};
+
+export const setCancellationFarOrderWeighting = (weighting: number): void => {
+  cancellationFarOrderWeighting = clamp(weighting, 0, 1);
+};
+
 type RestingOrder = {
   id: number;
   side: OrderSide;
+  price: number;
+  size: number;
   createdAt: number;
 };
 type PricePoint = {
@@ -208,6 +231,10 @@ type PriceAnchorWindow = {
 };
 
 const restingOrders: RestingOrder[] = [];
+const touchPriceHistory: Record<OrderSide, PricePoint[]> = {
+  buy: [],
+  sell: [],
+};
 const priceAnchorWindows: PriceAnchorWindow[] = priceAnchorIntervals.map((durationMs) => ({
   durationMs,
   highs: [],
@@ -296,6 +323,53 @@ const updateRecentPriceAnchors = (spread = marketPriceSpread(), time = Date.now(
     window.highOffset = compactPricePoints(window.highs, window.highOffset);
     window.lowOffset = compactPricePoints(window.lows, window.lowOffset);
   }
+};
+
+const updateTouchPriceHistory = (spread = marketPriceSpread(), time = Date.now()): void => {
+  const expiresBefore = time - cancellationPriceMovementWindow;
+
+  for (const side of ["buy", "sell"] as const) {
+    const price = spread[side];
+
+    if (!Number.isFinite(price) || price <= 0) continue;
+
+    const history = touchPriceHistory[side];
+    history.push({ time, price });
+
+    while (history.length > 1 && history[1]!.time <= expiresBefore) {
+      history.shift();
+    }
+  }
+};
+
+const priceMovedAwayFromOrder = (order: RestingOrder, spread = marketPriceSpread()): boolean => {
+  const currentTouch = spread[order.side];
+  const previousTouch = touchPriceHistory[order.side][0]?.price;
+
+  if (!Number.isFinite(currentTouch) || currentTouch <= 0 || !Number.isFinite(previousTouch) || previousTouch <= 0) {
+    return false;
+  }
+
+  const currentDistance = Math.abs(currentTouch - order.price) / currentTouch;
+
+  if (currentDistance > cancellationNearTouchDistance) return false;
+
+  const previousDistance = Math.abs(previousTouch - order.price) / previousTouch;
+
+  return currentDistance > previousDistance;
+};
+
+const farOrderCancellationProbability = (order: RestingOrder, spread = marketPriceSpread()): number => {
+  const midPrice = (spread.buy + spread.sell) / 2;
+
+  if (!Number.isFinite(midPrice) || midPrice <= 0) return 0;
+
+  const distance = Math.abs(order.price - midPrice) / midPrice;
+  const excessDistance = distance - cancellationFarOrderWindow;
+
+  if (excessDistance <= 0) return 0;
+
+  return 1 - Math.exp(-excessDistance / cancellationFarOrderRamp);
 };
 
 const sampleRecentHighLowAnchor = (side: OrderSide): number | null => {
@@ -437,6 +511,9 @@ const removeRestingOrder = (index: number): RestingOrder => {
 const randomRestingOrder = (
   side: OrderSide,
   weightByAge = false,
+  weightByPriceMovement = false,
+  weightByLocalVolume = false,
+  weightByFarOrder = false,
 ): {
   order: RestingOrder;
   index: number;
@@ -454,19 +531,65 @@ const randomRestingOrder = (
     .filter((candidate) => candidate.order.side === side);
 
   if (candidates.length === 0) return null;
-  if (!weightByAge) return candidates[sampleUniformInteger(0, candidates.length)] ?? null;
 
   const now = Date.now();
+  const spread = marketPriceSpread();
+  const localVolumeByCandidateIndex = new Map<number, number>();
+
+  if (weightByLocalVolume) {
+    const priceSortedCandidates = [...candidates].sort((left, right) => left.order.price - right.order.price);
+    let leftIndex = 0;
+    let rightIndex = 0;
+    let localVolume = 0;
+
+    for (let index = 0; index < priceSortedCandidates.length; index += 1) {
+      const candidate = priceSortedCandidates[index]!;
+      const minPrice = candidate.order.price * (1 - cancellationLocalVolumeWindow);
+      const maxPrice = candidate.order.price * (1 + cancellationLocalVolumeWindow);
+
+      while (rightIndex < priceSortedCandidates.length && priceSortedCandidates[rightIndex]!.order.price <= maxPrice) {
+        localVolume += priceSortedCandidates[rightIndex]!.order.size;
+        rightIndex += 1;
+      }
+
+      while (leftIndex < priceSortedCandidates.length && priceSortedCandidates[leftIndex]!.order.price < minPrice) {
+        localVolume -= priceSortedCandidates[leftIndex]!.order.size;
+        leftIndex += 1;
+      }
+
+      localVolumeByCandidateIndex.set(candidate.index, Math.max(Number.EPSILON, localVolume));
+    }
+  }
+
+  const candidateWeight = (candidate: { order: RestingOrder; index: number }): number => {
+    let weight = weightByLocalVolume ? (localVolumeByCandidateIndex.get(candidate.index) ?? Number.EPSILON) : 1;
+
+    if (weightByPriceMovement && priceMovedAwayFromOrder(candidate.order, spread)) {
+      weight *= cancellationPriceMovementBoost;
+    }
+
+    if (weightByFarOrder) {
+      weight *= farOrderCancellationProbability(candidate.order, spread);
+    }
+
+    if (weightByAge) {
+      weight *= Math.max(1, now - candidate.order.createdAt);
+    }
+
+    return weight;
+  };
   let totalWeight = 0;
 
   for (const candidate of candidates) {
-    totalWeight += Math.max(1, now - candidate.order.createdAt);
+    totalWeight += candidateWeight(candidate);
   }
+
+  if (totalWeight <= 0) return null;
 
   let targetWeight = sampleUniform(0, totalWeight);
 
   for (const candidate of candidates) {
-    targetWeight -= Math.max(1, now - candidate.order.createdAt);
+    targetWeight -= candidateWeight(candidate);
 
     if (targetWeight <= 0) return candidate;
   }
@@ -474,10 +597,14 @@ const randomRestingOrder = (
   return candidates[sampleUniformInteger(0, candidates.length)] ?? null;
 };
 
-// TODO: also account for distance from current price (both far and near),
-// TODO: if price moved away recently, side and density of orders, spread, volatility, imbalance
 const simulateCancellationEvent = (side: OrderSide): boolean => {
-  const candidate = randomRestingOrder(side, sampleBernoulli(cancellationTimeWeighting));
+  const candidate = randomRestingOrder(
+    side,
+    sampleBernoulli(cancellationTimeWeighting),
+    sampleBernoulli(cancellationPriceMovementWeighting),
+    sampleBernoulli(cancellationLocalVolumeWeighting),
+    sampleBernoulli(cancellationFarOrderWeighting),
+  );
 
   if (!candidate) return false;
 
@@ -501,7 +628,7 @@ const simulateLimitOrderEvent = (side: OrderSide) => {
   const order = makeOrder(side, { price, size });
 
   if (order.restingSize > 0) {
-    trackRestingOrder({ id: order.id, side, createdAt: Date.now() });
+    trackRestingOrder({ id: order.id, side, price, size: order.restingSize, createdAt: Date.now() });
   }
 };
 
@@ -533,6 +660,7 @@ const simulateEvent = (eventType: SimulationEventType): void => {
   }
 
   updateRecentPriceAnchors();
+  updateTouchPriceHistory();
 };
 
 // TODO: separate economy simulation model to allow for news impacts
@@ -560,6 +688,8 @@ const tick = () => {
 // TODO: move to a worker
 export const run = () => {
   excitedInterest = excitedInterest.map(() => 0);
+  touchPriceHistory.buy.length = 0;
+  touchPriceHistory.sell.length = 0;
   const intervalId = setInterval(tick, tickTime);
 
   return () => {
