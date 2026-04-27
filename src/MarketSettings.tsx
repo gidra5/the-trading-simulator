@@ -1,20 +1,14 @@
 import { For, createSignal, type Component } from "solid-js";
 import {
-  getMarketBehaviorSettings,
-  getOrderPriceDistribution,
-  getOrderSizeDistribution,
-  setMarketBehaviorEventSetting,
-  setMarketBehaviorSetting,
-  setOrderPriceDistribution,
-  setOrderSizeDistribution,
   type MarketBehaviorSettings,
+  type MarketEventSetting,
   type OrderPriceDistribution,
   type OrderSizeDistribution,
+  type SimulationEventSettingGroup,
+  type TradingSimulation,
 } from "./simulation";
 
 type ScalarMarketBehaviorSetting = Exclude<keyof MarketBehaviorSettings, "excitementHalfLife" | "branchingRatio">;
-type EventSettingGroup = "excitementHalfLife" | "branchingRatio";
-type MarketEventSetting = keyof MarketBehaviorSettings[EventSettingGroup];
 type MarketNumberField = {
   key: ScalarMarketBehaviorSetting;
   label: string;
@@ -93,21 +87,23 @@ const cancellationFields: MarketNumberField[] = [
   { key: "cancellationFarOrderMinAge", label: "Far min age, ms", min: 0, step: "1000" },
 ];
 
-export const MarketSettings: Component = () => {
-  const [marketSettings, setMarketSettings] = createSignal(getMarketBehaviorSettings());
+export const MarketSettings: Component<{
+  simulation: TradingSimulation;
+}> = (props) => {
+  const [marketSettings, setMarketSettings] = createSignal(props.simulation.getMarketBehaviorSettings());
   const [selectedOrderPriceDistribution, setSelectedOrderPriceDistribution] =
-    createSignal<OrderPriceDistribution>(getOrderPriceDistribution());
+    createSignal<OrderPriceDistribution>(props.simulation.getOrderPriceDistribution());
   const [selectedOrderSizeDistribution, setSelectedOrderSizeDistribution] =
-    createSignal<OrderSizeDistribution>(getOrderSizeDistribution());
+    createSignal<OrderSizeDistribution>(props.simulation.getOrderSizeDistribution());
 
   const updateOrderPriceDistribution = (distribution: OrderPriceDistribution): void => {
     setSelectedOrderPriceDistribution(distribution);
-    setOrderPriceDistribution(distribution);
+    props.simulation.setOrderPriceDistribution(distribution);
   };
 
   const updateOrderSizeDistribution = (distribution: OrderSizeDistribution): void => {
     setSelectedOrderSizeDistribution(distribution);
-    setOrderSizeDistribution(distribution);
+    props.simulation.setOrderSizeDistribution(distribution);
   };
 
   const updateMarketSetting = (key: ScalarMarketBehaviorSetting, value: string): void => {
@@ -115,10 +111,14 @@ export const MarketSettings: Component = () => {
     if (!Number.isFinite(nextValue)) return;
 
     setMarketSettings((current) => ({ ...current, [key]: nextValue }));
-    setMarketBehaviorSetting(key, nextValue);
+    props.simulation.setMarketBehaviorSetting(key, nextValue);
   };
 
-  const updateEventSetting = (group: EventSettingGroup, eventType: MarketEventSetting, value: string): void => {
+  const updateEventSetting = (
+    group: SimulationEventSettingGroup,
+    eventType: MarketEventSetting,
+    value: string,
+  ): void => {
     const nextValue = Number(value);
     if (!Number.isFinite(nextValue)) return;
 
@@ -126,7 +126,7 @@ export const MarketSettings: Component = () => {
       ...current,
       [group]: { ...current[group], [eventType]: nextValue },
     }));
-    setMarketBehaviorEventSetting(group, eventType, nextValue);
+    props.simulation.setMarketBehaviorEventSetting(group, eventType, nextValue);
   };
 
   const NumberInput: Component<{

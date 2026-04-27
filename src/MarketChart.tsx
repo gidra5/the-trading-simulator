@@ -17,7 +17,7 @@ import {
   OrderBookHistogram,
   HistogramNormalization,
 } from "./OrderBookHistogram";
-import { run } from "./simulation";
+import { simulationTickTime, TradingSimulation } from "./simulation";
 import { Chart, type ChartViewport } from "./Chart";
 import { ChartSettings } from "./ChartSettings";
 import { MarketSettings } from "./MarketSettings";
@@ -28,6 +28,7 @@ const showFrameRate = true;
 type SettingsTab = "chart" | "market";
 
 export const MarketChart: Component = () => {
+  const simulation = new TradingSimulation();
   const priceSpread = createMemo(marketPriceSpread);
   const [activeSettingsTab, setActiveSettingsTab] =
     createSignal<SettingsTab>("chart");
@@ -157,12 +158,15 @@ export const MarketChart: Component = () => {
   onMount(() => {
     poll();
 
-    const stopSimulation = run();
+    const simulationIntervalId = setInterval(
+      () => simulation.tick(simulationTickTime),
+      simulationTickTime,
+    );
     const intervalId = setInterval(poll, pollingInterval);
 
     onCleanup(() => {
       clearInterval(intervalId);
-      stopSimulation();
+      clearInterval(simulationIntervalId);
     });
   });
 
@@ -223,7 +227,7 @@ export const MarketChart: Component = () => {
             />
           </Show>
           <Show when={activeSettingsTab() === "market"}>
-            <MarketSettings />
+            <MarketSettings simulation={simulation} />
           </Show>
         </div>
       </div>
