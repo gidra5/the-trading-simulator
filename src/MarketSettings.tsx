@@ -28,8 +28,6 @@ const orderPriceDistributions: {
   label: string;
 }[] = [
   { value: "uniform", label: "Uniform" },
-  { value: "symmetric-uniform", label: "Sym uniform" },
-  { value: "normal", label: "Normal" },
   { value: "abs-normal", label: "Abs normal" },
   { value: "log-normal", label: "Log normal" },
   { value: "power-law", label: "Power law" },

@@ -1,4 +1,4 @@
-import { clamp } from "./utils";
+import { positiveFiniteOrZero } from "./utils";
 
 export const sampleBernoulli = (probability: number): boolean => {
   return Math.random() < probability;
@@ -257,9 +257,6 @@ export type MultivariateHawkesProcessEventTimes = {
   excitedInterest: number[];
 };
 
-const positiveFiniteOrZero = (value: number): number =>
-  Number.isFinite(value) && value > 0 ? value : 0;
-
 export const sampleMultivariateHawkesProcessEventTimes = (
   baselineRatePerSecond: number[],
   excitationPerEvent: number[][],
@@ -279,16 +276,10 @@ export const sampleMultivariateHawkesProcessEventTimes = (
 
   const intervalSeconds = intervalMs / 1000;
   const baselineRate = baselineRatePerSecond.map(positiveFiniteOrZero);
-  const decayRate = baselineRate.map((_, index) =>
-    positiveFiniteOrZero(decayPerSecond[index] ?? 0),
-  );
-  const excitedRate = baselineRate.map((_, index) =>
-    positiveFiniteOrZero(initialExcitedRatePerSecond[index] ?? 0),
-  );
+  const decayRate = baselineRate.map((_, index) => positiveFiniteOrZero(decayPerSecond[index] ?? 0));
+  const excitedRate = baselineRate.map((_, index) => positiveFiniteOrZero(initialExcitedRatePerSecond[index] ?? 0));
   const eventExcitation = baselineRate.map((_, sourceIndex) =>
-    baselineRate.map((__, targetIndex) =>
-      positiveFiniteOrZero(excitationPerEvent[sourceIndex]?.[targetIndex] ?? 0),
-    ),
+    baselineRate.map((__, targetIndex) => positiveFiniteOrZero(excitationPerEvent[sourceIndex]?.[targetIndex] ?? 0)),
   );
   const events: MultivariateHawkesProcessEvent[] = [];
   let time = 0;
@@ -303,8 +294,7 @@ export const sampleMultivariateHawkesProcessEventTimes = (
 
     const waitingTime = sampleExponential(1 / intensityUpperBound);
     const nextTime = time + waitingTime;
-    const elapsedTime =
-      nextTime >= intervalSeconds ? intervalSeconds - time : waitingTime;
+    const elapsedTime = nextTime >= intervalSeconds ? intervalSeconds - time : waitingTime;
 
     for (let index = 0; index < dimension; index += 1) {
       if (decayRate[index] > 0) {
@@ -316,10 +306,7 @@ export const sampleMultivariateHawkesProcessEventTimes = (
 
     time = nextTime;
 
-    const totalIntensity = baselineRate.reduce(
-      (total, baseline, index) => total + baseline + excitedRate[index],
-      0,
-    );
+    const totalIntensity = baselineRate.reduce((total, baseline, index) => total + baseline + excitedRate[index], 0);
 
     if (!sampleBernoulli(totalIntensity / intensityUpperBound)) {
       continue;

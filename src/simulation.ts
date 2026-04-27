@@ -9,17 +9,10 @@ import {
   sampleUniform,
   sampleUniformInteger,
 } from "./distributions";
-import { assert, clamp } from "./utils";
+import { assert, clamp, halfLifeToDecay, positiveFiniteOrZero } from "./utils";
 
 export type OrderSizeDistribution = "uniform" | "log-normal" | "power-law" | "exponential";
-export type OrderPriceDistribution =
-  | "uniform"
-  | "symmetric-uniform"
-  | "normal"
-  | "abs-normal"
-  | "log-normal"
-  | "power-law"
-  | "exponential";
+export type OrderPriceDistribution = "uniform" | "abs-normal" | "log-normal" | "power-law" | "exponential";
 
 const tickTime = 200;
 
@@ -78,14 +71,6 @@ const eventVector = (vector: SimulationEventVector): number[] =>
 
 const eventExcitationMatrix = (matrix: SimulationExcitationMatrix): number[][] =>
   simulationEventTypes.map((eventType) => eventVector(matrix[eventType]));
-
-const positiveFiniteOrZero = (value: number): number => (Number.isFinite(value) && value > 0 ? value : 0);
-
-const halfLifeToDecay = (halfLifeSeconds: number): number => {
-  const halfLife = positiveFiniteOrZero(halfLifeSeconds);
-
-  return halfLife > 0 ? Math.LN2 / halfLife : 0;
-};
 
 const normalizeExcitationMatrix = (
   rawMatrix: number[][],
@@ -356,10 +341,6 @@ const sampleOrderDistance = (distribution: OrderPriceDistribution, scale: number
   switch (distribution) {
     case "uniform":
       return sampleUniform(0, scale * 2);
-    case "symmetric-uniform":
-      return sampleUniform(-scale, scale);
-    case "normal":
-      return sampleNormal(0, scale);
     case "abs-normal":
       return Math.abs(sampleNormal(0, scale));
     case "log-normal":
