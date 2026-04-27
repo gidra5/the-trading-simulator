@@ -94,6 +94,19 @@ const sampleMakerOrderPrice = (side: OrderSide): number => {
   return bestPrice * (1 + jitter) ** direction;
 };
 
+const sampleOrderSize = () => {
+  switch (orderSizeDistribution) {
+    case "uniform":
+      return sampleUniform(0, orderSizeScale * 2);
+    case "log-normal":
+      return sampleLogNormal(orderSizeScale, orderSizeTail);
+    case "power-law":
+      return orderSizeScale * samplePowerLaw(orderSizeTail);
+    case "exponential":
+      return sampleExponential(orderSizeScale);
+  }
+};
+
 const trackRestingOrder = (order: RestingOrder): void => {
   restingOrders.push(order);
 };
@@ -156,18 +169,7 @@ const simulateOrderEvent = () => {
   // TODO: increase size if many wins for one actor, decrease for losses (or vice versa, depending on the gamblingness?)
   // TODO: anchoring
   // TODO: delays in price reaction
-  const size = (() => {
-    switch (orderSizeDistribution) {
-      case "uniform":
-        return sampleUniform(0, orderSizeScale * 2);
-      case "log-normal":
-        return sampleLogNormal(orderSizeScale, orderSizeTail);
-      case "power-law":
-        return orderSizeScale * samplePowerLaw(orderSizeTail);
-      case "exponential":
-        return sampleExponential(orderSizeScale);
-    }
-  })();
+  const size = sampleOrderSize();
 
   // TODO: simulate initial interest
   if (isMaker) {
