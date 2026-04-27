@@ -1,5 +1,6 @@
 import { cancelOrder, getOrderBookHistogram, hasOrder, makeOrder, marketPriceSpread, type OrderSide, takeOrder } from "./market";
 import {
+  sampleBernoulli,
   sampleExponential,
   sampleLogNormal,
   sampleMultivariateHawkesProcessEventTimes,
@@ -175,6 +176,7 @@ const priceAnchorIntervals = [60_000, 600_000, 1_800_000, 3_600_000] as const;
 
 let orderPriceDistribution: OrderPriceDistribution = "uniform";
 let orderSizeDistribution: OrderSizeDistribution = "uniform";
+let cancellationTimeWeighting = 1;
 
 export const setOrderPriceDistribution = (distribution: OrderPriceDistribution): void => {
   orderPriceDistribution = distribution;
@@ -184,9 +186,14 @@ export const setOrderSizeDistribution = (distribution: OrderSizeDistribution): v
   orderSizeDistribution = distribution;
 };
 
+export const setCancellationTimeWeighting = (weighting: number): void => {
+  cancellationTimeWeighting = clamp(weighting, 0, 1);
+};
+
 type RestingOrder = {
   id: number;
   side: OrderSide;
+  createdAt: number;
 };
 type PricePoint = {
   time: number;
@@ -429,6 +436,7 @@ const removeRestingOrder = (index: number): RestingOrder => {
 
 const randomRestingOrder = (
   side: OrderSide,
+  weightByAge = false,
 ): {
   order: RestingOrder;
   index: number;
@@ -446,15 +454,30 @@ const randomRestingOrder = (
     .filter((candidate) => candidate.order.side === side);
 
   if (candidates.length === 0) return null;
+  if (!weightByAge) return candidates[sampleUniformInteger(0, candidates.length)] ?? null;
+
+  const now = Date.now();
+  let totalWeight = 0;
+
+  for (const candidate of candidates) {
+    totalWeight += Math.max(1, now - candidate.order.createdAt);
+  }
+
+  let targetWeight = sampleUniform(0, totalWeight);
+
+  for (const candidate of candidates) {
+    targetWeight -= Math.max(1, now - candidate.order.createdAt);
+
+    if (targetWeight <= 0) return candidate;
+  }
 
   return candidates[sampleUniformInteger(0, candidates.length)] ?? null;
 };
 
 // TODO: also account for distance from current price (both far and near),
 // TODO: if price moved away recently, side and density of orders, spread, volatility, imbalance
-// TODO: weight by how long ago the order was created
 const simulateCancellationEvent = (side: OrderSide): boolean => {
-  const candidate = randomRestingOrder(side);
+  const candidate = randomRestingOrder(side, sampleBernoulli(cancellationTimeWeighting));
 
   if (!candidate) return false;
 
@@ -478,7 +501,7 @@ const simulateLimitOrderEvent = (side: OrderSide) => {
   const order = makeOrder(side, { price, size });
 
   if (order.restingSize > 0) {
-    trackRestingOrder({ id: order.id, side });
+    trackRestingOrder({ id: order.id, side, createdAt: Date.now() });
   }
 };
 
