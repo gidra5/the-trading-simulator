@@ -68,6 +68,185 @@ export const samplePoisson = (lambda: number): number => {
 export const samplePoissonProcessEvents = (ratePerSecond: number, intervalMs: number): number =>
   samplePoisson((ratePerSecond * intervalMs) / 1000);
 
+const normalizeEventCount = (eventCount: number | undefined): number | null => {
+  if (eventCount === undefined) return null;
+  if (!Number.isFinite(eventCount) || eventCount <= 0) return 0;
+
+  return Math.floor(eventCount);
+};
+
+const sampleSortedUniformEventTimes = (eventCount: number, intervalMs: number): number[] =>
+  Array.from({ length: eventCount }, () => sampleUniform(0, intervalMs)).sort((left, right) => left - right);
+
+export const samplePoissonProcessEventTimes = (
+  ratePerSecond: number,
+  intervalMs: number,
+  eventCount?: number,
+): number[] => {
+  if (!Number.isFinite(intervalMs) || intervalMs <= 0) return [];
+
+  const exactEventCount = normalizeEventCount(eventCount);
+
+  if (exactEventCount !== null) {
+    return sampleSortedUniformEventTimes(exactEventCount, intervalMs);
+  }
+
+  if (!Number.isFinite(ratePerSecond) || ratePerSecond <= 0) return [];
+
+  const intervalSeconds = intervalMs / 1000;
+  const eventTimes: number[] = [];
+  let time = 0;
+
+  while (time < intervalSeconds) {
+    time += sampleExponential(1 / ratePerSecond);
+
+    if (time < intervalSeconds) {
+      eventTimes.push(time * 1000);
+    }
+  }
+
+  return eventTimes;
+};
+
+export type HawkesProcessEventTimes = {
+  events: number[];
+  excitedInterest: number;
+};
+
+export const sampleHawkesProcessEventTimes = (
+  baselineRatePerSecond: number,
+  excitationPerEvent: number,
+  decayPerSecond: number,
+  intervalMs: number,
+  initialExcitedRatePerSecond = 0,
+  eventCount?: number,
+): HawkesProcessEventTimes => {
+  if (!Number.isFinite(baselineRatePerSecond) || baselineRatePerSecond < 0) {
+    return { events: [], excitedInterest: 0 };
+  }
+
+  if (!Number.isFinite(excitationPerEvent) || excitationPerEvent < 0) {
+    return { events: [], excitedInterest: 0 };
+  }
+
+  if (!Number.isFinite(decayPerSecond) || decayPerSecond < 0) {
+    return { events: [], excitedInterest: 0 };
+  }
+
+  const startingExcitedRatePerSecond = Number.isFinite(initialExcitedRatePerSecond)
+    ? Math.max(0, initialExcitedRatePerSecond)
+    : 0;
+
+  if (!Number.isFinite(intervalMs) || intervalMs <= 0) {
+    return {
+      events: [],
+      excitedInterest: startingExcitedRatePerSecond,
+    };
+  }
+
+  const exactEventCount = normalizeEventCount(eventCount);
+  const intervalSeconds = intervalMs / 1000;
+  const eventTimes: number[] = [];
+  let excitedRatePerSecond = startingExcitedRatePerSecond;
+  let time = 0;
+
+  if (exactEventCount !== null) {
+    for (let i = 0; i < exactEventCount; i += 1) {
+      const remainingTime = intervalSeconds - time;
+
+      if (remainingTime <= 0) break;
+
+      const intensityUpperBound = baselineRatePerSecond + excitedRatePerSecond;
+
+      if (intensityUpperBound <= 0) {
+        const remainingEvents = exactEventCount - eventTimes.length;
+
+        eventTimes.push(
+          ...sampleSortedUniformEventTimes(remainingEvents, remainingTime * 1000).map(
+            (eventTime) => time * 1000 + eventTime,
+          ),
+        );
+
+        break;
+      }
+
+      const tailProbability = Math.exp(-intensityUpperBound * remainingTime);
+      const truncatedUniform = sampleUniform(tailProbability, 1);
+      const waitingTime = -Math.log(truncatedUniform) / intensityUpperBound;
+
+      if (decayPerSecond > 0) {
+        excitedRatePerSecond *= Math.exp(-decayPerSecond * waitingTime);
+      }
+
+      time += waitingTime;
+      eventTimes.push(time * 1000);
+      excitedRatePerSecond += excitationPerEvent;
+    }
+
+    if (decayPerSecond > 0) {
+      excitedRatePerSecond *= Math.exp(-decayPerSecond * (intervalSeconds - time));
+    }
+
+    return { events: eventTimes, excitedInterest: excitedRatePerSecond };
+  }
+
+  while (time < intervalSeconds) {
+    const intensityUpperBound = baselineRatePerSecond + excitedRatePerSecond;
+
+    if (intensityUpperBound <= 0) break;
+
+    const waitingTime = sampleExponential(1 / intensityUpperBound);
+    const nextTime = time + waitingTime;
+
+    if (nextTime >= intervalSeconds) {
+      if (decayPerSecond > 0) {
+        excitedRatePerSecond *= Math.exp(-decayPerSecond * (intervalSeconds - time));
+      }
+
+      break;
+    }
+
+    if (decayPerSecond > 0) {
+      excitedRatePerSecond *= Math.exp(-decayPerSecond * waitingTime);
+    }
+
+    time = nextTime;
+
+    const intensity = baselineRatePerSecond + excitedRatePerSecond;
+
+    if (sampleBernoulli(intensity / intensityUpperBound)) {
+      eventTimes.push(time * 1000);
+      excitedRatePerSecond += excitationPerEvent;
+    }
+  }
+
+  return { events: eventTimes, excitedInterest: excitedRatePerSecond };
+};
+
+export type HawkesProcessEvent = {
+  events: number;
+  excitedInterest: number;
+};
+export const sampleHawkesProcessEvents = (
+  intervalMs: number,
+  publicInterest: number,
+  interestDecay: number,
+  excitedInterest: number,
+  excitation: number,
+): HawkesProcessEvent => {
+  const intervalSeconds = intervalMs / 1000;
+  const decay = Math.exp(-interestDecay * intervalSeconds);
+
+  excitedInterest *= decay;
+
+  const eventRate = publicInterest + excitedInterest;
+  const events = samplePoissonProcessEvents(eventRate, intervalMs);
+
+  excitedInterest += events * excitation;
+
+  return { events, excitedInterest };
+};
+
 export const sampleExponential = (mean: number): number => {
   if (!Number.isFinite(mean) || mean <= 0) return 0;
 

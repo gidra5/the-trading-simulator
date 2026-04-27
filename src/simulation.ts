@@ -9,10 +9,10 @@ import {
 import {
   sampleBernoulli,
   sampleExponential,
+  sampleHawkesProcessEventTimes,
   sampleLogNormal,
   sampleNormal,
   samplePowerLaw,
-  samplePoissonProcessEvents,
   sampleUniform,
   sampleUniformInteger,
 } from "./distributions";
@@ -32,16 +32,20 @@ export type OrderPriceDistribution =
   | "exponential";
 
 const tickTime = 200;
-const publicInterest = 250; // event rate per second
-const patience = 0.98; // cancellation prob
-const greed = 0.4; // market order prob
+const publicInterest = 200; // event rate per second before self-excitation
+// must be interestExcitation/excitementDecay < 1 for a stable market, 
+// otherwise the event counts will explode exponentially
+const interestExcitation = 0; // extra events per second added by each event
+const excitementDecay = 40; // decay rate of extra interest per second
+const patience = 0.99; // cancellation prob
+const greed = 0.3; // market order prob
 const fear = 0.5; // sell order prob
 const orderSpread = 0.02; // mean maker price distance
 const orderPriceTail = 1.5; // distance dispersion: higher = more tiny and far orders
 const orderSizeScale = 100; // mean order size
 const orderSizeTail = 1.5; // size dispersion: higher = more tiny and huge orders
 
-let orderPriceDistribution: OrderPriceDistribution = "exponential";
+let orderPriceDistribution: OrderPriceDistribution = "normal";
 let orderSizeDistribution: OrderSizeDistribution = "exponential";
 
 export const setOrderPriceDistribution = (
@@ -62,6 +66,20 @@ type RestingOrder = {
 };
 
 const restingOrders: RestingOrder[] = [];
+
+let excitedInterest = 0;
+const sampleHawkesProcessEvents = (intervalMs: number): number => {
+  const { events, excitedInterest: _excitedInterest } = sampleHawkesProcessEventTimes(
+    publicInterest,
+    interestExcitation,
+    excitementDecay,
+    intervalMs,
+    excitedInterest,
+  );
+
+  excitedInterest = _excitedInterest;
+  return events.length;
+};
 
 const sampleOrderDistance = (
   distribution: OrderPriceDistribution,
@@ -188,9 +206,8 @@ const simulateOrderEvent = () => {
 // TODO: external factors like news, events, reports, etc. All infer a "sentiment" of the market
 // https://chatgpt.com/c/69e01063-a9c8-8390-a2db-4f314b4d59f1
 const tick = () => {
-  // TODO: hawkes
-  // TODO: then multivariate hawkes process (market sell/buy, order sell/buy, cancels, a matrix for cross correlation)
-  const events = samplePoissonProcessEvents(publicInterest, tickTime);
+  // TODO: multivariate hawkes process (market sell/buy, order sell/buy, sell/buy cancels, a matrix for cross correlation)
+  const events = sampleHawkesProcessEvents(tickTime);
 
   for (let i = 0; i < events; i++) {
     simulateOrderEvent();
@@ -199,6 +216,7 @@ const tick = () => {
 
 // todo: move to a worker
 export const run = () => {
+  excitedInterest = 0;
   const intervalId = setInterval(tick, tickTime);
 
   return () => {
