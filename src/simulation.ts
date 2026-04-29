@@ -1,50 +1,141 @@
+import { takeOrder, type OrderSide } from "./market";
+import { SimulationCancellation } from "./simulationCancellation";
+import { SimulationExcitation } from "./simulationExcitation";
+import { SimulationOrderPlacement } from "./simulationOrderPlacement";
 import {
-  makeOrder,
-  marketPriceSpread,
-  oppositeSide,
-  takeOrder,
-} from "./market";
+  cloneMarketBehaviorSettings,
+  defaultMarketBehaviorSettings,
+  type MarketBehaviorSettings,
+  type OrderPriceDistribution,
+  type OrderSizeDistribution,
+  type SimulationEventSettingGroup,
+  type SimulationEventType,
+} from "./simulationTypes";
 
-const tickTime = 200;
-const greed = 0.6;
-const fear = 0.5;
-const orderSpread = 0.02;
-const orderBias = 0;
+export {
+  defaultMarketBehaviorSettings,
+  simulationTickTime,
+  type MarketBehaviorSettings,
+  type MarketEventSetting,
+  type OrderPriceDistribution,
+  type OrderSizeDistribution,
+  type SimulationEventSettingGroup,
+} from "./simulationTypes";
 
-// TODO: Trading at certain times of the day
-// TODO: Trading character defined by what parameters and features a particular actor uses
-// TODO: external factors like news, events, reports, etc.
-// https://chatgpt.com/c/69e01063-a9c8-8390-a2db-4f314b4d59f1
-const tick = () => {
-  for (let i = 0; i < 100; i++) {
-    // TODO: psychology, like preferring round prices
-    // TODO: poisson
-    // TODO: hawkes
-    // TODO: then multivariate hawkes process (market sell/buy, order sell/buy, cancels, a matrix for cross correlation)
-    // TODO: cancellation
-    const isMaker = Math.random() < greed;
-    const side = Math.random() > fear ? "buy" : "sell";
-    // TODO: fee (percent from what you buy) and slippage (difference between expected and actual)
-    // TODO: simulate account internal state (bounded balance)
-    // TODO: make depend on spread, book depth, volatlity, uncertainty.
-    // TODO: replace with power law distribution
-    const size = Math.random() * 100;
+export class TradingSimulation {
+  private marketBehaviorSettings = cloneMarketBehaviorSettings(defaultMarketBehaviorSettings);
+  private orderPriceDistribution: OrderPriceDistribution = "power-law";
+  private orderSizeDistribution: OrderSizeDistribution = "power-law";
+  private excitation = new SimulationExcitation(() => this.marketBehaviorSettings);
+  private cancellation = new SimulationCancellation(() => this.marketBehaviorSettings);
+  private orderPlacement = new SimulationOrderPlacement(
+    () => this.marketBehaviorSettings,
+    () => this.orderPriceDistribution,
+    () => this.orderSizeDistribution,
+  );
 
-    if (isMaker) {
-      const jitter = Math.random() * 2 - 1 + orderBias; // TODO: replace with normal distribution
-      const price = marketPriceSpread()[oppositeSide(side)] * (1 + jitter * orderSpread); // +-1% of market price
-      makeOrder(side, { price, size });
-    } else {
-      takeOrder(side, size);
+  getMarketBehaviorSettings(): MarketBehaviorSettings {
+    return cloneMarketBehaviorSettings(this.marketBehaviorSettings);
+  }
+
+  setMarketBehaviorSetting<Key extends keyof MarketBehaviorSettings>(
+    key: Key,
+    value: MarketBehaviorSettings[Key],
+  ): void {
+    this.marketBehaviorSettings = { ...this.marketBehaviorSettings, [key]: value };
+  }
+
+  setMarketBehaviorEventSetting(
+    group: SimulationEventSettingGroup,
+    eventType: SimulationEventType,
+    value: number,
+  ): void {
+    this.marketBehaviorSettings = {
+      ...this.marketBehaviorSettings,
+      [group]: { ...this.marketBehaviorSettings[group], [eventType]: value },
+    };
+  }
+
+  setOrderPriceDistribution(distribution: OrderPriceDistribution): void {
+    this.orderPriceDistribution = distribution;
+  }
+
+  getOrderPriceDistribution(): OrderPriceDistribution {
+    return this.orderPriceDistribution;
+  }
+
+  setOrderSizeDistribution(distribution: OrderSizeDistribution): void {
+    this.orderSizeDistribution = distribution;
+  }
+
+  getOrderSizeDistribution(): OrderSizeDistribution {
+    return this.orderSizeDistribution;
+  }
+
+  setCancellationTimeWeighting(weighting: number): void {
+    this.cancellation.setCancellationTimeWeighting(weighting);
+  }
+
+  setCancellationPriceMovementWeighting(weighting: number): void {
+    this.cancellation.setCancellationPriceMovementWeighting(weighting);
+  }
+
+  setCancellationLocalVolumeWeighting(weighting: number): void {
+    this.cancellation.setCancellationLocalVolumeWeighting(weighting);
+  }
+
+  setCancellationFarOrderWeighting(weighting: number): void {
+    this.cancellation.setCancellationFarOrderWeighting(weighting);
+  }
+
+  // TODO: separate economy simulation model to allow for news impacts
+  // TODO: separate trading platform model for complex market behavior
+  // TODO: separate market agent model to simulate individual behavior
+  // TODO: Trading at certain times of the day
+  // TODO: Trading character defined by what parameters and features a particular actor uses
+  // TODO: external factors like news, events, reports, etc. All infer a "sentiment" of the market
+  // https://chatgpt.com/c/69e01063-a9c8-8390-a2db-4f314b4d59f1
+  tick(dt: number): void {
+    for (const eventType of this.excitation.tick(dt)) {
+      this.simulateEvent(eventType);
     }
   }
-};
 
-export const run = () => {
-  const intervalId = setInterval(tick, tickTime);
+  private simulateEvent(eventType: SimulationEventType): void {
+    switch (eventType) {
+      case "market-buy":
+        this.simulateMarketOrderEvent("buy");
+        break;
+      case "market-sell":
+        this.simulateMarketOrderEvent("sell");
+        break;
+      case "order-buy":
+        this.simulateLimitOrderEvent("buy");
+        break;
+      case "order-sell":
+        this.simulateLimitOrderEvent("sell");
+        break;
+      case "cancel-buy":
+        this.cancellation.simulateCancellationEvent("buy");
+        break;
+      case "cancel-sell":
+        this.cancellation.simulateCancellationEvent("sell");
+        break;
+    }
 
-  return () => {
-    if (intervalId === undefined) return;
-    clearInterval(intervalId);
-  };
-};
+    this.orderPlacement.updateRecentPriceAnchors();
+    this.cancellation.updateTouchPriceHistory();
+  }
+
+  private simulateLimitOrderEvent(side: OrderSide): void {
+    const restingOrder = this.orderPlacement.simulateLimitOrderEvent(side);
+
+    if (restingOrder !== null) {
+      this.cancellation.trackRestingOrder(restingOrder);
+    }
+  }
+
+  private simulateMarketOrderEvent(side: OrderSide): void {
+    takeOrder(side, this.orderPlacement.sampleOrderSize());
+  }
+}

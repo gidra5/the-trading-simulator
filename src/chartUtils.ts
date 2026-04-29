@@ -1,5 +1,6 @@
 import type { OrderBookHeatmapEntry, PriceCandle } from "./market";
 import type { ChartViewport } from "./Chart";
+import { assert } from "./utils";
 
 const floatsPerCandleInstance = 5;
 const bytesPerFloat = 4;
@@ -207,7 +208,7 @@ fn vertexMain(
   let body_mid_y = (open_y + close_y) * 0.5;
   let raw_body_top = min(open_y, close_y);
   let raw_body_bottom = max(open_y, close_y);
-  let is_doji = abs(open_y - close_y) < 0.000001;
+  let is_doji = abs(open_y - close_y) < min_body_height;
   let body_top = select(
     raw_body_top,
     body_mid_y - min_body_height * 0.5,
@@ -256,20 +257,14 @@ export const initializeRenderer = async (
   canvas: HTMLCanvasElement,
 ): Promise<RendererState> => {
   const gpu = (navigator as { gpu?: GPU }).gpu;
-  if (!gpu) {
-    throw new Error("WebGPU is not available in this browser.");
-  }
+  assert(gpu, "WebGPU is not available in this browser.");
 
   const adapter = await gpu.requestAdapter();
-  if (!adapter) {
-    throw new Error("Unable to acquire a WebGPU adapter.");
-  }
+  assert(adapter, "Unable to acquire a WebGPU adapter.");
 
   const device = await adapter.requestDevice();
   const context = canvas.getContext("webgpu") as GPUCanvasContext | null;
-  if (!context) {
-    throw new Error("Unable to create a WebGPU canvas context.");
-  }
+  assert(context, "Unable to create a WebGPU canvas context.");
 
   const format = gpu.getPreferredCanvasFormat();
   const heatmapShaderModule = device.createShaderModule({
