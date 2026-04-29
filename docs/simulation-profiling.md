@@ -2,6 +2,44 @@
 
 Date: 2026-04-29
 
+## Heatmap Crash Profiling
+
+The simulation tick path is not the source of the heatmap crash. With the default five-level order-book history, five simulated minutes still runs at about `0.19-0.23 ms` per tick and retains about `6-6.5 MB` post-GC heap.
+
+The problem was the heatmap region/render path at canvas-sized resolutions:
+
+| Version | Region resolution | Full range region | Tail region | Main CPU hotspots |
+| --- | ---: | ---: | ---: | --- |
+| Dense cells | `120 x 120` | `4.31 ms` | `4.09 ms` | region grid fill |
+| Dense cells | `800 x 400` | `81.49 ms` | `78.94 ms` | object allocation |
+| Dense cells | `1440 x 900` | `317.78-319.17 ms` | `305.23-319.94 ms` | `heatmapKey`, `getOrderBookRegion`, GC |
+| Sparse cells | `120 x 120` | `0.13 ms` | `0.11 ms` | simulation tick work |
+| Sparse cells | `1440 x 900` | `0.22 ms` | `0.28 ms` | simulation tick work |
+
+The dense implementation returned one `{ x, y, size }` object for every heatmap cell. At `1440 x 900`, that is 1,296,000 objects per heatmap calculation before the WebGPU texture writer allocated its typed arrays. The CPU profile showed `heatmapKey` (`JSON.stringify([x, y])`) alone at about `6,959 ms` self time over the captured run, with GC at about `2,154 ms`.
+
+Changes made:
+
+- `scripts/profile-simulation.mjs` now accepts `SIM_ORDER_BOOK_REGION_RESOLUTION=WIDTHxHEIGHT` so the profiler can test canvas-sized heatmaps.
+- `getOrderBookRegion()` now uses numeric cell keys, returns only populated cells, and appends one zero-size sentinel cell to preserve texture dimensions.
+- `Chart` now uploads a heatmap texture only when the heatmap array identity changes, instead of rebuilding the same texture every animation frame.
+
+Verification commands:
+
+```sh
+source ~/.nvm/nvm.sh
+npm run check
+npm run build
+node --expose-gc scripts/profile-simulation.mjs 5
+SIM_ORDER_BOOK_REGION_RESOLUTION=1440x900 node --expose-gc --cpu-prof --cpu-prof-name CPU.simulation.heatmap-sparse.cpuprofile scripts/profile-simulation.mjs 5
+```
+
+Node version: `v22.12.0`, loaded through `nvm`.
+
+---
+
+Date: 2026-04-29
+
 ## Snapshot Interval Derived From Levels
 
 Order-book delta hierarchy configuration now treats level count as the source of truth. The full snapshot interval is derived as:

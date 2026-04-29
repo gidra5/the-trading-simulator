@@ -56,6 +56,7 @@ export const Chart: Component<ChartProps> = (props) => {
   let configuredWidth = 0;
   let configuredHeight = 0;
   let lastReportedViewport: ChartViewport | undefined;
+  let lastWrittenHeatmap: OrderBookHeatmapEntry[] | undefined;
   let frameRateWindowStart = 0;
   let frameCount = 0;
 
@@ -133,8 +134,11 @@ export const Chart: Component<ChartProps> = (props) => {
     }
 
     writeChartUniforms(renderer, props.viewport, props.candleInterval);
-    if (props.orderBookHeatmap) {
+    if (props.orderBookHeatmap && props.orderBookHeatmap !== lastWrittenHeatmap) {
       writeHeatmapTexture(renderer, props.orderBookHeatmap);
+      lastWrittenHeatmap = props.orderBookHeatmap;
+    } else if (!props.orderBookHeatmap) {
+      lastWrittenHeatmap = undefined;
     }
     const candleInstanceCount = writeCandleInstances(
       renderer,
@@ -200,6 +204,7 @@ export const Chart: Component<ChartProps> = (props) => {
       configuredWidth = 0;
       configuredHeight = 0;
       lastReportedViewport = undefined;
+      lastWrittenHeatmap = undefined;
       frameRateWindowStart = 0;
       frameCount = 0;
       setFrameRate(null);

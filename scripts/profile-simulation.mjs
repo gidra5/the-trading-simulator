@@ -13,6 +13,9 @@ const sampleEveryTicks = 50;
 const orderBookDeltaSnapshotInterval = Number(process.env.SIM_ORDER_BOOK_DELTA_INTERVAL);
 const orderBookDeltaSnapshotFanout = Number(process.env.SIM_ORDER_BOOK_DELTA_FANOUT);
 const orderBookDeltaSnapshotLevels = Number(process.env.SIM_ORDER_BOOK_DELTA_LEVELS);
+const orderBookRegionResolution = (process.env.SIM_ORDER_BOOK_REGION_RESOLUTION ?? "")
+  .split("x")
+  .map((value) => Number(value));
 
 const durations = process.argv
   .slice(2)
@@ -39,6 +42,15 @@ const runProfile = async (durationMinutes: number[]) => {
   const orderBookDeltaSnapshotInterval = ${JSON.stringify(orderBookDeltaSnapshotInterval)};
   const orderBookDeltaSnapshotFanout = ${JSON.stringify(orderBookDeltaSnapshotFanout)};
   const orderBookDeltaSnapshotLevels = ${JSON.stringify(orderBookDeltaSnapshotLevels)};
+  const orderBookRegionResolutionInput = ${JSON.stringify(orderBookRegionResolution)};
+  const orderBookRegionResolution = [
+    Number.isFinite(orderBookRegionResolutionInput[0]) && orderBookRegionResolutionInput[0] > 0
+      ? Math.floor(orderBookRegionResolutionInput[0])
+      : 120,
+    Number.isFinite(orderBookRegionResolutionInput[1]) && orderBookRegionResolutionInput[1] > 0
+      ? Math.floor(orderBookRegionResolutionInput[1])
+      : 120,
+  ];
 
   if (Number.isFinite(orderBookDeltaSnapshotInterval) && orderBookDeltaSnapshotInterval > 0) {
     market.setOrderBookDeltaSnapshotInterval(orderBookDeltaSnapshotInterval);
@@ -102,7 +114,7 @@ const runProfile = async (durationMinutes: number[]) => {
       market.getOrderBookRegion({
         timestamp: [regionStart, regionEnd],
         price: [0, 2],
-        resolution: [120, 120],
+        resolution: orderBookRegionResolution,
       });
       fullRegionTimeMs += performance.now() - fullRegionStart;
 
@@ -110,7 +122,7 @@ const runProfile = async (durationMinutes: number[]) => {
       market.getOrderBookRegion({
         timestamp: [regionEnd - regionWindowMs, regionEnd],
         price: [0, 2],
-        resolution: [120, 120],
+        resolution: orderBookRegionResolution,
       });
       tailRegionTimeMs += performance.now() - tailRegionStart;
     }
@@ -129,7 +141,7 @@ const runProfile = async (durationMinutes: number[]) => {
       depthSize,
       orderBookRegion: {
         iterations: regionIterations,
-        resolution: [120, 120],
+        resolution: orderBookRegionResolution,
         fullRangeAvgMs: fullRegionTimeMs / regionIterations,
         tailRangeAvgMs: tailRegionTimeMs / regionIterations,
       },

@@ -598,12 +598,13 @@ export const getOrderBookHistoryStats = (): {
 };
 
 export const getOrderBookRegion = (region: OrderBookHeatmapRegion): OrderBookHeatmapEntry[] => {
+  const resolution = region.resolution;
+
   const cellSize: [time: number, price: number] = [
-    Math.max(region.timestamp[1] - region.timestamp[0], 1) / region.resolution[0],
-    Math.max(region.price[1] - region.price[0], Number.EPSILON) / region.resolution[1],
+    Math.max(region.timestamp[1] - region.timestamp[0], 1) / resolution[0],
+    Math.max(region.price[1] - region.price[0], Number.EPSILON) / resolution[1],
   ];
-  const heatmapKey = (time: number, price: number) => JSON.stringify([time, price]);
-  const heatmap: Map<string, OrderBookHeatmapEntry> = new Map();
+  const heatmap: Map<number, OrderBookHeatmapEntry> = new Map();
   const entries = orderBookMap();
   const firstRegionEntryIndex = lowerBoundOrderBookMapByTimestamp(entries, region.timestamp[0]);
   let reconstructedOrderBook =
@@ -629,6 +630,9 @@ export const getOrderBookRegion = (region: OrderBookHeatmapRegion): OrderBookHea
     }
 
     const x = Math.floor((entry.timestamp - region.timestamp[0]) / cellSize[0]);
+    if (x < 0 || x >= resolution[0]) {
+      continue;
+    }
 
     const orders = [...reconstructedOrderBook.buy, ...reconstructedOrderBook.sell];
     for (const order of orders) {
@@ -637,7 +641,11 @@ export const getOrderBookRegion = (region: OrderBookHeatmapRegion): OrderBookHea
       }
 
       const y = Math.floor((order.price - region.price[0]) / cellSize[1]);
-      const key = heatmapKey(x, y);
+      if (y < 0 || y >= resolution[1]) {
+        continue;
+      }
+
+      const key = y * resolution[0] + x;
       const cell = heatmap.get(key);
       if (cell) {
         cell.size += order.size;
@@ -647,12 +655,9 @@ export const getOrderBookRegion = (region: OrderBookHeatmapRegion): OrderBookHea
     }
   }
 
-  return new Array(region.resolution[0]).fill(0).flatMap((_, timeIndex) =>
-    new Array(region.resolution[1]).fill(0).map((_, priceIndex) => {
-      const key = heatmapKey(timeIndex, priceIndex);
-      return heatmap.get(key) ?? { x: timeIndex, y: priceIndex, size: 0 };
-    }),
-  );
+  const cells = Array.from(heatmap.values());
+  cells.push({ x: resolution[0] - 1, y: resolution[1] - 1, size: 0 });
+  return cells;
 };
 
 export const getOrderBookHistogram = (region: OrderBookHistogramRegion): OrderBookHistogramEntry[] => {
