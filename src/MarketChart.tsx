@@ -1,6 +1,5 @@
 import {
   Show,
-  createMemo,
   createSignal,
   onCleanup,
   onMount,
@@ -21,6 +20,7 @@ import { simulationTickTime, TradingSimulation } from "./simulation";
 import { Chart, type ChartViewport } from "./Chart";
 import { ChartSettings } from "./ChartSettings";
 import { MarketSettings } from "./MarketSettings";
+import { createThrottledMemo } from "./utils";
 
 const pollingInterval = 200;
 const startDate = Date.now();
@@ -29,11 +29,10 @@ type SettingsTab = "chart" | "market";
 
 export const MarketChart: Component = () => {
   const simulation = new TradingSimulation();
-  const priceSpread = createMemo(marketPriceSpread);
+  const priceSpread = createThrottledMemo(marketPriceSpread, pollingInterval);
   const [activeSettingsTab, setActiveSettingsTab] =
     createSignal<SettingsTab>("chart");
   const [candleInterval, setCandleInterval] = createSignal(1_000);
-  const [candles, setCandles] = createSignal<PriceCandle[]>([]);
   const [isHeatmapEnabled, setIsHeatmapEnabled] = createSignal(false);
   const [isHistogramEnabled, setIsHistogramEnabled] = createSignal(true);
   const [isHistogramCumulative, setIsHistogramCumulative] = createSignal(true);
@@ -46,23 +45,7 @@ export const MarketChart: Component = () => {
     price: [0.7, 1.3],
     resolution: [1, 1],
   });
-
-  const heatmap = createMemo(() => {
-    if (!isHeatmapEnabled()) return null;
-    return getOrderBookRegion({
-      timestamp: viewport().time,
-      price: viewport().price,
-      resolution: viewport().resolution,
-    });
-  });
-
-  const histogram = createMemo(() => {
-    if (!isHistogramEnabled()) return null;
-    return getOrderBookHistogram({
-      price: viewport().price,
-      resolution: viewport().resolution[1],
-    });
-  });
+  let previousCandleInterval = candleInterval();
 
   const rebuildCandles = (
     interval: number,
@@ -90,17 +73,22 @@ export const MarketChart: Component = () => {
 
   const updateCandleInterval = (nextInterval: number): void => {
     setCandleInterval(nextInterval);
-    setCandles(rebuildCandles(nextInterval));
   };
 
-  const poll = () => {
-    const now = Date.now();
-    const interval = candleInterval();
-    const candleStart = Math.floor(now / interval) * interval;
-    const candle = priceHistoryCandle(candleStart, now, "buy");
+  const candles = createThrottledMemo<PriceCandle[]>(
+    (currentCandles = []) => {
+      const now = Date.now();
+      const interval = candleInterval();
 
-    setCandles((currentCandles) => {
+      if (interval !== previousCandleInterval) {
+        previousCandleInterval = interval;
+        return rebuildCandles(interval, now);
+      }
+
+      const candleStart = Math.floor(now / interval) * interval;
+      const candle = priceHistoryCandle(candleStart, now, "buy");
       const latestCandle = currentCandles[currentCandles.length - 1];
+
       if (!latestCandle) {
         return [candle];
       }
@@ -135,8 +123,26 @@ export const MarketChart: Component = () => {
         ...missingCandles,
         candle,
       ];
+    },
+    pollingInterval,
+  );
+
+  const heatmap = createThrottledMemo(() => {
+    if (!isHeatmapEnabled()) return null;
+    return getOrderBookRegion({
+      timestamp: viewport().time,
+      price: viewport().price,
+      resolution: viewport().resolution,
     });
-  };
+  }, pollingInterval);
+
+  const histogram = createThrottledMemo(() => {
+    if (!isHistogramEnabled()) return null;
+    return getOrderBookHistogram({
+      price: viewport().price,
+      resolution: viewport().resolution[1],
+    });
+  }, pollingInterval);
 
   const handleViewportChange = (nextViewport: ChartViewport) => {
     setViewport((current) => {
@@ -150,22 +156,17 @@ export const MarketChart: Component = () => {
       ) {
         return current;
       }
-
       return nextViewport;
     });
   };
 
   onMount(() => {
-    poll();
-
     const simulationIntervalId = setInterval(
       () => simulation.tick(simulationTickTime),
       simulationTickTime,
     );
-    const intervalId = setInterval(poll, pollingInterval);
 
     onCleanup(() => {
-      clearInterval(intervalId);
       clearInterval(simulationIntervalId);
     });
   });

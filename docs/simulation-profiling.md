@@ -1,5 +1,189 @@
 # Simulation Profiling Report
 
+Date: 2026-04-29
+
+## Summary
+
+The original page crash was consistent with browser out-of-memory. Before the `appendOrderBookMapEntry` fix, a headless Chromium run of the actual Vite page grew from 1.84 MB to 2061.55 MB of used JS heap in 31 seconds.
+
+After the checkpoint/delta fix, the same 30-second browser probe stayed low: used JS heap ended at 14.15 MB. The simulation-only harness also retained snapshots at the expected checkpoint scale instead of almost one full snapshot per market revision.
+
+Market state is intentionally global and long-lived. The Solid market state now belongs to an explicit long-lived root, preserving the convenient reactive API without making market lifetime depend on the page component.
+
+## Implemented Follow-Ups
+
+1. Global market reactivity is owned by an explicit root.
+
+   `src/market.ts` now creates the module-level signals and memos inside `createRoot`. The exported API is still global and permanent, but Solid no longer treats those computations as ownerless. A post-change browser check did not emit the previous `computations created outside a createRoot or render` warnings.
+
+2. Component-owned chart data is throttled.
+
+   `src/utils.ts` now provides `createThrottledMemo`, which keeps memo-shaped call sites while returning the previous value until the throttle window passes. `src/MarketChart.tsx` uses it for price spread, candles, histogram, and heatmap so expensive derivations are throttled without separate polling state.
+
+3. Candle history is reactive market state.
+
+   `src/market.ts` now derives `priceHistory` from `orderBookMap` revisions, similar to the current `orderBook` memo. `MarketChart` no longer needs a component-level simulation revision signal to invalidate candle or market-view derivations.
+
+## Post-Fix Browser Probe
+
+Command:
+
+```sh
+source ~/.nvm/nvm.sh
+npm run dev -- --host 127.0.0.1
+node -e '<Playwright browser heap sampler>'
+```
+
+Environment:
+
+- Vite URL: `http://127.0.0.1:3001/`
+- Browser: Playwright Chromium headless
+- Viewport: 1440 x 900
+- App settings: default page settings, heatmap disabled, histogram enabled
+- WebGPU status in this headless run: unavailable (`No available adapters.`)
+
+Used JS heap after the `appendOrderBookMapEntry` fix:
+
+| Wall time | Used heap | Total heap | Page responsive |
+| ---: | ---: | ---: | --- |
+| 0 sec | 1.84 MB | 3.39 MB | yes |
+| 5 sec | 3.85 MB | 13.14 MB | yes |
+| 10 sec | 3.98 MB | 20.64 MB | yes |
+| 15 sec | 6.49 MB | 23.14 MB | yes |
+| 20 sec | 14.07 MB | 40.89 MB | yes |
+| 25 sec | 11.09 MB | 44.64 MB | yes |
+| 30 sec | 14.15 MB | 79.39 MB | yes |
+
+Short browser sanity check after the explicit root and throttled memo changes:
+
+| Wall time | Used heap | Total heap |
+| ---: | ---: | ---: |
+| 0 sec | 1.85 MB | 3.39 MB |
+| 5 sec | 4.37 MB | 8.93 MB |
+| 10 sec | 6.95 MB | 14.18 MB |
+| 15 sec | 11.80 MB | 23.68 MB |
+
+After deriving `priceHistory` from `orderBookMap` and removing the component revision signal, a follow-up 15-second browser sanity check ended at 10.90 MB used heap and the spread continued updating.
+
+## Pre-Fix Browser Baseline
+
+The previous browser probe, before the `appendOrderBookMapEntry` fix, showed runaway heap growth:
+
+| Wall time | Used heap | Total heap | Page responsive |
+| ---: | ---: | ---: | --- |
+| 0 sec | 1.84 MB | 4.14 MB | yes |
+| 5 sec | 51.16 MB | 114.39 MB | yes |
+| 10 sec | 259.94 MB | 303.64 MB | yes |
+| 15 sec | 630.97 MB | 678.39 MB | yes |
+| 21 sec | 1101.08 MB | 1147.39 MB | yes |
+| 26 sec | 1523.55 MB | 1578.39 MB | yes |
+| 31 sec | 2061.55 MB | 2111.14 MB | yes |
+
+That measurement explains the observed page crash after about a minute of running.
+
+## Simulation-Only Measurements
+
+Command:
+
+```sh
+source ~/.nvm/nvm.sh
+node --expose-gc scripts/profile-simulation.mjs 1 2 5
+```
+
+These durations are virtual simulation time. The harness advances `Date.now()` by 200 ms per tick.
+
+| Virtual duration | Ticks | Wall time | Avg tick time | Post-GC heap | RSS | Heap growth | History entries | Snapshots | Deltas |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 min | 300 | 0.248 s | 0.800 ms | 12.80 MB | 98.88 MB | 7.57 MB | 18,661 | 187 | 18,474 |
+| 2 min | 600 | 0.316 s | 0.507 ms | 27.13 MB | 117.72 MB | 14.30 MB | 56,679 | 567 | 56,112 |
+| 5 min | 1500 | 0.659 s | 0.421 ms | 62.00 MB | 161.98 MB | 35.13 MB | 150,930 | 1,510 | 149,420 |
+
+Fresh CPU-profiled 5-minute run:
+
+```sh
+node --expose-gc --cpu-prof --cpu-prof-name CPU.simulation.cpuprofile scripts/profile-simulation.mjs 5
+```
+
+Result:
+
+- Wall time: 0.842 s
+- Average tick time: 0.549 ms
+- Post-GC heap: 41.33 MB
+- RSS: 129.73 MB
+- History entries: 93,811
+- Snapshots: 939
+- Deltas: 92,872
+- Raw CPU profile: `CPU.simulation.cpuprofile`
+
+The snapshot count is consistent with `snapshotInterval = 100`.
+
+## CPU Hot Spots
+
+Top self-time functions from `CPU.simulation.cpuprofile`:
+
+| Function | Self time | Share |
+| --- | ---: | ---: |
+| `histogramKey` | 199.4 ms | 20.5% |
+| `getOrderBookHistogram` | 195.6 ms | 20.1% |
+| Garbage collector | 149.8 ms | 15.4% |
+| `updateTouchPriceHistory` | 64.7 ms | 6.7% |
+| `simulateEvent` | 28.7 ms | 2.9% |
+| `sampleMultivariateHawkesProcessEventTimes` | 28.6 ms | 2.9% |
+| `sampleSupportResistanceAnchor` | 18.7 ms | 1.9% |
+| `updateRecentPriceAnchors` | 16.4 ms | 1.7% |
+| `tick` | 10.8 ms | 1.1% |
+| `simulateLimitOrderEvent` | 9.0 ms | 0.9% |
+
+The biggest CPU issue is repeated histogram work, especially `histogramKey`, which uses `JSON.stringify([y, kind])` in a hot path.
+
+## Findings
+
+1. `appendOrderBookMapEntry` fix materially reduced retained browser heap.
+
+   The previous bug stored a full snapshot on nearly every revision. The fixed code now stores either a delta or a checkpoint snapshot. In the 5-minute simulation-only run, snapshots dropped from about 150,243 in the old measurement to 1,510 in the current measurement.
+
+2. Global market state is intentional.
+
+   The market is designed to run permanently, independent of any one page component. It should remain global, but its Solid lifetime should be explicit.
+
+3. Histogram CPU is now the main measured simulation cost.
+
+   `getOrderBookHistogram` and `histogramKey` together account for about 40.6% of sampled self time in the 5-minute CPU profile. This affects both simulation behavior through `sampleSupportResistanceAnchor` and page rendering when the depth histogram is enabled.
+
+4. Heatmap and long-run visual history still need bounded-history design.
+
+   Checkpointed deltas make history much smaller, but `getOrderBookRegion` still reconstructs historical books and iterates orders across retained history.
+
+## Remaining Recommended Fixes
+
+1. Replace histogram string keys with numeric indexing.
+
+   Use arrays for buy/sell bucket totals instead of a `Map` keyed by `JSON.stringify([y, kind])`.
+
+2. Offload old visual history to persistent storage.
+
+   For long-running sessions, keep recent history in memory and move older history chunks to `localStorage` after a retention period such as 30 minutes. Store each chunk under a separate key, indexed by time range, so `getOrderBookRegion` or the heatmap path can restore only chunks intersecting the current viewport.
+
+3. Re-profile with WebGPU available.
+
+   The headless browser runs reported `No available adapters`, so they measure JS heap and page responsiveness but not the real GPU rendering path.
+
+## Commands Run
+
+```sh
+source ~/.nvm/nvm.sh
+node --expose-gc scripts/profile-simulation.mjs 1 2 5
+node --expose-gc --cpu-prof --cpu-prof-name CPU.simulation.cpuprofile scripts/profile-simulation.mjs 5
+npm run dev -- --host 127.0.0.1
+node -e '<Playwright browser heap sampler>'
+```
+
+Node version: `v22.12.0`, loaded through `nvm`.
+
+---
+
+# Previous Simulation Profiling Report
+
 Date: 2026-04-28
 
 ## Delta Encoding Update

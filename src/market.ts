@@ -1,4 +1,4 @@
-import { createMemo, createSignal } from "solid-js";
+import { createMemo, createRoot, createSignal } from "solid-js";
 
 type Order = {
   price: number;
@@ -21,6 +21,7 @@ type PriceSpread = {
   sell: number;
 };
 type PriceHistoryEntry = {
+  revision: number;
   timestamp: number;
   spread: PriceSpread;
 };
@@ -140,7 +141,6 @@ const applyOrderBookChanges = (target: OrderBook, changes: OrderBookChange[]): v
 };
 
 const initialTimestamp = Date.now();
-const [orderBookSnapshotInterval, setOrderBookSnapshotIntervalValue] = createSignal(100);
 let orderBookRevision = 0;
 
 const initialOrderBookMapEntry: OrderBookMapEntry = {
@@ -149,26 +149,103 @@ const initialOrderBookMapEntry: OrderBookMapEntry = {
   timestamp: initialTimestamp,
   orderBook: initialOrderBook,
 };
-const [orderBookMap, setOrderBookMap] = createSignal<OrderBookMapEntry[]>([initialOrderBookMapEntry], {
-  equals: false,
+const initialPriceHistory: PriceHistoryEntry[] = [
+  {
+    revision: orderBookRevision,
+    timestamp: initialTimestamp,
+    spread: {
+      buy: 1.01,
+      sell: 0.99,
+    },
+  },
+];
+
+const priceSpreadFromOrderBook = (
+  source: OrderBook,
+  fallback: PriceSpread = initialPriceHistory[0]!.spread,
+): PriceSpread => ({
+  buy: source.sell[source.sell.length - 1]?.price ?? fallback.buy,
+  sell: source.buy[source.buy.length - 1]?.price ?? fallback.sell,
 });
 
-const orderBook = createMemo<OrderBook>(
-  (previousOrderBook) => {
-    const entries = orderBookMap();
-    const latest = entries[entries.length - 1];
+const {
+  orderBookSnapshotInterval,
+  setOrderBookSnapshotIntervalValue,
+  orderBookMap,
+  setOrderBookMap,
+  orderBook,
+  priceHistory,
+  marketPriceSpread,
+  midPrice,
+} = createRoot(() => {
+  const [orderBookSnapshotInterval, setOrderBookSnapshotIntervalValue] = createSignal(100);
+  const [orderBookMap, setOrderBookMap] = createSignal<OrderBookMapEntry[]>([initialOrderBookMapEntry], {
+    equals: false,
+  });
 
-    if (latest.kind === "snapshot") {
-      return cloneOrderBookFrom(latest.orderBook);
-    }
+  const orderBook = createMemo<OrderBook>(
+    (previousOrderBook) => {
+      const entries = orderBookMap();
+      const latest = entries[entries.length - 1];
 
-    const nextOrderBook = previousOrderBook;
-    applyOrderBookChanges(nextOrderBook, latest.changes);
-    return nextOrderBook;
-  },
-  cloneOrderBookFrom(initialOrderBook),
-  { equals: false },
-);
+      if (latest.kind === "snapshot") {
+        return cloneOrderBookFrom(latest.orderBook);
+      }
+
+      const nextOrderBook = previousOrderBook;
+      applyOrderBookChanges(nextOrderBook, latest.changes);
+      return nextOrderBook;
+    },
+    cloneOrderBookFrom(initialOrderBook),
+    { equals: false },
+  );
+
+  const priceHistory = createMemo<PriceHistoryEntry[]>(
+    (previousHistory) => {
+      const entries = orderBookMap();
+      const latest = entries[entries.length - 1];
+      const latestHistory = previousHistory[previousHistory.length - 1];
+
+      if (latestHistory?.revision === latest.revision) {
+        return previousHistory;
+      }
+
+      const spread = priceSpreadFromOrderBook(orderBook(), latestHistory?.spread);
+
+      previousHistory.push({
+        revision: latest.revision,
+        timestamp: latest.timestamp,
+        spread,
+      });
+      return previousHistory;
+    },
+    initialPriceHistory,
+    { equals: false },
+  );
+
+  const marketPriceSpread = createMemo((): PriceSpread => {
+    const history = priceHistory();
+    const lastSpread = history[history.length - 1]?.spread;
+
+    return priceSpreadFromOrderBook(orderBook(), lastSpread);
+  });
+
+  const midPrice = createMemo((): number => {
+    const spread = marketPriceSpread();
+    return (spread.buy + spread.sell) / 2;
+  });
+
+  return {
+    orderBookSnapshotInterval,
+    setOrderBookSnapshotIntervalValue,
+    orderBookMap,
+    setOrderBookMap,
+    orderBook,
+    priceHistory,
+    marketPriceSpread,
+    midPrice,
+  };
+});
 
 const appendOrderBookMapEntry = (timestamp: number, changes: OrderBookChange[]): void => {
   if (changes.length === 0) return;
@@ -319,16 +396,6 @@ export const getOrderBookHistogram = (region: OrderBookHistogramRegion): OrderBo
   return Array.from(histogram.values()).sort((left, right) => left.y - right.y);
 };
 
-const priceHistory: PriceHistoryEntry[] = [
-  {
-    timestamp: initialTimestamp,
-    spread: {
-      buy: 1.01,
-      sell: 0.99,
-    },
-  },
-];
-
 const recordMarketState = (changes: OrderBookChange[]) => {
   const timestamp = Date.now();
 
@@ -337,26 +404,22 @@ const recordMarketState = (changes: OrderBookChange[]) => {
   }
 
   appendOrderBookMapEntry(timestamp, changes);
-
-  priceHistory.push({
-    timestamp,
-    spread: marketPriceSpread(),
-  });
 };
 
 const candleHistoryEntries = (start: number, end: number): PriceHistoryEntry[] => {
+  const history = priceHistory();
   const open = (() => {
     // TODO: binary search or add some kind of index
-    for (let i = priceHistory.length - 1; i >= 0; i -= 1) {
-      const entry = priceHistory[i];
+    for (let i = history.length - 1; i >= 0; i -= 1) {
+      const entry = history[i];
       if (entry.timestamp <= start) {
         return entry;
       }
     }
 
-    return priceHistory[0];
+    return history[0];
   })();
-  const entries = priceHistory.filter((entry) => entry.timestamp > start && entry.timestamp <= end);
+  const entries = history.filter((entry) => entry.timestamp > start && entry.timestamp <= end);
   return [open, ...entries];
 };
 
@@ -497,20 +560,7 @@ export const cancelOrder = (id: number, side?: OrderSide): RegisteredOrder | nul
   return order;
 };
 
-export const marketPriceSpread = createMemo((): PriceSpread => {
-  const currentOrderBook = orderBook();
-  const lastSpread = priceHistory[priceHistory.length - 1]?.spread;
-
-  return {
-    buy: currentOrderBook.sell[currentOrderBook.sell.length - 1]?.price ?? lastSpread.buy ?? 0,
-    sell: currentOrderBook.buy[currentOrderBook.buy.length - 1]?.price ?? lastSpread.sell ?? 0,
-  };
-});
-
 export const oppositeSide = (side: OrderSide): OrderSide =>
   side === "buy" ? "sell" : "buy";
 
-export const midPrice = createMemo((): number => {
-  const spread = marketPriceSpread();
-  return (spread.buy + spread.sell) / 2;
-});
+export { marketPriceSpread, midPrice };
