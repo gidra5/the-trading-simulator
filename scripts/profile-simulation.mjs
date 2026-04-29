@@ -10,6 +10,9 @@ const entry = resolve(tempDir, "entry.ts");
 const bundled = resolve(tempDir, "entry.mjs");
 const tickMs = 200;
 const sampleEveryTicks = 50;
+const orderBookDeltaSnapshotInterval = Number(process.env.SIM_ORDER_BOOK_DELTA_INTERVAL);
+const orderBookDeltaSnapshotFanout = Number(process.env.SIM_ORDER_BOOK_DELTA_FANOUT);
+const orderBookDeltaSnapshotLevels = Number(process.env.SIM_ORDER_BOOK_DELTA_LEVELS);
 
 const durations = process.argv
   .slice(2)
@@ -33,6 +36,22 @@ const runProfile = async (durationMinutes: number[]) => {
     import("${resolve(root, "src/simulation.ts")}"),
     import("${resolve(root, "src/market.ts")}"),
   ]);
+  const orderBookDeltaSnapshotInterval = ${JSON.stringify(orderBookDeltaSnapshotInterval)};
+  const orderBookDeltaSnapshotFanout = ${JSON.stringify(orderBookDeltaSnapshotFanout)};
+  const orderBookDeltaSnapshotLevels = ${JSON.stringify(orderBookDeltaSnapshotLevels)};
+
+  if (Number.isFinite(orderBookDeltaSnapshotInterval) && orderBookDeltaSnapshotInterval > 0) {
+    market.setOrderBookDeltaSnapshotInterval(orderBookDeltaSnapshotInterval);
+  }
+
+  if (Number.isFinite(orderBookDeltaSnapshotFanout) && orderBookDeltaSnapshotFanout >= 2) {
+    market.setOrderBookDeltaSnapshotFanout(orderBookDeltaSnapshotFanout);
+  }
+
+  if (Number.isFinite(orderBookDeltaSnapshotLevels) && orderBookDeltaSnapshotLevels > 0) {
+    market.setOrderBookDeltaSnapshotLevels(orderBookDeltaSnapshotLevels);
+  }
+
   const results = [];
 
   for (const minutes of durationMinutes) {
@@ -71,6 +90,30 @@ const runProfile = async (durationMinutes: number[]) => {
       resolution: 200,
     });
     const depthSize = histogram.reduce((total, entry) => total + entry.size, 0);
+    const regionStart = simulatedNow - minutes * 60 * 1000;
+    const regionEnd = simulatedNow;
+    const regionWindowMs = Math.min(60 * 1000, Math.max(regionEnd - regionStart, 1));
+    const regionIterations = 25;
+    let fullRegionTimeMs = 0;
+    let tailRegionTimeMs = 0;
+
+    for (let index = 0; index < regionIterations; index += 1) {
+      const fullRegionStart = performance.now();
+      market.getOrderBookRegion({
+        timestamp: [regionStart, regionEnd],
+        price: [0, 2],
+        resolution: [120, 120],
+      });
+      fullRegionTimeMs += performance.now() - fullRegionStart;
+
+      const tailRegionStart = performance.now();
+      market.getOrderBookRegion({
+        timestamp: [regionEnd - regionWindowMs, regionEnd],
+        price: [0, 2],
+        resolution: [120, 120],
+      });
+      tailRegionTimeMs += performance.now() - tailRegionStart;
+    }
 
     results.push({
       minutes,
@@ -84,6 +127,12 @@ const runProfile = async (durationMinutes: number[]) => {
       endRssMb: formatMb(endMemory.rss),
       heapGrowthMb: formatMb(endMemory.heapUsed - startMemory.heapUsed),
       depthSize,
+      orderBookRegion: {
+        iterations: regionIterations,
+        resolution: [120, 120],
+        fullRangeAvgMs: fullRegionTimeMs / regionIterations,
+        tailRangeAvgMs: tailRegionTimeMs / regionIterations,
+      },
       orderBookHistory: market.getOrderBookHistoryStats?.(),
       finalSpread: market.marketPriceSpread(),
       samples,

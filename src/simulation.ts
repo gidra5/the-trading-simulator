@@ -96,9 +96,7 @@ export class TradingSimulation {
   // TODO: external factors like news, events, reports, etc. All infer a "sentiment" of the market
   // https://chatgpt.com/c/69e01063-a9c8-8390-a2db-4f314b4d59f1
   tick(dt: number): void {
-    for (const eventType of this.excitation.tick(dt)) {
-      this.simulateEvent(eventType);
-    }
+    this.excitation.forEachEvent(dt, (eventType) => this.simulateEvent(eventType));
   }
 
   private simulateEvent(eventType: SimulationEventType): void {

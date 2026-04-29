@@ -74,8 +74,10 @@ export type PricePoint = {
 
 export type PriceAnchorWindow = {
   durationMs: number;
-  highs: PricePoint[];
-  lows: PricePoint[];
+  highTimes: number[];
+  highPrices: number[];
+  lowTimes: number[];
+  lowPrices: number[];
   highOffset: number;
   lowOffset: number;
 };

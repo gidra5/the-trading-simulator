@@ -1,4 +1,4 @@
-import { sampleMultivariateHawkesProcessEventTimes } from "./distributions";
+import { sampleMultivariateHawkesProcessEventTypes } from "./distributions";
 import { halfLifeToDecay } from "./utils";
 import {
   eventExcitationMatrix,
@@ -22,17 +22,29 @@ export class SimulationExcitation {
   constructor(private getSettings: () => MarketBehaviorSettings) {}
 
   tick(dt: number): SimulationEventType[] {
+    const events: SimulationEventType[] = [];
+
+    this.forEachEvent(dt, (eventType) => events.push(eventType));
+    return events;
+  }
+
+  forEachEvent(dt: number, handleEvent: (eventType: SimulationEventType) => void): void {
     const excitementDecay = this.excitementDecayVector();
-    const { events, excitedInterest: nextExcitedInterest } = sampleMultivariateHawkesProcessEventTimes(
+
+    this.excitedInterest = sampleMultivariateHawkesProcessEventTypes(
       this.publicInterestVector(),
       this.interestExcitationMatrix(excitementDecay),
       excitementDecay,
       dt,
       this.excitedInterest,
-    );
+      (eventTypeIndex) => {
+        const eventType = simulationEventTypes[eventTypeIndex];
 
-    this.excitedInterest = nextExcitedInterest;
-    return events.map((event) => simulationEventTypes[event.type]);
+        if (eventType !== undefined) {
+          handleEvent(eventType);
+        }
+      },
+    );
   }
 
   private publicInterestVector(): number[] {

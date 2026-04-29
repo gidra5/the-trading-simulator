@@ -1,4 +1,4 @@
-import { getOrderBookHistogram, makeOrder, marketPriceSpread, type OrderSide } from "./market";
+import { getOrderBookHistogramSeries, makeOrder, marketPriceSpread, type OrderSide } from "./market";
 import {
   sampleBernoulli,
   sampleExponential,
@@ -14,7 +14,6 @@ import {
   type OrderPriceDistribution,
   type OrderSizeDistribution,
   type PriceAnchorWindow,
-  type PricePoint,
   type RestingOrder,
 } from "./simulationTypes";
 
@@ -23,8 +22,10 @@ export class SimulationOrderPlacement {
   private inSpreadReach = -0.01;
   private priceAnchorWindows: PriceAnchorWindow[] = this.priceAnchorIntervals.map((durationMs) => ({
     durationMs,
-    highs: [],
-    lows: [],
+    highTimes: [],
+    highPrices: [],
+    lowTimes: [],
+    lowPrices: [],
     highOffset: 0,
     lowOffset: 0,
   }));
@@ -61,26 +62,36 @@ export class SimulationOrderPlacement {
     for (const window of this.priceAnchorWindows) {
       const expiresBefore = time - window.durationMs;
 
-      while (window.highOffset < window.highs.length && window.highs[window.highOffset]!.time < expiresBefore) {
+      while (window.highOffset < window.highTimes.length && window.highTimes[window.highOffset]! < expiresBefore) {
         window.highOffset += 1;
       }
 
-      while (window.lowOffset < window.lows.length && window.lows[window.lowOffset]!.time < expiresBefore) {
+      while (window.lowOffset < window.lowTimes.length && window.lowTimes[window.lowOffset]! < expiresBefore) {
         window.lowOffset += 1;
       }
 
-      while (window.highs.length > window.highOffset && window.highs[window.highs.length - 1]!.price <= price) {
-        window.highs.pop();
+      while (
+        window.highPrices.length > window.highOffset &&
+        window.highPrices[window.highPrices.length - 1]! <= price
+      ) {
+        window.highTimes.pop();
+        window.highPrices.pop();
       }
 
-      while (window.lows.length > window.lowOffset && window.lows[window.lows.length - 1]!.price >= price) {
-        window.lows.pop();
+      while (
+        window.lowPrices.length > window.lowOffset &&
+        window.lowPrices[window.lowPrices.length - 1]! >= price
+      ) {
+        window.lowTimes.pop();
+        window.lowPrices.pop();
       }
 
-      window.highs.push({ time, price });
-      window.lows.push({ time, price });
-      window.highOffset = this.compactPricePoints(window.highs, window.highOffset);
-      window.lowOffset = this.compactPricePoints(window.lows, window.lowOffset);
+      window.highTimes.push(time);
+      window.highPrices.push(price);
+      window.lowTimes.push(time);
+      window.lowPrices.push(price);
+      window.highOffset = this.compactPricePoints(window.highTimes, window.highPrices, window.highOffset);
+      window.lowOffset = this.compactPricePoints(window.lowTimes, window.lowPrices, window.lowOffset);
     }
   }
 
@@ -165,10 +176,11 @@ export class SimulationOrderPlacement {
     return Math.abs(price - midPrice) / midPrice <= this.getSettings().roundPriceAnchorMinMidDistance;
   }
 
-  private compactPricePoints(points: PricePoint[], offset: number): number {
-    if (offset < 64 || offset * 2 < points.length) return offset;
+  private compactPricePoints(times: number[], prices: number[], offset: number): number {
+    if (offset < 64 || offset * 2 < times.length) return offset;
 
-    points.splice(0, offset);
+    times.splice(0, offset);
+    prices.splice(0, offset);
     return 0;
   }
 
@@ -177,8 +189,8 @@ export class SimulationOrderPlacement {
 
     if (!window) return null;
 
-    const high = window.highs[window.highOffset]?.price;
-    const low = window.lows[window.lowOffset]?.price;
+    const high = window.highPrices[window.highOffset];
+    const low = window.lowPrices[window.lowOffset];
     const preferSideAnchor = Math.random() < 0.7;
     const anchor = preferSideAnchor === (side === "buy") ? low : high;
 
@@ -200,36 +212,34 @@ export class SimulationOrderPlacement {
     const padding = Math.max((priceMax - priceMin) * 0.5, currentPrice * 0.05);
     const rangeMin = Math.max(Number.MIN_VALUE, priceMin - padding);
     const rangeMax = priceMax + padding;
-    const cellHeight = (rangeMax - rangeMin) / settings.liquidityWallHistogramResolution;
-    const histogram = getOrderBookHistogram({
-      price: [rangeMin, rangeMax],
-      resolution: settings.liquidityWallHistogramResolution,
-    });
+    const { cellHeight, sizes } = getOrderBookHistogramSeries(
+      {
+        price: [rangeMin, rangeMax],
+        resolution: settings.liquidityWallHistogramResolution,
+      },
+      side,
+    );
     let closestLevelPrice = 0;
     let closestDistance = Number.POSITIVE_INFINITY;
-    const sizes = new Array<number>(settings.liquidityWallHistogramResolution).fill(0);
     let totalSize = 0;
 
-    for (const entry of histogram) {
-      if (entry.kind === side) {
-        sizes[entry.y] = entry.size;
-        totalSize += entry.size;
-      }
+    for (const size of sizes) {
+      totalSize += size;
     }
 
-    const meanSize = totalSize / settings.liquidityWallHistogramResolution;
+    const meanSize = sizes.length > 0 ? totalSize / sizes.length : 0;
 
-    for (let index = 0; index < histogram.length; index += 1) {
-      const entry = histogram[index];
+    for (let y = 0; y < sizes.length; y += 1) {
+      const size = sizes[y] ?? 0;
 
-      if (!entry || entry.kind !== side || entry.size <= meanSize || entry.size <= 0) continue;
+      if (size <= meanSize || size <= 0) continue;
 
-      const previousSize = sizes[entry.y - 1] ?? 0;
-      const nextSize = sizes[entry.y + 1] ?? 0;
+      const previousSize = sizes[y - 1] ?? 0;
+      const nextSize = sizes[y + 1] ?? 0;
 
-      if (entry.size < previousSize * 1.5 && entry.size < nextSize * 1.5) continue;
+      if (size < previousSize * 1.5 && size < nextSize * 1.5) continue;
 
-      const levelPrice = rangeMin + (entry.y + 0.5) * cellHeight;
+      const levelPrice = rangeMin + (y + 0.5) * cellHeight;
       const isSupport = side === "buy" && levelPrice < currentPrice;
       const isResistance = side === "sell" && levelPrice > currentPrice;
 

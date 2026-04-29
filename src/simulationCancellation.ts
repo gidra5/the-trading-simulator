@@ -13,6 +13,10 @@ export class SimulationCancellation {
     buy: [],
     sell: [],
   };
+  private touchPriceHistoryOffset: Record<OrderSide, number> = {
+    buy: 0,
+    sell: 0,
+  };
 
   constructor(private getSettings: () => MarketBehaviorSettings) {}
 
@@ -62,9 +66,14 @@ export class SimulationCancellation {
       const history = this.touchPriceHistory[side];
       history.push({ time, price });
 
-      while (history.length > 1 && history[1]!.time <= expiresBefore) {
-        history.shift();
+      while (
+        this.touchPriceHistoryOffset[side] + 1 < history.length &&
+        history[this.touchPriceHistoryOffset[side] + 1]!.time <= expiresBefore
+      ) {
+        this.touchPriceHistoryOffset[side] += 1;
       }
+
+      this.touchPriceHistoryOffset[side] = this.compactPricePoints(history, this.touchPriceHistoryOffset[side]);
     }
   }
 
@@ -77,7 +86,7 @@ export class SimulationCancellation {
 
   private priceMovedAwayFromOrder(order: RestingOrder, spread = marketPriceSpread()): boolean {
     const currentTouch = spread[order.side];
-    const previousTouch = this.touchPriceHistory[order.side][0]?.price;
+    const previousTouch = this.touchPriceHistory[order.side][this.touchPriceHistoryOffset[order.side]]?.price;
 
     if (!Number.isFinite(currentTouch) || currentTouch <= 0 || !Number.isFinite(previousTouch) || previousTouch <= 0) {
       return false;
@@ -90,6 +99,13 @@ export class SimulationCancellation {
     const previousDistance = Math.abs(previousTouch - order.price) / previousTouch;
 
     return currentDistance > previousDistance;
+  }
+
+  private compactPricePoints(points: PricePoint[], offset: number): number {
+    if (offset < 64 || offset * 2 < points.length) return offset;
+
+    points.splice(0, offset);
+    return 0;
   }
 
   private farOrderCancellationProbability(
