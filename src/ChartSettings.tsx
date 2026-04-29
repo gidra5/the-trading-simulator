@@ -1,8 +1,10 @@
 import { createSignal, type Accessor, type Component, type Setter } from "solid-js";
+import { getOrderBookHistoryStats, setOrderBookSnapshotInterval } from "./market";
 import { HistogramNormalization } from "./OrderBookHistogram";
 
 const formatCandleIntervalSeconds = (interval: number): string => String(interval / 1_000);
 const formatHistogramWindowFraction = (windowFraction: number): string => String(windowFraction);
+const formatOrderBookSnapshotInterval = (interval: number): string => String(interval);
 
 type ChartSettingsProps = {
   candleInterval: Accessor<number>;
@@ -26,6 +28,9 @@ export const ChartSettings: Component<ChartSettingsProps> = (props) => {
   const [histogramWindowFractionInput, setHistogramWindowFractionInput] = createSignal(
     formatHistogramWindowFraction(props.histogramWindowFraction()),
   );
+  const [orderBookSnapshotIntervalInput, setOrderBookSnapshotIntervalInput] = createSignal(
+    formatOrderBookSnapshotInterval(getOrderBookHistoryStats().snapshotInterval),
+  );
 
   const handleCandleIntervalInput = (value: string): void => {
     setCandleIntervalInput(value);
@@ -43,6 +48,15 @@ export const ChartSettings: Component<ChartSettingsProps> = (props) => {
     if (!Number.isFinite(nextWindowFraction) || nextWindowFraction < 0) return;
 
     props.setHistogramWindowFraction(nextWindowFraction);
+  };
+
+  const handleOrderBookSnapshotIntervalInput = (value: string): void => {
+    setOrderBookSnapshotIntervalInput(value);
+
+    const nextInterval = Number(value);
+    if (!Number.isFinite(nextInterval) || nextInterval <= 0) return;
+
+    setOrderBookSnapshotInterval(nextInterval);
   };
 
   return (
@@ -111,6 +125,22 @@ export const ChartSettings: Component<ChartSettingsProps> = (props) => {
               setHistogramWindowFractionInput(formatHistogramWindowFraction(props.histogramWindowFraction()))
             }
             disabled={props.isHistogramCumulative()}
+          />
+        </label>
+        <label class="flex items-center gap-2 text-slate-200">
+          <span>Book snapshot interval</span>
+          <input
+            class="w-20 rounded border border-slate-700 bg-slate-950 px-2 py-1 text-right text-slate-100 outline-none transition focus:border-cyan-400"
+            type="number"
+            min="1"
+            step="1"
+            value={orderBookSnapshotIntervalInput()}
+            onInput={(event) => handleOrderBookSnapshotIntervalInput(event.currentTarget.value)}
+            onBlur={() =>
+              setOrderBookSnapshotIntervalInput(
+                formatOrderBookSnapshotInterval(getOrderBookHistoryStats().snapshotInterval),
+              )
+            }
           />
         </label>
       </div>

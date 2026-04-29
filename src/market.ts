@@ -1,4 +1,4 @@
-import { createSignal } from "solid-js";
+import { createMemo, createSignal } from "solid-js";
 
 type Order = {
   price: number;
@@ -92,22 +92,12 @@ type OrderBook = {
   sell: RegisteredOrder[];
 };
 
-const [orderBook, setOrderBook] = createSignal<OrderBook>({
+const initialOrderBook: OrderBook = {
   buy: [{ id: -1, price: 0.99, size: 1e2 }],
   sell: [{ id: -2, price: 1.01, size: 1e2 }],
-});
-
-const setOrderBookSide = (side: OrderSide, orders: RegisteredOrder[]): void => {
-  setOrderBook((currentOrderBook) => ({ ...currentOrderBook, [side]: orders }));
 };
 
 const cloneOrder = (order: RegisteredOrder): RegisteredOrder => ({ ...order });
-
-const cloneOrderBook = (): OrderBook => {
-  const currentOrderBook = orderBook();
-
-  return cloneOrderBookFrom(currentOrderBook);
-};
 
 const cloneOrderBookFrom = (source: OrderBook): OrderBook => {
   return {
@@ -150,22 +140,47 @@ const applyOrderBookChanges = (target: OrderBook, changes: OrderBookChange[]): v
 };
 
 const initialTimestamp = Date.now();
-let orderBookSnapshotInterval = 100;
+const [orderBookSnapshotInterval, setOrderBookSnapshotIntervalValue] = createSignal(100);
 let orderBookRevision = 0;
 
-const orderBookMap: OrderBookMapEntry[] = [
-  {
-    kind: "snapshot",
-    revision: orderBookRevision,
-    timestamp: initialTimestamp,
-    orderBook: cloneOrderBook(),
+const initialOrderBookMapEntry: OrderBookMapEntry = {
+  kind: "snapshot",
+  revision: orderBookRevision,
+  timestamp: initialTimestamp,
+  orderBook: initialOrderBook,
+};
+const [orderBookMap, setOrderBookMap] = createSignal<OrderBookMapEntry[]>([initialOrderBookMapEntry], {
+  equals: false,
+});
+
+const orderBook = createMemo<OrderBook>(
+  (previousOrderBook) => {
+    const entries = orderBookMap();
+    const latest = entries[entries.length - 1];
+
+    if (latest.kind === "snapshot") {
+      return cloneOrderBookFrom(latest.orderBook);
+    }
+
+    const nextOrderBook = previousOrderBook;
+    applyOrderBookChanges(nextOrderBook, latest.changes);
+    return nextOrderBook;
   },
-];
+  cloneOrderBookFrom(initialOrderBook),
+  { equals: false },
+);
+
+const appendOrderBookMapEntry = (entry: OrderBookMapEntry): void => {
+  setOrderBookMap((entries) => {
+    entries.push(entry);
+    return entries;
+  });
+};
 
 export const setOrderBookSnapshotInterval = (interval: number): void => {
   if (!Number.isFinite(interval) || interval <= 0) return;
 
-  orderBookSnapshotInterval = Math.floor(interval);
+  setOrderBookSnapshotIntervalValue(Math.floor(interval));
 };
 
 export const getOrderBookHistoryStats = (): {
@@ -180,7 +195,9 @@ export const getOrderBookHistoryStats = (): {
   let deltas = 0;
   let changes = 0;
 
-  for (const entry of orderBookMap) {
+  const entries = orderBookMap();
+
+  for (const entry of entries) {
     if (entry.kind === "snapshot") {
       snapshots += 1;
     } else {
@@ -190,12 +207,12 @@ export const getOrderBookHistoryStats = (): {
   }
 
   return {
-    entries: orderBookMap.length,
+    entries: entries.length,
     snapshots,
     deltas,
     changes,
     revision: orderBookRevision,
-    snapshotInterval: orderBookSnapshotInterval,
+    snapshotInterval: orderBookSnapshotInterval(),
   };
 };
 
@@ -208,7 +225,7 @@ export const getOrderBookRegion = (region: OrderBookHeatmapRegion): OrderBookHea
   const heatmap: Map<string, OrderBookHeatmapEntry> = new Map();
   let reconstructedOrderBook: OrderBook | null = null;
 
-  for (const entry of orderBookMap) {
+  for (const entry of orderBookMap()) {
     if (entry.kind === "snapshot") {
       reconstructedOrderBook = cloneOrderBookFrom(entry.orderBook);
     } else if (reconstructedOrderBook) {
@@ -290,30 +307,37 @@ const priceHistory: PriceHistoryEntry[] = [
 const recordMarketState = (changes: OrderBookChange[]) => {
   const timestamp = Date.now();
 
-  priceHistory.push({
-    timestamp,
-    spread: marketPriceSpread(),
-  });
-
-  if (changes.length === 0) return;
-
-  orderBookRevision += 1;
-
-  if (orderBookRevision % orderBookSnapshotInterval === 0) {
-    orderBookMap.push({
-      kind: "snapshot",
-      revision: orderBookRevision,
+  if (changes.length === 0) {
+    priceHistory.push({
       timestamp,
-      orderBook: cloneOrderBook(),
+      spread: marketPriceSpread(),
     });
     return;
   }
 
-  orderBookMap.push({
-    kind: "delta",
-    revision: orderBookRevision,
+  orderBookRevision += 1;
+
+  if (orderBookRevision % orderBookSnapshotInterval() === 0) {
+    const nextOrderBook = cloneOrderBookFrom(orderBook());
+    applyOrderBookChanges(nextOrderBook, changes);
+    appendOrderBookMapEntry({
+      kind: "snapshot",
+      revision: orderBookRevision,
+      timestamp,
+      orderBook: nextOrderBook,
+    });
+  } else {
+    appendOrderBookMapEntry({
+      kind: "delta",
+      revision: orderBookRevision,
+      timestamp,
+      changes,
+    });
+  }
+
+  priceHistory.push({
     timestamp,
-    changes,
+    spread: marketPriceSpread(),
   });
 };
 
@@ -378,11 +402,6 @@ export const makeOrder = (side: OrderSide, order: Order): MakeOrderResult => {
 
   orderWithId.size = restingSize;
 
-  const nextOrders = [...orderBook()[side], orderWithId].sort((a, b) =>
-    side === "sell" ? b.price - a.price : a.price - b.price,
-  );
-  setOrderBookSide(side, nextOrders);
-
   recordMarketState([{ kind: "add", side, order: cloneOrder(orderWithId) }]);
 
   return { id, fulfilled: result.fulfilled, restingSize };
@@ -395,15 +414,10 @@ export const takeOrder = (side: OrderSide, size: number, price?: number): { id: 
   const orders = [...orderBook()[bookSide]];
   const changes: OrderBookChange[] = [];
 
-  const commitOrderBook = () => {
-    setOrderBookSide(bookSide, orders);
-  };
-
   while (fulfilled < size) {
     const order = orders.pop();
     if (!order) {
       if (fulfilled > 0) {
-        commitOrderBook();
         recordMarketState(changes);
       }
       return { id, fulfilled };
@@ -412,7 +426,6 @@ export const takeOrder = (side: OrderSide, size: number, price?: number): { id: 
     if (price !== undefined && side === "buy" && order.price > price) {
       orders.push(order);
       if (fulfilled > 0) {
-        commitOrderBook();
         recordMarketState(changes);
       }
       return { id, fulfilled };
@@ -421,7 +434,6 @@ export const takeOrder = (side: OrderSide, size: number, price?: number): { id: 
     if (price !== undefined && side === "sell" && order.price < price) {
       orders.push(order);
       if (fulfilled > 0) {
-        commitOrderBook();
         recordMarketState(changes);
       }
       return { id, fulfilled };
@@ -450,7 +462,6 @@ export const takeOrder = (side: OrderSide, size: number, price?: number): { id: 
         nextSize,
         filledSize: remainingSize,
       });
-      commitOrderBook();
       recordMarketState(changes);
 
       return { id, fulfilled };
@@ -466,7 +477,6 @@ export const takeOrder = (side: OrderSide, size: number, price?: number): { id: 
     // });
   }
 
-  commitOrderBook();
   recordMarketState(changes);
   return { id, fulfilled };
 };
@@ -476,12 +486,9 @@ export const cancelOrder = (id: number, side?: OrderSide): RegisteredOrder | nul
 
   if (!location) return null;
 
-  const nextOrders = [...orderBook()[location.side]];
-  const [order] = nextOrders.splice(location.index, 1);
+  const order = orderBook()[location.side][location.index];
 
   if (!order) return null;
-
-  setOrderBookSide(location.side, nextOrders);
 
   recordMarketState([{ kind: "remove", side: location.side, order: cloneOrder(order) }]);
   return order;
