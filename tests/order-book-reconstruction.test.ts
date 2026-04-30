@@ -1,81 +1,178 @@
 import { afterAll, expect, test, vi } from "vitest";
+import fc from "fast-check";
 
 type MarketModule = typeof import("../src/market");
+type Operation =
+  | {
+      kind: "limit";
+      side: "buy" | "sell";
+      price: number;
+      size: number;
+    }
+  | {
+      kind: "cancel";
+      side: "buy" | "sell";
+      index: number;
+    }
+  | {
+      kind: "take";
+      side: "buy" | "sell";
+      price: number;
+      size: number;
+    };
 
 let now = 1_000;
 
-const loadMarket = async (levelCount: number): Promise<MarketModule> => {
+const loadMarket = async (settings: { interval?: number; fanout?: number; levels: number }): Promise<MarketModule> => {
   now = 1_000;
+  vi.restoreAllMocks();
   vi.resetModules();
   vi.spyOn(Date, "now").mockImplementation(() => now);
 
   const market = await import("../src/market");
-  market.setOrderBookDeltaSnapshotInterval(2);
-  market.setOrderBookDeltaSnapshotFanout(2);
-  market.setOrderBookDeltaSnapshotLevels(levelCount);
+  market.setOrderBookDeltaSnapshotInterval(settings.interval ?? 2);
+  market.setOrderBookDeltaSnapshotFanout(settings.fanout ?? 2);
+  market.setOrderBookDeltaSnapshotLevels(settings.levels);
 
   return market;
+};
+
+const operationArbitrary: fc.Arbitrary<Operation> = fc.oneof(
+  fc.record({
+    kind: fc.constant("limit"),
+    side: fc.constantFrom("buy" as const, "sell" as const),
+    price: fc.integer({ min: 70, max: 130 }).map((price) => price / 100),
+    size: fc.integer({ min: 1, max: 12 }),
+  }),
+  fc.record({
+    kind: fc.constant("cancel"),
+    side: fc.constantFrom("buy" as const, "sell" as const),
+    index: fc.nat({ max: 20 }),
+  }),
+  fc.record({
+    kind: fc.constant("take"),
+    side: fc.constantFrom("buy" as const, "sell" as const),
+    price: fc.integer({ min: 70, max: 130 }).map((price) => price / 100),
+    size: fc.integer({ min: 1, max: 120 }),
+  }),
+);
+
+const arb = fc
+  .record({
+    interval: fc.integer({ min: 2, max: 4 }),
+    fanout: fc.integer({ min: 2, max: 4 }),
+    levels: fc.integer({ min: 1, max: 4 }),
+  })
+  .chain(({ interval, fanout, levels }) =>
+    fc.record({
+      interval: fc.constant(interval),
+      fanout: fc.constant(fanout),
+      levels: fc.constant(levels),
+      operations: fc.array(operationArbitrary, {
+        minLength: 2 * interval * fanout ** levels,
+        maxLength: 2 * interval * fanout ** levels,
+      }),
+    }),
+  );
+
+const applyOperation = (
+  market: MarketModule,
+  operation: Operation,
+  restingOrderIds: Record<"buy" | "sell", number[]>,
+): void => {
+  switch (operation.kind) {
+    case "limit": {
+      const order = market.makeOrder(operation.side, {
+        price: operation.price,
+        size: operation.size,
+      });
+      if (order.restingSize > 0) {
+        restingOrderIds[operation.side].push(order.id);
+      }
+      return;
+    }
+    case "cancel": {
+      const ids = restingOrderIds[operation.side];
+      if (ids.length === 0) return;
+
+      const index = operation.index % ids.length;
+      const id = ids.splice(index, 1)[0];
+      if (id !== undefined && !market.cancelOrder(id, operation.side)) {
+        ids.push(id);
+      }
+      return;
+    }
+    case "take":
+      market.takeOrder(operation.side, operation.size, operation.price);
+      return;
+  }
+};
+
+const replayMarket = (
+  market: MarketModule,
+  operations: Operation[],
+  onRevision: (timestamp: number, revision: number) => void,
+): void => {
+  const restingOrderIds: Record<"buy" | "sell", number[]> = {
+    buy: [],
+    sell: [],
+  };
+
+  for (const operation of operations) {
+    now += 100;
+    const previousRevision = market.getOrderBookHistoryStats().revision;
+
+    applyOperation(market, operation, restingOrderIds);
+
+    const revision = market.getOrderBookHistoryStats().revision;
+    if (revision !== previousRevision) {
+      onRevision(now, revision);
+    }
+  }
 };
 
 afterAll(() => {
   vi.restoreAllMocks();
 });
 
-test.each([1, 2, 3, 4])(
-  "market reconstructs every recorded revision through snapshot interval with %i levels",
-  async (levelCount) => {
-    const market = await loadMarket(levelCount);
-    const recordedBooks = new Map<number, ReturnType<typeof market.orderBook>>();
-    const targetRevision = market.getOrderBookHistoryStats().snapshotInterval;
-    const buyOrderIds: number[] = [];
-    const sellOrderIds: number[] = [];
-    let step = 0;
+test("market reconstructs every recorded revision for fuzzed change sequences", async () => {
+  await fc.assert(
+    fc.asyncProperty(arb, async ({ interval, fanout, levels, operations }) => {
+      const market = await loadMarket({ interval, fanout, levels });
+      const recordedBooks = new Map<number, ReturnType<typeof market.orderBook>>();
 
-    while (market.getOrderBookHistoryStats().revision < targetRevision) {
-      step += 1;
-      now += 100;
+      replayMarket(market, operations, (_timestamp, revision) => {
+        recordedBooks.set(revision, structuredClone(market.orderBook()));
+      });
 
-      switch (step % 6) {
-        case 0: {
-          const id = buyOrderIds.shift();
-          if (id !== undefined && market.cancelOrder(id, "buy")) break;
-
-          const order = market.makeOrder("buy", { price: 0.77 + step * 0.0001, size: 5 + (step % 3) });
-          if (order.restingSize > 0) buyOrderIds.push(order.id);
-          break;
-        }
-        case 1: {
-          const order = market.makeOrder("buy", { price: 0.8 + step * 0.0001, size: 4 + (step % 4) });
-          if (order.restingSize > 0) buyOrderIds.push(order.id);
-          break;
-        }
-        case 2: {
-          const order = market.makeOrder("sell", { price: 1.18 - step * 0.0001, size: 6 + (step % 5) });
-          if (order.restingSize > 0) sellOrderIds.push(order.id);
-          break;
-        }
-        case 3: {
-          const id = sellOrderIds.shift();
-          if (id !== undefined && market.cancelOrder(id, "sell")) break;
-
-          const order = market.makeOrder("sell", { price: 1.2 - step * 0.0001, size: 3 + (step % 4) });
-          if (order.restingSize > 0) sellOrderIds.push(order.id);
-          break;
-        }
-        case 4:
-          market.takeOrder("buy", 2 + (step % 3), 1.3);
-          break;
-        case 5:
-          market.takeOrder("sell", 2 + (step % 2), 0.7);
-          break;
+      for (const [revision, recordedBook] of recordedBooks) {
+        expect(market.reconstructOrderBookAtRevision(revision), `revision ${revision}`).toEqual(recordedBook);
       }
+    }),
+  );
+});
 
-      const revision = market.getOrderBookHistoryStats().revision;
-      recordedBooks.set(revision, structuredClone(market.orderBook()));
-    }
+test("market builds heatmap regions for fuzzed change sequences", async () => {
+  await fc.assert(
+    fc.asyncProperty(arb, async ({ interval, fanout, levels, operations }) => {
+      const market = await loadMarket({ interval, fanout, levels });
+      let firstTimestamp = 0;
+      let lastTimestamp = 0;
 
-    for (const [revision, recordedBook] of recordedBooks) {
-      expect(market.reconstructOrderBookAtRevision(revision), `revision ${revision}`).toEqual(recordedBook);
-    }
-  },
-);
+      replayMarket(market, operations, (timestamp) => {
+        firstTimestamp ||= timestamp;
+        lastTimestamp = timestamp;
+      });
+
+      if (firstTimestamp === 0) return;
+
+      expect(() =>
+        market.getOrderBookRegion({
+          timestamp: [firstTimestamp, lastTimestamp + 100],
+          price: [0.7, 1.3],
+          resolution: [Math.max(market.getOrderBookHistoryStats().revision + 1, 2), 601],
+        }),
+      ).not.toThrow();
+    }),
+  );
+});
