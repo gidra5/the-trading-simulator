@@ -10,12 +10,6 @@ export type MakeOrderResult = {
   fulfilled: number;
   restingSize: number;
 };
-type TradeHistoryEntry = {
-  buyOrderId: number;
-  sellOrderId: number;
-  price: number;
-  size: number;
-};
 type PriceSpread = {
   buy: number;
   sell: number;
@@ -119,13 +113,31 @@ const cloneOrderBookFrom = (source: OrderBook): OrderBook => {
   };
 };
 
+const findOrderInsertIndex = (orders: RegisteredOrder[], side: OrderSide, price: number): number => {
+  let low = 0;
+  let high = orders.length;
+
+  while (low < high) {
+    const mid = Math.floor((low + high) / 2);
+    const midPrice = orders[mid]!.price;
+    const isBeforeOrEqual = side === "sell" ? midPrice >= price : midPrice <= price;
+
+    if (isBeforeOrEqual) {
+      low = mid + 1;
+    } else {
+      high = mid;
+    }
+  }
+
+  return low;
+};
+
 const applyOrderBookChange = (target: OrderBook, change: OrderBookChange): void => {
   const orders = target[change.side];
 
   switch (change.kind) {
     case "add":
-      orders.push(cloneOrder(change.order));
-      orders.sort((a, b) => (change.side === "sell" ? b.price - a.price : a.price - b.price));
+      orders.splice(findOrderInsertIndex(orders, change.side, change.order.price), 0, cloneOrder(change.order));
       break;
     case "remove": {
       const index = orders.findIndex((order) => order.id === change.order.id);
