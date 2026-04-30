@@ -404,9 +404,6 @@ const appendOrderBookMapEntry = (timestamp: number, changes: OrderBookChange | O
 
   if (orderBookRevision % snapshotInterval() === 0) {
     setOrderBookMap((entries) => {
-      const checkpointIndex = findLatestOrderBookFullSnapshotIndex(entries);
-
-      entries.splice(checkpointIndex + 1);
       entries.push({
         kind: "snapshot",
         revision: orderBookRevision,
@@ -421,13 +418,11 @@ const appendOrderBookMapEntry = (timestamp: number, changes: OrderBookChange | O
   const deltaSnapshotLevel = getOrderBookDeltaSnapshotLevel(orderBookRevision);
   if (deltaSnapshotLevel > 0) {
     setOrderBookMap((entries) => {
-      const checkpointIndex = findLatestOrderBookCheckpointIndex(entries, deltaSnapshotLevel);
       const deltaSnapshotChanges = compactOrderBookChanges(
         orderBookDeltaLevels()[deltaSnapshotLevel - 1] ?? [],
         changes,
       );
 
-      entries.splice(checkpointIndex + 1);
       entries.push({
         kind: "delta-snapshot",
         level: deltaSnapshotLevel,
@@ -469,31 +464,9 @@ const getOrderBookDeltaSnapshotLevel = (revision: number): number => {
   return level;
 };
 
-const findLatestOrderBookCheckpointIndex = (entries: OrderBookMapEntry[], level: number): number => {
-  for (let index = entries.length - 1; index >= 0; index -= 1) {
-    const entry = entries[index];
-
-    if (entry?.kind === "snapshot" || (entry?.kind === "delta-snapshot" && entry.level >= level)) {
-      return index;
-    }
-  }
-
-  return 0;
-};
-
-const findLatestOrderBookFullSnapshotIndex = (entries: OrderBookMapEntry[]): number => {
-  for (let index = entries.length - 1; index >= 0; index -= 1) {
-    if (entries[index]?.kind === "snapshot") {
-      return index;
-    }
-  }
-
-  return 0;
-};
-
 const reconstructOrderBookAtIndex = (entries: OrderBookMapEntry[], targetIndex: number): OrderBook | null => {
   const pendingChanges: Array<OrderBookChange | OrderBookChange[]> = [];
-  let minimumDeltaSnapshotLevel = 1;
+  let coveredUntilCheckpointLevel = 0;
 
   for (let index = targetIndex; index >= 0; index -= 1) {
     const entry = entries[index];
@@ -510,15 +483,32 @@ const reconstructOrderBookAtIndex = (entries: OrderBookMapEntry[], targetIndex: 
       return reconstructedOrderBook;
     }
 
+    if (coveredUntilCheckpointLevel > 0) {
+      if (entry.kind === "delta-snapshot" && entry.level >= coveredUntilCheckpointLevel) {
+        pendingChanges.push(entry.compactedChanges);
+        coveredUntilCheckpointLevel = entry.level;
+      }
+
+      continue;
+    }
+
     if (entry.kind === "delta") {
       pendingChanges.push(entry.changes);
-    } else if (entry.level >= minimumDeltaSnapshotLevel) {
+    } else {
       pendingChanges.push(entry.compactedChanges);
-      minimumDeltaSnapshotLevel = entry.level;
+      coveredUntilCheckpointLevel = entry.level;
     }
   }
 
   return null;
+};
+
+export const reconstructOrderBookAtRevision = (revision: number): OrderBook | null => {
+  const entries = orderBookMap();
+  const targetIndex = entries.findIndex((entry) => entry.revision === revision);
+
+  if (targetIndex === -1) return null;
+  return reconstructOrderBookAtIndex(entries, targetIndex);
 };
 
 const lowerBoundOrderBookMapByTimestamp = (entries: OrderBookMapEntry[], timestamp: number): number => {
@@ -887,4 +877,4 @@ export const cancelOrder = (id: number, side?: OrderSide): RegisteredOrder | nul
 export const oppositeSide = (side: OrderSide): OrderSide =>
   side === "buy" ? "sell" : "buy";
 
-export { marketPriceSpread, midPrice };
+export { marketPriceSpread, midPrice, orderBook };

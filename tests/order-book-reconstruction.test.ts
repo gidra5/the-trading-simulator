@@ -1,40 +1,30 @@
-import { afterAll, beforeEach, expect, test } from "vitest";
-import {
-  createMarket,
-  resetMarketForTesting,
-  setOrderBookDeltaSnapshotFanout,
-  setOrderBookDeltaSnapshotInterval,
-  setOrderBookDeltaSnapshotLevels,
-} from "../src/market";
+import { afterAll, expect, test, vi } from "vitest";
+
+type MarketModule = typeof import("../src/market");
 
 let now = 1_000;
-const originalDateNow = Date.now;
 
-Date.now = () => now;
-
-const resetWithFrequentDeltaSnapshots = (): void => {
+const loadMarket = async (levelCount: number): Promise<MarketModule> => {
   now = 1_000;
-  resetMarketForTesting(now);
-  setOrderBookDeltaSnapshotInterval(2);
-  setOrderBookDeltaSnapshotFanout(2);
-  setOrderBookDeltaSnapshotLevels(3);
+  vi.resetModules();
+  vi.spyOn(Date, "now").mockImplementation(() => now);
+
+  const market = await import("../src/market");
+  market.setOrderBookDeltaSnapshotInterval(2);
+  market.setOrderBookDeltaSnapshotFanout(2);
+  market.setOrderBookDeltaSnapshotLevels(levelCount);
+
+  return market;
 };
 
-beforeEach(resetWithFrequentDeltaSnapshots);
-
 afterAll(() => {
-  Date.now = originalDateNow;
+  vi.restoreAllMocks();
 });
 
 test.each([1, 2, 3, 4])(
-  "constructed market reconstructs every recorded revision through snapshot interval with %i levels",
-  (levelCount) => {
-    now = 5_000;
-    const market = createMarket(now);
-    market.setOrderBookDeltaSnapshotInterval(2);
-    market.setOrderBookDeltaSnapshotFanout(2);
-    market.setOrderBookDeltaSnapshotLevels(levelCount);
-
+  "market reconstructs every recorded revision through snapshot interval with %i levels",
+  async (levelCount) => {
+    const market = await loadMarket(levelCount);
     const recordedBooks = new Map<number, ReturnType<typeof market.orderBook>>();
     const targetRevision = market.getOrderBookHistoryStats().snapshotInterval;
     const buyOrderIds: number[] = [];
