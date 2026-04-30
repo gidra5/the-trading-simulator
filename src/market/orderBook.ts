@@ -1,3 +1,4 @@
+import { createMemo, createSignal } from "solid-js";
 import { assert, unreachable } from "../utils";
 import { cloneOrder, compareOrders, type OrderSide, type RegisteredOrder } from "./order";
 
@@ -70,11 +71,6 @@ export type OrderBookHistogramRegion = {
 export type OrderBookHistogramSeries = {
   cellHeight: number;
   sizes: number[];
-};
-
-export const initialOrderBook: OrderBook = {
-  buy: [{ id: -2, price: 0.99, size: 1e2 }],
-  sell: [{ id: -3, price: 1.01, size: 1e2 }],
 };
 
 export const cloneOrderBookFrom = (source: OrderBook): OrderBook => {
@@ -163,4 +159,272 @@ export const compactOrderBookChanges = (
   }
 
   return Array.from(changes.values());
+};
+
+export type PriceSpread = {
+  buy: number;
+  sell: number;
+};
+export type PriceHistoryEntry = {
+  revision: number;
+  timestamp: number;
+  spread: PriceSpread;
+};
+
+type OrderBookOptions = {
+  deltaSnapshotInterval: number;
+  fanout: number;
+  levels: number;
+};
+
+export const createOrderBook = (options: OrderBookOptions) => {
+  const [deltaSnapshotInterval, setDeltaSnapshotInterval] = createSignal(options.deltaSnapshotInterval);
+  const [fanout, setFanout] = createSignal(options.fanout);
+  const [levels, setLevels] = createSignal(options.levels);
+  const snapshotInterval = () => deltaSnapshotInterval() * fanout() ** levels();
+
+  const initialOrderBook = { buy: [], sell: [] };
+  const [orderBookMap, setOrderBookMap] = createSignal<OrderBookMapEntry[]>(
+    [
+      {
+        kind: "snapshot",
+        revision: 0,
+        timestamp: Date.now(),
+        orderBook: initialOrderBook,
+      },
+    ],
+    { equals: false },
+  );
+
+  const revision = () => orderBookMap()[orderBookMap().length - 1].revision;
+
+  const orderBook = createMemo<OrderBook>(
+    (previousOrderBook) => {
+      const entries = orderBookMap();
+      const latest = entries[entries.length - 1];
+
+      if (latest.kind === "snapshot") {
+        return cloneOrderBookFrom(latest.orderBook);
+      }
+
+      const nextOrderBook = previousOrderBook;
+      applyOrderBookEntryChanges(nextOrderBook, latest.changes);
+      return nextOrderBook;
+    },
+    cloneOrderBookFrom(initialOrderBook),
+    { equals: false },
+  );
+  // TODO: when interval, fanout or levels change, it should rebuild the order book map
+  const deltaLevels = createMemo<OrderBookChange[][]>(
+    (previousChangesByLevel) => {
+      const entries = orderBookMap();
+      const latest = entries[entries.length - 1];
+
+      if (latest.kind === "snapshot") {
+        return [];
+      }
+
+      if (latest.level > 0) {
+        const nextChangesByLevel = previousChangesByLevel.map((changes, index) =>
+          index + 1 <= latest.level ? [] : compactOrderBookChanges(changes, latest.changes),
+        );
+
+        for (let level = previousChangesByLevel.length + 1; level <= latest.level; level += 1) {
+          nextChangesByLevel[level - 1] = [];
+        }
+
+        return nextChangesByLevel;
+      }
+
+      const levelCount = levels();
+      const nextChangesByLevel = previousChangesByLevel.slice();
+      for (let level = 1; level <= levelCount; level += 1) {
+        nextChangesByLevel[level - 1] = compactOrderBookChanges(nextChangesByLevel[level - 1] ?? [], latest.changes);
+      }
+
+      return nextChangesByLevel;
+    },
+    [],
+    { equals: false },
+  );
+
+  const priceHistory = createMemo<PriceHistoryEntry[]>(
+    (previousHistory) => {
+      const spread = ((): PriceSpread => {
+        // to decide spread we look at the opposite side offers
+        const source = orderBook();
+        return {
+          buy: source.sell[source.sell.length - 1]?.price ?? null,
+          sell: source.buy[source.buy.length - 1]?.price ?? null,
+        };
+      })();
+
+      if (spread.buy === null || spread.sell === null) return previousHistory;
+
+      const next = () => {
+        previousHistory.push({ revision: revision(), timestamp: Date.now(), spread });
+        return previousHistory;
+      };
+
+      if (previousHistory.length === 0) return next();
+
+      const latest = previousHistory[previousHistory.length - 1];
+      if (latest.spread.buy === spread.buy && latest.spread.sell === spread.sell) return previousHistory;
+
+      return next();
+    },
+    [],
+    { equals: false },
+  );
+
+  const marketPriceSpread = () => {
+    const history = priceHistory();
+    const entry = history[history.length - 1];
+    if (!entry) return null;
+    return entry.spread;
+  };
+
+  const midPrice = () => {
+    const spread = marketPriceSpread();
+    if (!spread) return null;
+    return (spread.buy + spread.sell) / 2;
+  };
+
+  const revisionDeltaLevel = (revision: number): number => {
+    const interval = deltaSnapshotInterval();
+
+    if (revision % interval !== 0) return 0;
+
+    let ratio = (revision % snapshotInterval()) / interval;
+    if (ratio === 0) return levels();
+
+    let level = 1;
+    while (level < levels() && ratio % fanout() === 0) {
+      ratio /= fanout();
+      level += 1;
+    }
+
+    return level;
+  };
+
+  const appendChange = (timestamp: number, changes: OrderBookChange | OrderBookChange[]): void => {
+    if (Array.isArray(changes) && changes.length === 0) return;
+    changes = Array.isArray(changes) && changes.length === 1 ? changes[0]! : changes;
+
+    const orderBookRevision = revision() + 1;
+    const nextOrderBook = cloneOrderBookFrom(orderBook());
+    applyOrderBookEntryChanges(nextOrderBook, changes);
+
+    if (orderBookRevision % snapshotInterval() === 0) {
+      setOrderBookMap((entries) => {
+        entries.push({
+          kind: "snapshot",
+          revision: orderBookRevision,
+          timestamp,
+          orderBook: nextOrderBook,
+        });
+        return entries;
+      });
+      return;
+    }
+
+    const deltaSnapshotLevel = revisionDeltaLevel(orderBookRevision);
+    if (deltaSnapshotLevel > 0) {
+      setOrderBookMap((entries) => {
+        const deltaSnapshotChanges = compactOrderBookChanges(deltaLevels()[deltaSnapshotLevel - 1] ?? [], changes);
+
+        entries.push({
+          kind: "delta-snapshot",
+          level: deltaSnapshotLevel,
+          revision: orderBookRevision,
+          timestamp,
+          changes,
+          compactedChanges: deltaSnapshotChanges,
+        });
+        return entries;
+      });
+      return;
+    }
+
+    setOrderBookMap((entries) => {
+      entries.push({
+        kind: "delta-snapshot",
+        level: 0,
+        revision: orderBookRevision,
+        timestamp,
+        changes,
+        compactedChanges: [],
+      });
+      return entries;
+    });
+  };
+
+const reconstructAt = (targetIndex: number): OrderBook | null => {
+  const entries = orderBookMap();
+  const pendingChanges: Array<OrderBookChange | OrderBookChange[]> = [];
+  let coveredUntilCheckpointLevel = 0;
+
+  for (let index = targetIndex; index >= 0; index -= 1) {
+    const entry = entries[index];
+
+    if (!entry) continue;
+
+    if (entry.kind === "snapshot") {
+      const reconstructedOrderBook = cloneOrderBookFrom(entry.orderBook);
+
+      for (let pendingIndex = pendingChanges.length - 1; pendingIndex >= 0; pendingIndex -= 1) {
+        applyOrderBookEntryChanges(reconstructedOrderBook, pendingChanges[pendingIndex]!);
+      }
+
+      return reconstructedOrderBook;
+    }
+
+    if (coveredUntilCheckpointLevel > 0) {
+      if (entry.kind === "delta-snapshot" && entry.level >= coveredUntilCheckpointLevel) {
+        pendingChanges.push(entry.compactedChanges);
+        coveredUntilCheckpointLevel = entry.level;
+      }
+
+      continue;
+    }
+
+    if (entry.level === 0) {
+      pendingChanges.push(entry.changes);
+    } else {
+      pendingChanges.push(entry.compactedChanges);
+      coveredUntilCheckpointLevel = entry.level;
+    }
+  }
+
+  return null;
+};
+
+const reconstruct = (revision: number): OrderBook | null => {
+  const entries = orderBookMap();
+  const targetIndex = entries.findIndex((entry) => entry.revision === revision);
+
+  if (targetIndex === -1) return null;
+  return reconstructAt(targetIndex);
+};
+  
+  return {
+    snapshotInterval,
+    deltaSnapshotInterval,
+    setDeltaSnapshotInterval,
+    fanout,
+    setFanout,
+    levels,
+    setLevels,
+    orderBookMap,
+    revision,
+
+    orderBook,
+    appendChange,
+    reconstruct,
+    reconstructAt,
+
+    priceHistory,
+    marketPriceSpread,
+    midPrice,
+  };
 };

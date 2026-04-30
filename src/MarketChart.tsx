@@ -178,20 +178,17 @@ export const MarketChart: Component = () => {
           <p class="text-xl tracking-[0.3em] text-slate-400">Market Sim</p>
           <p class="font-mono text-xs">buy / sell</p>
           <p class="font-mono text-xs">
-            {priceSpread().buy.toFixed(6)} / {priceSpread().sell.toFixed(6)}
+            {priceSpread()?.buy.toFixed(6) ?? "-"} / {priceSpread()?.sell.toFixed(6) ?? "-"}
           </p>
         </div>
         <div class="max-w-5xl rounded border border-slate-800 bg-slate-900/80 px-3 py-2 font-mono text-[11px] leading-5 text-slate-300">
           <div class="mb-2 flex items-center justify-between gap-3">
-            <p class="text-[10px] uppercase tracking-[0.2em] text-slate-500">
-              Controls
-            </p>
+            <p class="text-[10px] uppercase tracking-[0.2em] text-slate-500">Controls</p>
             <div class="flex overflow-hidden rounded border border-slate-700">
               <button
                 class="border-l border-slate-700 px-2 py-1 text-slate-300 transition first:border-l-0 hover:bg-slate-800 hover:text-slate-100"
                 classList={{
-                  "bg-cyan-500 text-slate-950 hover:bg-cyan-400 hover:text-slate-950":
-                    activeSettingsTab() === "chart",
+                  "bg-cyan-500 text-slate-950 hover:bg-cyan-400 hover:text-slate-950": activeSettingsTab() === "chart",
                 }}
                 type="button"
                 onClick={() => setActiveSettingsTab("chart")}
@@ -201,8 +198,7 @@ export const MarketChart: Component = () => {
               <button
                 class="border-l border-slate-700 px-2 py-1 text-slate-300 transition first:border-l-0 hover:bg-slate-800 hover:text-slate-100"
                 classList={{
-                  "bg-cyan-500 text-slate-950 hover:bg-cyan-400 hover:text-slate-950":
-                    activeSettingsTab() === "market",
+                  "bg-cyan-500 text-slate-950 hover:bg-cyan-400 hover:text-slate-950": activeSettingsTab() === "market",
                 }}
                 type="button"
                 onClick={() => setActiveSettingsTab("market")}

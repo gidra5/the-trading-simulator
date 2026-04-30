@@ -1,4 +1,4 @@
-import { createMemo, createRoot, createSignal } from "solid-js";
+import { createRoot } from "solid-js";
 import {
   cloneOrder,
   oppositeSide,
@@ -11,8 +11,7 @@ import {
   applyOrderBookChange,
   applyOrderBookEntryChanges,
   cloneOrderBookFrom,
-  compactOrderBookChanges,
-  initialOrderBook,
+  createOrderBook,
   type OrderBook,
   type OrderBookChange,
   type OrderBookHeatmapEntry,
@@ -21,6 +20,7 @@ import {
   type OrderBookHistogramRegion,
   type OrderBookHistogramSeries,
   type OrderBookMapEntry,
+  type PriceHistoryEntry,
 } from "./orderBook";
 
 export type { MakeOrderResult, OrderSide } from "./order";
@@ -33,15 +33,6 @@ export type {
 } from "./orderBook";
 export { applyOrderBookChange, oppositeSide };
 
-type PriceSpread = {
-  buy: number;
-  sell: number;
-};
-type PriceHistoryEntry = {
-  revision: number;
-  timestamp: number;
-  spread: PriceSpread;
-};
 export type PriceCandle = {
   time: number;
   open: number;
@@ -49,34 +40,6 @@ export type PriceCandle = {
   low: number;
   close: number;
 };
-
-const initialTimestamp = Date.now();
-let orderBookRevision = 0;
-
-const initialOrderBookMapEntry: OrderBookMapEntry = {
-  kind: "snapshot",
-  revision: orderBookRevision,
-  timestamp: initialTimestamp,
-  orderBook: initialOrderBook,
-};
-const initialPriceHistory: PriceHistoryEntry[] = [
-  {
-    revision: orderBookRevision,
-    timestamp: initialTimestamp,
-    spread: {
-      buy: 1.01,
-      sell: 0.99,
-    },
-  },
-];
-
-const priceSpreadFromOrderBook = (
-  source: OrderBook,
-  fallback: PriceSpread = initialPriceHistory[0]!.spread,
-): PriceSpread => ({
-  buy: source.sell[source.sell.length - 1]?.price ?? fallback.buy,
-  sell: source.buy[source.buy.length - 1]?.price ?? fallback.sell,
-});
 
 const {
   snapshotInterval,
@@ -87,249 +50,25 @@ const {
   levels,
   setLevels,
   orderBookMap,
-  setOrderBookMap,
+  revision,
   orderBook,
-  orderBookDeltaLevels,
+  appendChange,
+  reconstructAt,
+  reconstruct,
 
   priceHistory,
   marketPriceSpread,
   midPrice,
 } = createRoot(() => {
-  const [deltaSnapshotInterval, setDeltaSnapshotInterval] = createSignal(100);
-  const [fanout, setFanout] = createSignal(5);
-  const [levels, setLevels] = createSignal(5);
-  const snapshotInterval = () => deltaSnapshotInterval() * fanout() ** levels();
+  const orderBook = createOrderBook({ deltaSnapshotInterval: 100, fanout: 5, levels: 5 });
 
-  const [orderBookMap, setOrderBookMap] = createSignal<OrderBookMapEntry[]>([initialOrderBookMapEntry], {
-    equals: false,
-  });
+  // orderBook.appendChange(Date.now(), { kind: "add", side: "buy", order: { id: -2, price: 0.99, size: 1e2 } });
+  // orderBook.appendChange(Date.now(), { kind: "add", side: "sell", order: { id: -3, price: 1.01, size: 1e2 } });
 
-  const orderBook = createMemo<OrderBook>(
-    (previousOrderBook) => {
-      const entries = orderBookMap();
-      const latest = entries[entries.length - 1];
-
-      if (latest.kind === "snapshot") {
-        return cloneOrderBookFrom(latest.orderBook);
-      }
-
-      const nextOrderBook = previousOrderBook;
-      applyOrderBookEntryChanges(nextOrderBook, latest.changes);
-      return nextOrderBook;
-    },
-    cloneOrderBookFrom(initialOrderBook),
-    { equals: false },
-  );
-
-  const orderBookDeltaLevels = createMemo<OrderBookChange[][]>(
-    (previousChangesByLevel) => {
-      const entries = orderBookMap();
-      const latest = entries[entries.length - 1];
-
-      if (latest.kind === "snapshot") {
-        return [];
-      }
-
-      if (latest.level > 0) {
-        const nextChangesByLevel = previousChangesByLevel.map((changes, index) =>
-          index + 1 <= latest.level ? [] : compactOrderBookChanges(changes, latest.changes),
-        );
-
-        for (let level = previousChangesByLevel.length + 1; level <= latest.level; level += 1) {
-          nextChangesByLevel[level - 1] = [];
-        }
-
-        return nextChangesByLevel;
-      }
-
-      const levelCount = levels();
-      const nextChangesByLevel = previousChangesByLevel.slice();
-      for (let level = 1; level <= levelCount; level += 1) {
-        nextChangesByLevel[level - 1] = compactOrderBookChanges(nextChangesByLevel[level - 1] ?? [], latest.changes);
-      }
-
-      return nextChangesByLevel;
-    },
-    [],
-    { equals: false },
-  );
-
-  const priceHistory = createMemo<PriceHistoryEntry[]>(
-    (previousHistory) => {
-      const entries = orderBookMap();
-      const latest = entries[entries.length - 1];
-      const latestHistory = previousHistory[previousHistory.length - 1];
-
-      if (latestHistory?.revision === latest.revision) {
-        return previousHistory;
-      }
-
-      const spread = priceSpreadFromOrderBook(orderBook(), latestHistory?.spread);
-
-      if (latestHistory?.spread.buy === spread.buy && latestHistory.spread.sell === spread.sell) {
-        return previousHistory;
-      }
-
-      previousHistory.push({
-        revision: latest.revision,
-        timestamp: latest.timestamp,
-        spread,
-      });
-      return previousHistory;
-    },
-    initialPriceHistory,
-    { equals: false },
-  );
-
-  const marketPriceSpread = createMemo((): PriceSpread => {
-    const history = priceHistory();
-    const lastSpread = history[history.length - 1]?.spread;
-
-    return priceSpreadFromOrderBook(orderBook(), lastSpread);
-  });
-
-  const midPrice = createMemo((): number => {
-    const spread = marketPriceSpread();
-    return (spread.buy + spread.sell) / 2;
-  });
-
-  return {
-    snapshotInterval,
-    deltaSnapshotInterval,
-    setDeltaSnapshotInterval,
-    fanout,
-    setFanout,
-    levels,
-    setLevels,
-    orderBookMap,
-    setOrderBookMap,
-    orderBook,
-    orderBookDeltaLevels,
-
-    priceHistory,
-    marketPriceSpread,
-    midPrice,
-  };
+  return orderBook;
 });
 
-const appendOrderBookMapEntry = (timestamp: number, changes: OrderBookChange | OrderBookChange[]): void => {
-  if (Array.isArray(changes) && changes.length === 0) return;
-  changes = Array.isArray(changes) && changes.length === 1 ? changes[0]! : changes;
-
-  orderBookRevision += 1;
-  const nextOrderBook = cloneOrderBookFrom(orderBook());
-  applyOrderBookEntryChanges(nextOrderBook, changes);
-
-  if (orderBookRevision % snapshotInterval() === 0) {
-    setOrderBookMap((entries) => {
-      entries.push({
-        kind: "snapshot",
-        revision: orderBookRevision,
-        timestamp,
-        orderBook: nextOrderBook,
-      });
-      return entries;
-    });
-    return;
-  }
-
-  const deltaSnapshotLevel = getOrderBookDeltaSnapshotLevel(orderBookRevision);
-  if (deltaSnapshotLevel > 0) {
-    setOrderBookMap((entries) => {
-      const deltaSnapshotChanges = compactOrderBookChanges(
-        orderBookDeltaLevels()[deltaSnapshotLevel - 1] ?? [],
-        changes,
-      );
-
-      entries.push({
-        kind: "delta-snapshot",
-        level: deltaSnapshotLevel,
-        revision: orderBookRevision,
-        timestamp,
-        changes,
-        compactedChanges: deltaSnapshotChanges,
-      });
-      return entries;
-    });
-    return;
-  }
-
-  setOrderBookMap((entries) => {
-    entries.push({
-      kind: "delta-snapshot",
-      level: 0,
-      revision: orderBookRevision,
-      timestamp,
-      changes,
-      compactedChanges: [],
-    });
-    return entries;
-  });
-};
-
-const getOrderBookDeltaSnapshotLevel = (revision: number): number => {
-  const interval = deltaSnapshotInterval();
-
-  if (revision % interval !== 0) return 0;
-
-  let ratio = (revision % snapshotInterval()) / interval;
-  if (ratio === 0) return levels();
-
-  let level = 1;
-  while (level < levels() && ratio % fanout() === 0) {
-    ratio /= fanout();
-    level += 1;
-  }
-
-  return level;
-};
-
-const reconstructOrderBookAtIndex = (entries: OrderBookMapEntry[], targetIndex: number): OrderBook | null => {
-  const pendingChanges: Array<OrderBookChange | OrderBookChange[]> = [];
-  let coveredUntilCheckpointLevel = 0;
-
-  for (let index = targetIndex; index >= 0; index -= 1) {
-    const entry = entries[index];
-
-    if (!entry) continue;
-
-    if (entry.kind === "snapshot") {
-      const reconstructedOrderBook = cloneOrderBookFrom(entry.orderBook);
-
-      for (let pendingIndex = pendingChanges.length - 1; pendingIndex >= 0; pendingIndex -= 1) {
-        applyOrderBookEntryChanges(reconstructedOrderBook, pendingChanges[pendingIndex]!);
-      }
-
-      return reconstructedOrderBook;
-    }
-
-    if (coveredUntilCheckpointLevel > 0) {
-      if (entry.kind === "delta-snapshot" && entry.level >= coveredUntilCheckpointLevel) {
-        pendingChanges.push(entry.compactedChanges);
-        coveredUntilCheckpointLevel = entry.level;
-      }
-
-      continue;
-    }
-
-    if (entry.level === 0) {
-      pendingChanges.push(entry.changes);
-    } else {
-      pendingChanges.push(entry.compactedChanges);
-      coveredUntilCheckpointLevel = entry.level;
-    }
-  }
-
-  return null;
-};
-
-export const reconstructOrderBookAtRevision = (revision: number): OrderBook | null => {
-  const entries = orderBookMap();
-  const targetIndex = entries.findIndex((entry) => entry.revision === revision);
-
-  if (targetIndex === -1) return null;
-  return reconstructOrderBookAtIndex(entries, targetIndex);
-};
+export const reconstructOrderBookAtRevision = reconstruct;
 
 const lowerBoundOrderBookMapByTimestamp = (entries: OrderBookMapEntry[], timestamp: number): number => {
   let low = 0;
@@ -413,7 +152,7 @@ export const getOrderBookHistoryStats = (): {
     deltaSnapshotLevels,
     deltas,
     changes,
-    revision: orderBookRevision,
+    revision: revision(),
     snapshotInterval: snapshotInterval(),
     deltaSnapshotInterval: deltaSnapshotInterval(),
     deltaSnapshotFanout: fanout(),
@@ -431,15 +170,12 @@ export const getOrderBookRegion = (region: OrderBookHeatmapRegion): OrderBookHea
   const heatmap: Map<number, OrderBookHeatmapEntry> = new Map();
   const entries = orderBookMap();
   const firstRegionEntryIndex = lowerBoundOrderBookMapByTimestamp(entries, region.timestamp[0]);
-  let reconstructedOrderBook =
-    firstRegionEntryIndex > 0 ? reconstructOrderBookAtIndex(entries, firstRegionEntryIndex - 1) : null;
+  let reconstructedOrderBook = firstRegionEntryIndex > 0 ? reconstructAt(firstRegionEntryIndex - 1) : null;
 
   for (let entryIndex = firstRegionEntryIndex; entryIndex < entries.length; entryIndex += 1) {
     const entry = entries[entryIndex]!;
 
-    if (entry.timestamp > region.timestamp[1]) {
-      break;
-    }
+    if (entry.timestamp > region.timestamp[1]) break;
 
     if (entry.kind === "snapshot") {
       reconstructedOrderBook = cloneOrderBookFrom(entry.orderBook);
@@ -455,33 +191,22 @@ export const getOrderBookRegion = (region: OrderBookHeatmapRegion): OrderBookHea
       }
     }
 
-    if (!reconstructedOrderBook) {
-      continue;
-    }
+    if (!reconstructedOrderBook) continue;
 
     const x = Math.floor((entry.timestamp - region.timestamp[0]) / cellSize[0]);
-    if (x < 0 || x >= resolution[0]) {
-      continue;
-    }
+    if (x < 0 || x >= resolution[0]) continue;
 
     const orders = [...reconstructedOrderBook.buy, ...reconstructedOrderBook.sell];
     for (const order of orders) {
-      if (order.price < region.price[0] || order.price > region.price[1]) {
-        continue;
-      }
+      if (order.price < region.price[0] || order.price > region.price[1]) continue;
 
       const y = Math.floor((order.price - region.price[0]) / cellSize[1]);
-      if (y < 0 || y >= resolution[1]) {
-        continue;
-      }
+      if (y < 0 || y >= resolution[1]) continue;
 
       const key = y * resolution[0] + x;
       const cell = heatmap.get(key);
-      if (cell) {
-        cell.size += order.size;
-      } else {
-        heatmap.set(key, { x, y, size: order.size });
-      }
+      if (cell) cell.size += order.size;
+      else heatmap.set(key, { x, y, size: order.size });
     }
   }
 
@@ -551,14 +276,14 @@ const recordMarketState = (changes: OrderBookChange | OrderBookChange[]) => {
     return;
   }
 
-  appendOrderBookMapEntry(timestamp, changes);
+  appendChange(timestamp, changes);
 };
 
 export const priceHistoryCandle = (start: number, end: number, side: OrderSide): PriceCandle => {
   const history = priceHistory();
   const firstIndex = upperBoundPriceHistory(history, start);
   const endIndex = upperBoundPriceHistory(history, end);
-  const openEntry = history[Math.max(0, firstIndex - 1)] ?? initialPriceHistory[0]!;
+  const openEntry = history[Math.max(0, firstIndex - 1)];
   const open = openEntry.spread[side];
   let close = open;
   let high = open;
