@@ -1,5 +1,54 @@
 # Simulation Profiling Report
 
+Date: 2026-04-30
+
+## Always-On Simulation Slowdown
+
+The browser slowdown was not only caused by heatmap rendering. The page also slowed down with heatmap and histogram disabled because several order-book and simulation paths were doing work proportional to accumulated history or accumulated book size on every simulation step.
+
+Problems found:
+
+- Ordinary order-book deltas reconstructed the previous order book even when compaction auditing was disabled. That made the browser pay reconstruction cost on every revision for data only used by tests.
+- `orderBookDeltaLevels` was implemented as a memo that rescanned all retained order-book history whenever a delta snapshot needed compacted changes. With retained history enabled, snapshot bookkeeping became slower as the session grew.
+- The first incremental replacement still compacted each delta level on every revision. At the default event rate this was too much work; compaction only needs to happen when emitting a delta snapshot.
+- Adding an order used full array sort on the book side after every insert. The book sides are already sorted, so this was avoidable.
+- `hasOrder()` scanned live order arrays. Cancellation cleanup calls it for tracked resting orders, so this became expensive as resting orders accumulated.
+- Cancellation tracked all resting orders in one mixed list and then filtered by side for each cancellation.
+- The implementation default had drifted from the documented snapshot hierarchy. It used five delta levels, making the full snapshot interval `312,500` revisions instead of the documented `2,500`.
+- Heatmap computation was optimized earlier, but the renderer path still benefits from receiving a dense typed grid instead of many `{ x, y, size }` objects.
+
+Changes made:
+
+- `appendOrderBookMapEntry()` now only reconstructs the previous order book for ordinary deltas when test compaction auditing is enabled.
+- Delta-level accumulation is now maintained incrementally in `market.ts`. Raw pending changes are appended cheaply on ordinary revisions and compacted only when a delta snapshot is emitted.
+- The default delta hierarchy is restored to two levels: level 1 every `100`, level 2 every `500`, and full snapshot every `2,500`.
+- Full history pruning was tried as a browser-memory cap, but it has been disabled. Full snapshots and prior deltas remain retained.
+- `hasOrder()` now uses an active order-key set for O(1) lookup.
+- Order insertion now uses binary search plus splice instead of sorting the whole side.
+- Histogram series scans now binary-search the sorted book side to only visit prices in the requested range.
+- Cancellation now stores tracked resting orders by side, reducing per-cancellation scanning and filtering.
+- Heatmap output supports a dense column-major `Float32Array` grid, and the WebGPU texture writer consumes that grid directly while still accepting older sparse formats.
+
+Observed profiling notes:
+
+- A short tick-only profile with `SIM_ORDER_BOOK_REGION_RESOLUTION=1x1` dropped from about `23 ms/tick` to about `2.7 ms/tick` after moving delta-level compaction out of the per-revision path.
+- With the documented `2,500` full snapshot interval and history pruning disabled, a one-minute tick-focused run stayed around `11-12 ms/tick`; longer runs still grow because full retained history is intentionally kept.
+- Heatmap region work at `1x1` is no longer material in these runs, which confirms the remaining slowdown is simulation/history growth rather than heatmap rendering.
+
+Verification commands:
+
+```sh
+source ~/.nvm/nvm.sh
+npm test
+npm run check
+npm run build
+SIM_ORDER_BOOK_REGION_RESOLUTION=1x1 node --expose-gc scripts/profile-simulation.mjs 1
+```
+
+Node version: loaded through `nvm`.
+
+---
+
 Date: 2026-04-29
 
 ## Heatmap Crash Profiling

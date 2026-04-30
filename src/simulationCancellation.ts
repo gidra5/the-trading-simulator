@@ -8,7 +8,10 @@ export class SimulationCancellation {
   private cancellationPriceMovementWeighting = 0.5;
   private cancellationLocalVolumeWeighting = 0.5;
   private cancellationFarOrderWeighting = 0.5;
-  private restingOrders: RestingOrder[] = [];
+  private restingOrdersBySide: Record<OrderSide, RestingOrder[]> = {
+    buy: [],
+    sell: [],
+  };
   private touchPriceHistory: Record<OrderSide, PricePoint[]> = {
     buy: [],
     sell: [],
@@ -37,7 +40,7 @@ export class SimulationCancellation {
   }
 
   trackRestingOrder(order: RestingOrder): void {
-    this.restingOrders.push(order);
+    this.restingOrdersBySide[order.side].push(order);
   }
 
   simulateCancellationEvent(side: OrderSide): boolean {
@@ -51,7 +54,7 @@ export class SimulationCancellation {
 
     if (!candidate) return false;
 
-    this.removeRestingOrder(candidate.index);
+    this.removeRestingOrder(candidate.order.side, candidate.index);
     return cancelOrder(candidate.order.id, candidate.order.side) !== null;
   }
 
@@ -77,8 +80,8 @@ export class SimulationCancellation {
     }
   }
 
-  private removeRestingOrder(index: number): RestingOrder {
-    const [order] = this.restingOrders.splice(index, 1);
+  private removeRestingOrder(side: OrderSide, index: number): RestingOrder {
+    const [order] = this.restingOrdersBySide[side].splice(index, 1);
     assert(order, "Expected tracked resting order to exist");
 
     return order;
@@ -139,17 +142,17 @@ export class SimulationCancellation {
     order: RestingOrder;
     index: number;
   } | null {
-    for (let index = this.restingOrders.length - 1; index >= 0; index -= 1) {
-      const order = this.restingOrders[index];
+    const restingOrders = this.restingOrdersBySide[side];
+
+    for (let index = restingOrders.length - 1; index >= 0; index -= 1) {
+      const order = restingOrders[index];
 
       if (!order || !hasOrder(order.id, order.side)) {
-        this.removeRestingOrder(index);
+        this.removeRestingOrder(side, index);
       }
     }
 
-    const candidates = this.restingOrders
-      .map((order, index) => ({ order, index }))
-      .filter((candidate) => candidate.order.side === side);
+    const candidates = restingOrders.map((order, index) => ({ order, index }));
 
     if (candidates.length === 0) return null;
 

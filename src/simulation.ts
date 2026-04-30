@@ -22,6 +22,8 @@ export {
   type SimulationEventSettingGroup,
 } from "./simulationTypes";
 
+// TODO:  Preference to place orders in the direction of the movement
+// TODO: in spread orders prob proportional to size of the spread
 export class TradingSimulation {
   private marketBehaviorSettings = cloneMarketBehaviorSettings(defaultMarketBehaviorSettings);
   private orderPriceDistribution: OrderPriceDistribution = "power-law";
