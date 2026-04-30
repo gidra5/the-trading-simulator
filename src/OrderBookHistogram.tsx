@@ -1,5 +1,5 @@
 import { createEffect, createSignal, onCleanup, onMount, type Component, type JSX } from "solid-js";
-import type { OrderBookHistogramEntry } from "./market";
+import type { OrderBookHistogramEntry } from "./market/index";
 
 export const enum HistogramNormalization {
   Linear = "linear",

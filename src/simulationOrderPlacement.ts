@@ -1,4 +1,4 @@
-import { getOrderBookHistogramSeries, makeOrder, marketPriceSpread, type OrderSide } from "./market";
+import { getOrderBookHistogramSeries, makeOrder, marketPriceSpread, type OrderSide } from "./market/index";
 import {
   sampleBernoulli,
   sampleExponential,

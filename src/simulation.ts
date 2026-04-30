@@ -1,4 +1,4 @@
-import { takeOrder, type OrderSide } from "./market";
+import { takeOrder, type OrderSide } from "./market/index";
 import { SimulationCancellation } from "./simulationCancellation";
 import { SimulationExcitation } from "./simulationExcitation";
 import { SimulationOrderPlacement } from "./simulationOrderPlacement";

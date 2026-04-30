@@ -11,7 +11,7 @@ import {
   marketPriceSpread,
   type PriceCandle,
   priceHistoryCandle,
-} from "./market";
+} from "./market/index";
 import {
   OrderBookHistogram,
   HistogramNormalization,

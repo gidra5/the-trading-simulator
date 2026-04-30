@@ -1,4 +1,4 @@
-import { cancelOrder, hasOrder, marketPriceSpread, type OrderSide } from "./market";
+import { cancelOrder, hasOrder, marketPriceSpread, type OrderSide } from "./market/index";
 import { sampleBernoulli, sampleUniform, sampleUniformInteger } from "./distributions";
 import { assert, clamp } from "./utils";
 import type { MarketBehaviorSettings, PricePoint, RestingOrder } from "./simulationTypes";

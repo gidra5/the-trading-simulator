@@ -1,16 +1,31 @@
 import { createMemo, createRoot, createSignal } from "solid-js";
-import { assert, unreachable } from "./utils";
+import { cloneOrder, oppositeSide, type MakeOrderResult, type Order, type OrderSide, type RegisteredOrder } from "./order";
+import {
+  applyOrderBookChange,
+  applyOrderBookEntryChanges,
+  cloneOrderBookFrom,
+  compactOrderBookChanges,
+  initialOrderBook,
+  type OrderBook,
+  type OrderBookChange,
+  type OrderBookHeatmapEntry,
+  type OrderBookHeatmapRegion,
+  type OrderBookHistogramEntry,
+  type OrderBookHistogramRegion,
+  type OrderBookHistogramSeries,
+  type OrderBookMapEntry,
+} from "./orderBook";
 
-type Order = {
-  price: number;
-  size: number;
-};
-type RegisteredOrder = Order & { id: number };
-export type MakeOrderResult = {
-  id: number;
-  fulfilled: number;
-  restingSize: number;
-};
+export type { MakeOrderResult, OrderSide } from "./order";
+export type {
+  OrderBookHeatmapEntry,
+  OrderBookHeatmapRegion,
+  OrderBookHistogramEntry,
+  OrderBookHistogramRegion,
+  OrderBookHistogramSeries,
+} from "./orderBook";
+export { applyOrderBookChange, oppositeSide };
+
 type PriceSpread = {
   buy: number;
   sell: number;
@@ -26,171 +41,6 @@ export type PriceCandle = {
   high: number;
   low: number;
   close: number;
-};
-export type OrderSide = "buy" | "sell";
-type OrderBookSnapshotEntry = {
-  kind: "snapshot";
-  revision: number;
-  orderBook: OrderBook;
-  timestamp: number;
-};
-type OrderBookAddChange = {
-  kind: "add";
-  side: OrderSide;
-  order: RegisteredOrder;
-};
-type OrderBookRemoveChange = {
-  kind: "remove";
-  side: OrderSide;
-  order: RegisteredOrder;
-};
-type OrderBookPartialFillChange = {
-  kind: "partial-fill";
-  side: OrderSide;
-  order: RegisteredOrder;
-};
-type OrderBookChange = OrderBookAddChange | OrderBookRemoveChange | OrderBookPartialFillChange;
-type OrderBookDeltaEntry = {
-  kind: "delta";
-  revision: number;
-  timestamp: number;
-  changes: OrderBookChange | OrderBookChange[];
-};
-type OrderBookDeltaSnapshotEntry = {
-  kind: "delta-snapshot";
-  level: number;
-  revision: number;
-  timestamp: number;
-  changes: OrderBookChange | OrderBookChange[];
-  compactedChanges: OrderBookChange[];
-};
-type OrderBookMapEntry = OrderBookSnapshotEntry | OrderBookDeltaEntry | OrderBookDeltaSnapshotEntry;
-export type OrderBookHeatmapEntry = {
-  x: number;
-  y: number;
-  size: number;
-};
-export type OrderBookHistogramEntry = {
-  kind: OrderSide;
-  y: number;
-  size: number;
-};
-export type OrderBookHeatmapRegion = {
-  timestamp: [start: number, end: number];
-  price: [min: number, max: number];
-  resolution: [time: number, price: number];
-};
-export type OrderBookHistogramRegion = {
-  price: [min: number, max: number];
-  resolution: number;
-};
-export type OrderBookHistogramSeries = {
-  cellHeight: number;
-  sizes: number[];
-};
-
-type OrderBook = {
-  buy: RegisteredOrder[];
-  sell: RegisteredOrder[];
-};
-
-const initialOrderBook: OrderBook = {
-  buy: [{ id: -2, price: 0.99, size: 1e2 }],
-  sell: [{ id: -3, price: 1.01, size: 1e2 }],
-};
-
-const cloneOrder = (order: RegisteredOrder): RegisteredOrder => ({ ...order });
-
-const cloneOrderBookFrom = (source: OrderBook): OrderBook => {
-  return {
-    buy: source.buy.map(cloneOrder),
-    sell: source.sell.map(cloneOrder),
-  };
-};
-
-const compareOrders = (candidate: RegisteredOrder, side: OrderSide, target: RegisteredOrder): number => {
-  if (candidate.price !== target.price) {
-    if (side === "sell") return target.price - candidate.price;
-    return candidate.price - target.price;
-  }
-
-  return candidate.id - target.id;
-};
-
-const findOrderIndex = (orders: RegisteredOrder[], side: OrderSide, order: RegisteredOrder): number => {
-  let low = 0;
-  let high = orders.length;
-
-  while (low < high) {
-    const mid = Math.floor((low + high) / 2);
-
-    if (compareOrders(orders[mid]!, side, order) < 0) low = mid + 1;
-    else high = mid;
-  }
-
-  return low;
-};
-
-export const applyOrderBookChange = (target: OrderBook, change: OrderBookChange): void => {
-  const orders = target[change.side];
-  const index = findOrderIndex(orders, change.side, change.order);
-  if (change.kind === "add") orders.splice(index, 0, change.order);
-
-  assert(orders[index].id === change.order.id, "expected order to match");
-  if (change.kind === "remove") orders.splice(index, 1);
-  if (change.kind === "partial-fill") orders[index] = change.order;
-};
-
-const applyOrderBookEntryChanges = (target: OrderBook, changes: OrderBookChange | OrderBookChange[]): void => {
-  if (Array.isArray(changes)) {
-    for (const change of changes) applyOrderBookChange(target, change);
-    return;
-  }
-
-  applyOrderBookChange(target, changes);
-};
-
-const changeListFrom = (changes: OrderBookChange | OrderBookChange[]): OrderBookChange[] =>
-  Array.isArray(changes) ? changes : [changes];
-
-const compactedChangeKey = (side: OrderSide, id: number): string => `${side}:${id}`;
-
-const cloneOrderBookChange = (change: OrderBookChange): OrderBookChange => {
-  return { ...change, order: cloneOrder(change.order) };
-};
-
-const compactOrderBookChanges = (
-  previousChanges: OrderBookChange[],
-  nextChanges: OrderBookChange | OrderBookChange[],
-): OrderBookChange[] => {
-  const changes = new Map<string, OrderBookChange>();
-
-  for (const change of previousChanges) {
-    changes.set(compactedChangeKey(change.side, change.order.id), change);
-  }
-
-  for (const change of changeListFrom(nextChanges)) {
-    const key = compactedChangeKey(change.side, change.order.id);
-    const previousChange = changes.get(key);
-
-    if (!previousChange) {
-      changes.set(key, cloneOrderBookChange(change));
-      continue;
-    }
-
-    if (change.kind === "add") unreachable("Expected order id to be unique");
-    assert(previousChange.kind !== "remove", "Expected removed order not to be filled");
-
-    if (previousChange.kind !== "add") {
-      changes.set(key, change);
-      continue;
-    }
-
-    if (change.kind === "partial-fill") previousChange.order.size = change.order.size;
-    else changes.delete(key);
-  }
-
-  return Array.from(changes.values());
 };
 
 const initialTimestamp = Date.now();
@@ -577,7 +427,9 @@ export const getOrderBookRegion = (region: OrderBookHeatmapRegion): OrderBookHea
   for (let entryIndex = firstRegionEntryIndex; entryIndex < entries.length; entryIndex += 1) {
     const entry = entries[entryIndex]!;
 
-    if (entry.timestamp > region.timestamp[1]) break;
+    if (entry.timestamp > region.timestamp[1]) {
+      break;
+    }
 
     if (entry.kind === "snapshot") {
       reconstructedOrderBook = cloneOrderBookFrom(entry.orderBook);
@@ -587,22 +439,33 @@ export const getOrderBookRegion = (region: OrderBookHeatmapRegion): OrderBookHea
       applyOrderBookEntryChanges(reconstructedOrderBook, entry.changes);
     }
 
-    if (!reconstructedOrderBook) continue;
+    if (!reconstructedOrderBook) {
+      continue;
+    }
 
     const x = Math.floor((entry.timestamp - region.timestamp[0]) / cellSize[0]);
-    if (x < 0 || x >= resolution[0]) continue;
+    if (x < 0 || x >= resolution[0]) {
+      continue;
+    }
 
     const orders = [...reconstructedOrderBook.buy, ...reconstructedOrderBook.sell];
     for (const order of orders) {
-      if (order.price < region.price[0] || order.price > region.price[1]) continue;
+      if (order.price < region.price[0] || order.price > region.price[1]) {
+        continue;
+      }
 
       const y = Math.floor((order.price - region.price[0]) / cellSize[1]);
-      if (y < 0 || y >= resolution[1]) continue;
+      if (y < 0 || y >= resolution[1]) {
+        continue;
+      }
 
       const key = y * resolution[0] + x;
       const cell = heatmap.get(key);
-      if (cell) cell.size += order.size;
-      else heatmap.set(key, { x, y, size: order.size });
+      if (cell) {
+        cell.size += order.size;
+      } else {
+        heatmap.set(key, { x, y, size: order.size });
+      }
     }
   }
 
@@ -666,8 +529,13 @@ export const getOrderBookHistogramSeries = (
 };
 
 const recordMarketState = (changes: OrderBookChange | OrderBookChange[]) => {
-  if (Array.isArray(changes) && changes.length === 0) return;
-  appendOrderBookMapEntry(Date.now(), changes);
+  const timestamp = Date.now();
+
+  if (Array.isArray(changes) && changes.length === 0) {
+    return;
+  }
+
+  appendOrderBookMapEntry(timestamp, changes);
 };
 
 export const priceHistoryCandle = (start: number, end: number, side: OrderSide): PriceCandle => {
@@ -699,12 +567,18 @@ const upperBoundPriceHistory = (history: PriceHistoryEntry[], timestamp: number)
   while (low < high) {
     const mid = Math.floor((low + high) / 2);
 
-    if (history[mid]!.timestamp <= timestamp) low = mid + 1;
-    else high = mid;
+    if (history[mid]!.timestamp <= timestamp) {
+      low = mid + 1;
+    } else {
+      high = mid;
+    }
   }
 
   return low;
 };
+
+// // for each order id, tradeHistory.filter(id).sum() == order.size
+// const tradeHistory: TradeHistoryEntry[] = [];
 
 let nextOrderId = 0;
 const findOrderLocation = (id: number, side?: OrderSide): { side: OrderSide; index: number } | null => {
@@ -805,7 +679,5 @@ export const cancelOrder = (id: number, side?: OrderSide): RegisteredOrder | nul
   recordMarketState({ kind: "remove", side: location.side, order: cloneOrder(order) });
   return order;
 };
-
-export const oppositeSide = (side: OrderSide): OrderSide => (side === "buy" ? "sell" : "buy");
 
 export { marketPriceSpread, midPrice, orderBook };

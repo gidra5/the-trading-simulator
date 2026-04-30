@@ -1,7 +1,7 @@
 import { afterAll, expect, test, vi } from "vitest";
 import fc from "fast-check";
 
-type MarketModule = typeof import("../src/market");
+type MarketModule = typeof import("../src/market/index");
 type Operation =
   | {
       kind: "limit";
@@ -29,7 +29,7 @@ const loadMarket = async (settings: { interval?: number; fanout?: number; levels
   vi.resetModules();
   vi.spyOn(Date, "now").mockImplementation(() => now);
 
-  const market = await import("../src/market");
+  const market = await import("../src/market/index");
   market.setOrderBookDeltaSnapshotInterval(settings.interval ?? 2);
   market.setOrderBookDeltaSnapshotFanout(settings.fanout ?? 2);
   market.setOrderBookDeltaSnapshotLevels(settings.levels);

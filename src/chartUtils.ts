@@ -1,4 +1,4 @@
-import type { OrderBookHeatmapEntry, PriceCandle } from "./market";
+import type { OrderBookHeatmapEntry, PriceCandle } from "./market/index";
 import type { ChartViewport } from "./Chart";
 import { assert } from "./utils";
 
