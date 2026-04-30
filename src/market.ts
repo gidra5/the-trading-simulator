@@ -1,4 +1,5 @@
 import { createMemo, createRoot, createSignal } from "solid-js";
+import { assert, unreachable } from "./utils";
 
 type Order = {
   price: number;
@@ -46,15 +47,9 @@ type OrderBookRemoveChange = {
 type OrderBookPartialFillChange = {
   kind: "partial-fill";
   side: OrderSide;
-  id: number;
-  previousSize: number;
-  nextSize: number;
-  filledSize: number;
+  order: RegisteredOrder;
 };
-type OrderBookChange =
-  | OrderBookAddChange
-  | OrderBookRemoveChange
-  | OrderBookPartialFillChange;
+type OrderBookChange = OrderBookAddChange | OrderBookRemoveChange | OrderBookPartialFillChange;
 type OrderBookDeltaEntry = {
   kind: "delta";
   revision: number;
@@ -100,8 +95,8 @@ type OrderBook = {
 };
 
 const initialOrderBook: OrderBook = {
-  buy: [{ id: -1, price: 0.99, size: 1e2 }],
-  sell: [{ id: -2, price: 1.01, size: 1e2 }],
+  buy: [{ id: -2, price: 0.99, size: 1e2 }],
+  sell: [{ id: -3, price: 1.01, size: 1e2 }],
 };
 
 const cloneOrder = (order: RegisteredOrder): RegisteredOrder => ({ ...order });
@@ -113,60 +108,42 @@ const cloneOrderBookFrom = (source: OrderBook): OrderBook => {
   };
 };
 
-const findOrderInsertIndex = (orders: RegisteredOrder[], side: OrderSide, price: number): number => {
+const compareOrders = (candidate: RegisteredOrder, side: OrderSide, target: RegisteredOrder): number => {
+  if (candidate.price !== target.price) {
+    if (side === "sell") return target.price - candidate.price;
+    return candidate.price - target.price;
+  }
+
+  return candidate.id - target.id;
+};
+
+const findOrderIndex = (orders: RegisteredOrder[], side: OrderSide, order: RegisteredOrder): number => {
   let low = 0;
   let high = orders.length;
 
   while (low < high) {
     const mid = Math.floor((low + high) / 2);
-    const midPrice = orders[mid]!.price;
-    const isBeforeOrEqual = side === "sell" ? midPrice >= price : midPrice <= price;
 
-    if (isBeforeOrEqual) {
-      low = mid + 1;
-    } else {
-      high = mid;
-    }
+    if (compareOrders(orders[mid]!, side, order) < 0) low = mid + 1;
+    else high = mid;
   }
 
   return low;
 };
 
-const applyOrderBookChange = (target: OrderBook, change: OrderBookChange): void => {
+export const applyOrderBookChange = (target: OrderBook, change: OrderBookChange): void => {
   const orders = target[change.side];
+  const index = findOrderIndex(orders, change.side, change.order);
+  if (change.kind === "add") orders.splice(index, 0, change.order);
 
-  switch (change.kind) {
-    case "add":
-      orders.splice(findOrderInsertIndex(orders, change.side, change.order.price), 0, cloneOrder(change.order));
-      break;
-    case "remove": {
-      const index = orders.findIndex((order) => order.id === change.order.id);
-
-      if (index !== -1) {
-        orders.splice(index, 1);
-      }
-      break;
-    }
-    case "partial-fill": {
-      const order = orders.find((candidate) => candidate.id === change.id);
-
-      if (order) {
-        order.size = change.nextSize;
-      }
-      break;
-    }
-  }
-};
-
-const applyOrderBookChanges = (target: OrderBook, changes: OrderBookChange[]): void => {
-  for (const change of changes) {
-    applyOrderBookChange(target, change);
-  }
+  assert(orders[index].id === change.order.id, "expected order to match");
+  if (change.kind === "remove") orders.splice(index, 1);
+  if (change.kind === "partial-fill") orders[index] = change.order;
 };
 
 const applyOrderBookEntryChanges = (target: OrderBook, changes: OrderBookChange | OrderBookChange[]): void => {
   if (Array.isArray(changes)) {
-    applyOrderBookChanges(target, changes);
+    for (const change of changes) applyOrderBookChange(target, change);
     return;
   }
 
@@ -179,56 +156,41 @@ const changeListFrom = (changes: OrderBookChange | OrderBookChange[]): OrderBook
 const compactedChangeKey = (side: OrderSide, id: number): string => `${side}:${id}`;
 
 const cloneOrderBookChange = (change: OrderBookChange): OrderBookChange => {
-  switch (change.kind) {
-    case "add":
-    case "remove":
-      return { ...change, order: cloneOrder(change.order) };
-    case "partial-fill":
-      return { ...change };
-  }
+  return { ...change, order: cloneOrder(change.order) };
 };
 
 const compactOrderBookChanges = (
   previousChanges: OrderBookChange[],
   nextChanges: OrderBookChange | OrderBookChange[],
 ): OrderBookChange[] => {
-  const compactedChanges = new Map<string, OrderBookChange>();
+  const changes = new Map<string, OrderBookChange>();
 
   for (const change of previousChanges) {
-    const id = change.kind === "partial-fill" ? change.id : change.order.id;
-    compactedChanges.set(compactedChangeKey(change.side, id), cloneOrderBookChange(change));
+    changes.set(compactedChangeKey(change.side, change.order.id), change);
   }
 
   for (const change of changeListFrom(nextChanges)) {
-    const id = change.kind === "partial-fill" ? change.id : change.order.id;
-    const key = compactedChangeKey(change.side, id);
-    const previousChange = compactedChanges.get(key);
+    const key = compactedChangeKey(change.side, change.order.id);
+    const previousChange = changes.get(key);
 
-    switch (change.kind) {
-      case "add":
-        compactedChanges.set(key, cloneOrderBookChange(change));
-        break;
-      case "remove":
-        if (previousChange?.kind === "add") {
-          compactedChanges.delete(key);
-        } else {
-          compactedChanges.set(key, cloneOrderBookChange(change));
-        }
-        break;
-      case "partial-fill":
-        if (previousChange?.kind === "add") {
-          previousChange.order.size = change.nextSize;
-        } else if (previousChange?.kind === "partial-fill") {
-          previousChange.nextSize = change.nextSize;
-          previousChange.filledSize = previousChange.previousSize - change.nextSize;
-        } else if (!previousChange) {
-          compactedChanges.set(key, cloneOrderBookChange(change));
-        }
-        break;
+    if (!previousChange) {
+      changes.set(key, cloneOrderBookChange(change));
+      continue;
     }
+
+    if (change.kind === "add") unreachable("Expected order id to be unique");
+    assert(previousChange.kind !== "remove", "Expected removed order not to be filled");
+
+    if (previousChange.kind !== "add") {
+      changes.set(key, change);
+      continue;
+    }
+
+    if (change.kind === "partial-fill") previousChange.order.size = change.order.size;
+    else changes.delete(key);
   }
 
-  return Array.from(compactedChanges.values());
+  return Array.from(changes.values());
 };
 
 const initialTimestamp = Date.now();
@@ -615,45 +577,32 @@ export const getOrderBookRegion = (region: OrderBookHeatmapRegion): OrderBookHea
   for (let entryIndex = firstRegionEntryIndex; entryIndex < entries.length; entryIndex += 1) {
     const entry = entries[entryIndex]!;
 
-    if (entry.timestamp > region.timestamp[1]) {
-      break;
-    }
+    if (entry.timestamp > region.timestamp[1]) break;
 
     if (entry.kind === "snapshot") {
       reconstructedOrderBook = cloneOrderBookFrom(entry.orderBook);
     } else if (reconstructedOrderBook && entry.kind === "delta") {
       applyOrderBookEntryChanges(reconstructedOrderBook, entry.changes);
     } else if (reconstructedOrderBook && entry.kind === "delta-snapshot") {
-      applyOrderBookEntryChanges(reconstructedOrderBook, entry.compactedChanges);
+      applyOrderBookEntryChanges(reconstructedOrderBook, entry.changes);
     }
 
-    if (!reconstructedOrderBook) {
-      continue;
-    }
+    if (!reconstructedOrderBook) continue;
 
     const x = Math.floor((entry.timestamp - region.timestamp[0]) / cellSize[0]);
-    if (x < 0 || x >= resolution[0]) {
-      continue;
-    }
+    if (x < 0 || x >= resolution[0]) continue;
 
     const orders = [...reconstructedOrderBook.buy, ...reconstructedOrderBook.sell];
     for (const order of orders) {
-      if (order.price < region.price[0] || order.price > region.price[1]) {
-        continue;
-      }
+      if (order.price < region.price[0] || order.price > region.price[1]) continue;
 
       const y = Math.floor((order.price - region.price[0]) / cellSize[1]);
-      if (y < 0 || y >= resolution[1]) {
-        continue;
-      }
+      if (y < 0 || y >= resolution[1]) continue;
 
       const key = y * resolution[0] + x;
       const cell = heatmap.get(key);
-      if (cell) {
-        cell.size += order.size;
-      } else {
-        heatmap.set(key, { x, y, size: order.size });
-      }
+      if (cell) cell.size += order.size;
+      else heatmap.set(key, { x, y, size: order.size });
     }
   }
 
@@ -717,13 +666,8 @@ export const getOrderBookHistogramSeries = (
 };
 
 const recordMarketState = (changes: OrderBookChange | OrderBookChange[]) => {
-  const timestamp = Date.now();
-
-  if (Array.isArray(changes) && changes.length === 0) {
-    return;
-  }
-
-  appendOrderBookMapEntry(timestamp, changes);
+  if (Array.isArray(changes) && changes.length === 0) return;
+  appendOrderBookMapEntry(Date.now(), changes);
 };
 
 export const priceHistoryCandle = (start: number, end: number, side: OrderSide): PriceCandle => {
@@ -755,24 +699,15 @@ const upperBoundPriceHistory = (history: PriceHistoryEntry[], timestamp: number)
   while (low < high) {
     const mid = Math.floor((low + high) / 2);
 
-    if (history[mid]!.timestamp <= timestamp) {
-      low = mid + 1;
-    } else {
-      high = mid;
-    }
+    if (history[mid]!.timestamp <= timestamp) low = mid + 1;
+    else high = mid;
   }
 
   return low;
 };
 
-// // for each order id, tradeHistory.filter(id).sum() == order.size
-// const tradeHistory: TradeHistoryEntry[] = [];
-
 let nextOrderId = 0;
-const findOrderLocation = (
-  id: number,
-  side?: OrderSide,
-): { side: OrderSide; index: number } | null => {
+const findOrderLocation = (id: number, side?: OrderSide): { side: OrderSide; index: number } | null => {
   const sides = side ? [side] : (["buy", "sell"] as const);
 
   for (const candidateSide of sides) {
@@ -842,10 +777,7 @@ export const takeOrder = (side: OrderSide, size: number, price?: number): { id: 
       changes.push({
         kind: "partial-fill",
         side: bookSide,
-        id: order.id,
-        previousSize: order.size,
-        nextSize,
-        filledSize: remainingSize,
+        order: { ...order, size: nextSize },
       });
       recordMarketState(changes);
 
@@ -874,7 +806,6 @@ export const cancelOrder = (id: number, side?: OrderSide): RegisteredOrder | nul
   return order;
 };
 
-export const oppositeSide = (side: OrderSide): OrderSide =>
-  side === "buy" ? "sell" : "buy";
+export const oppositeSide = (side: OrderSide): OrderSide => (side === "buy" ? "sell" : "buy");
 
 export { marketPriceSpread, midPrice, orderBook };

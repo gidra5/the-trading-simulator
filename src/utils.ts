@@ -17,6 +17,10 @@ export const assert: (
   }
 };
 
+export const unreachable = (message = "Unreachable code reached"): never => {
+  throw new Error(message);
+};
+
 export const clamp = (value: number, min: number, max: number): number =>
   Math.min(Math.max(value, min), max);
 
