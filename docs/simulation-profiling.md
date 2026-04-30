@@ -2,6 +2,94 @@
 
 Date: 2026-04-30
 
+## Long Heatmap Freeze Captures
+
+Longer Playwright/Chromium page profiles confirm that the heatmap stutter grows into multi-second and then 10+ second main-thread freezes. These runs used the actual Vite page at `1440 x 900`, enabled `Show heatmap`, and recorded `requestAnimationFrame` gaps, browser long tasks, and Chromium traces. No page errors, in-page `error` events, or unhandled rejections were captured.
+
+Commands:
+
+```sh
+source ~/.nvm/nvm.sh
+PAGE_PROFILE_PORT=3400 PAGE_PROFILE_DURATION_MS=30000 npm run profile:page
+PAGE_PROFILE_PORT=3400 PAGE_PROFILE_DURATION_MS=60000 npm run profile:page
+```
+
+Artifacts:
+
+- 30-second JSON: `profiling/heatmap-page-profile-2026-04-30T14-51-41Z.json`
+- 30-second trace: `profiling/heatmap-page-profile-2026-04-30T14-51-41Z.trace.json`
+- 60-second JSON: `profiling/heatmap-page-profile-2026-04-30T14-53-07Z.json`
+- 60-second trace: `profiling/heatmap-page-profile-2026-04-30T14-53-07Z.trace.json`
+
+30-second capture summary:
+
+| Metric                          |         Value |
+| ------------------------------- | ------------: |
+| Requested capture after heatmap |      `30.0 s` |
+| Actual elapsed after heatmap    |      `45.4 s` |
+| Average frame interval          |     `47.3 ms` |
+| p99 frame interval              |    `250.1 ms` |
+| Max frame interval              | `18,132.7 ms` |
+| Frames over 100 ms              |          `50` |
+| Long tasks                      |          `85` |
+| Max long task                   |   `18,110 ms` |
+| Total long-task time            |   `28,514 ms` |
+
+Worst 30-second frame gap:
+
+| Start after heatmap | End after heatmap |      Gap |
+| ------------------: | ----------------: | -------: |
+|            `27.3 s` |          `45.4 s` | `18.1 s` |
+
+60-second capture summary:
+
+| Metric                          |       Value |
+| ------------------------------- | ----------: |
+| Requested capture after heatmap |    `60.0 s` |
+| Actual elapsed after heatmap    |    `65.1 s` |
+| Average frame interval          |   `59.7 ms` |
+| p99 frame interval              |  `250.0 ms` |
+| Max frame interval              | `15,616 ms` |
+| Frames over 100 ms              |        `57` |
+| Long tasks                      |       `102` |
+| Max long task                   | `15,588 ms` |
+| Total long-task time            | `46,299 ms` |
+
+Worst 60-second frame gaps:
+
+| Start after heatmap | End after heatmap |      Gap |
+| ------------------: | ----------------: | -------: |
+|            `36.0 s` |          `49.4 s` | `13.4 s` |
+|            `49.4 s` |          `65.1 s` | `15.6 s` |
+|            `32.3 s` |          `35.7 s` |  `3.4 s` |
+|            `30.2 s` |          `31.9 s` |  `1.8 s` |
+
+60-second 5-second window summary:
+
+| Window after heatmap | Frames over 50 ms | Frames over 100 ms |     Max frame | Long tasks | Max long task | Total long-task time |
+| -------------------: | ----------------: | -----------------: | ------------: | ---------: | ------------: | -------------------: |
+|              `0-5 s` |               `0` |                `0` |     `33.3 ms` |        `0` |        `0 ms` |               `0 ms` |
+|             `5-10 s` |               `3` |                `0` |     `66.7 ms` |        `1` |       `61 ms` |              `61 ms` |
+|            `10-15 s` |              `20` |                `0` |     `83.4 ms` |       `16` |       `77 ms` |             `993 ms` |
+|            `15-20 s` |              `27` |               `11` |    `116.8 ms` |       `25` |      `121 ms` |           `2,338 ms` |
+|            `20-25 s` |              `37` |               `24` |    `233.3 ms` |       `28` |      `217 ms` |           `3,648 ms` |
+|            `25-30 s` |              `21` |               `16` |      `950 ms` |       `24` |      `907 ms` |           `4,550 ms` |
+|            `30-35 s` |               `4` |                `3` |  `3,433.2 ms` |        `4` |    `3,407 ms` |           `5,443 ms` |
+|            `35-40 s` |               `3` |                `2` | `13,432.9 ms` |        `3` |   `13,396 ms` |          `13,678 ms` |
+|            `45-50 s` |               `1` |                `1` |   `15,616 ms` |        `1` |   `15,588 ms` |          `15,588 ms` |
+
+Trace interpretation:
+
+- The long freezes are visible as huge `TimerFire` / JavaScript `FunctionCall` tasks. In the 60-second trace, `TimerFire` totals `50.9 s` with a max single timer task of `15.6 s`.
+- GC becomes significant in long captures, but it is still secondary to JavaScript timer work. The 60-second trace reports `MinorGC` at `1.89 s` total and `MajorGC` at `278 ms` total, while `TimerFire` totals `50.9 s`.
+- The shape matches heatmap polling work that becomes progressively more expensive as retained order-book history grows. It starts as dropped frames around `5-10 s`, becomes frequent long tasks around `10-25 s`, then turns into multi-second freezes around `30 s+`.
+
+Node version: `v22.12.0`, loaded through `nvm`.
+
+---
+
+Date: 2026-04-30
+
 ## Always-On Simulation Slowdown
 
 The browser slowdown was not only caused by heatmap rendering. The page also slowed down with heatmap and histogram disabled because several order-book and simulation paths were doing work proportional to accumulated history or accumulated book size on every simulation step.

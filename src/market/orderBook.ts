@@ -103,7 +103,12 @@ export const applyOrderBookChange = (target: OrderBook, change: OrderBookChange)
   const index = findOrderIndex(orders, change.side, change.order);
   if (change.kind === "add") orders.splice(index, 0, change.order);
 
-  assert(orders[index].id === change.order.id, "expected order to match");
+  assert(
+    orders[index]?.id === change.order.id,
+    `expected order to match: ${change.kind} ${change.side}#${change.order.id} at ${index}, found ${
+      orders[index]?.id ?? "none"
+    }`,
+  );
   if (change.kind === "remove") orders.splice(index, 1);
   if (change.kind === "partial-fill") orders[index] = change.order;
 };

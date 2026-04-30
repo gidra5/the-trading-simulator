@@ -1,5 +1,12 @@
 import { createMemo, createRoot, createSignal } from "solid-js";
-import { cloneOrder, oppositeSide, type MakeOrderResult, type Order, type OrderSide, type RegisteredOrder } from "./order";
+import {
+  cloneOrder,
+  oppositeSide,
+  type MakeOrderResult,
+  type Order,
+  type OrderSide,
+  type RegisteredOrder,
+} from "./order";
 import {
   applyOrderBookChange,
   applyOrderBookEntryChanges,
@@ -437,7 +444,15 @@ export const getOrderBookRegion = (region: OrderBookHeatmapRegion): OrderBookHea
     if (entry.kind === "snapshot") {
       reconstructedOrderBook = cloneOrderBookFrom(entry.orderBook);
     } else if (reconstructedOrderBook && entry.kind === "delta-snapshot") {
-      applyOrderBookEntryChanges(reconstructedOrderBook, entry.changes);
+      try {
+        applyOrderBookEntryChanges(reconstructedOrderBook, entry.changes);
+      } catch (error) {
+        throw new Error(
+          `failed to replay order-book entry ${entry.revision}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
     }
 
     if (!reconstructedOrderBook) {

@@ -13,6 +13,7 @@ const sampleEveryTicks = 50;
 const orderBookDeltaSnapshotInterval = Number(process.env.SIM_ORDER_BOOK_DELTA_INTERVAL);
 const orderBookDeltaSnapshotFanout = Number(process.env.SIM_ORDER_BOOK_DELTA_FANOUT);
 const orderBookDeltaSnapshotLevels = Number(process.env.SIM_ORDER_BOOK_DELTA_LEVELS);
+const randomSeed = Number(process.env.SIM_RANDOM_SEED);
 const orderBookRegionResolution = (process.env.SIM_ORDER_BOOK_REGION_RESOLUTION ?? "")
   .split("x")
   .map((value) => Number(value));
@@ -32,12 +33,29 @@ await writeFile(
 let simulatedNow = Date.now();
 Date.now = () => simulatedNow;
 
+const seededRandom = (seed: number): (() => number) => {
+  let state = seed;
+
+  return () => {
+    state |= 0;
+    state = (state + 0x6d2b79f5) | 0;
+    let value = Math.imul(state ^ (state >>> 15), 1 | state);
+    value = (value + Math.imul(value ^ (value >>> 7), 61 | value)) ^ value;
+    return ((value ^ (value >>> 14)) >>> 0) / 4294967296;
+  };
+};
+
+const randomSeed = ${JSON.stringify(randomSeed)};
+if (Number.isFinite(randomSeed)) {
+  Math.random = seededRandom(randomSeed);
+}
+
 const formatMb = (bytes: number) => bytes / 1024 / 1024;
 
 const runProfile = async (durationMinutes: number[]) => {
   const [{ TradingSimulation }, market] = await Promise.all([
-    import("${resolve(root, "src/simulation.ts")}"),
-    import("${resolve(root, "src/market.ts")}"),
+    import("${resolve(root, "src/simulation/index.ts")}"),
+    import("${resolve(root, "src/market/index.ts")}"),
   ]);
   const orderBookDeltaSnapshotInterval = ${JSON.stringify(orderBookDeltaSnapshotInterval)};
   const orderBookDeltaSnapshotFanout = ${JSON.stringify(orderBookDeltaSnapshotFanout)};
@@ -108,23 +126,31 @@ const runProfile = async (durationMinutes: number[]) => {
     const regionIterations = 25;
     let fullRegionTimeMs = 0;
     let tailRegionTimeMs = 0;
+    let orderBookRegionError = null;
+    let completedRegionIterations = 0;
 
     for (let index = 0; index < regionIterations; index += 1) {
-      const fullRegionStart = performance.now();
-      market.getOrderBookRegion({
-        timestamp: [regionStart, regionEnd],
-        price: [0, 2],
-        resolution: orderBookRegionResolution,
-      });
-      fullRegionTimeMs += performance.now() - fullRegionStart;
+      try {
+        const fullRegionStart = performance.now();
+        market.getOrderBookRegion({
+          timestamp: [regionStart, regionEnd],
+          price: [0, 2],
+          resolution: orderBookRegionResolution,
+        });
+        fullRegionTimeMs += performance.now() - fullRegionStart;
 
-      const tailRegionStart = performance.now();
-      market.getOrderBookRegion({
-        timestamp: [regionEnd - regionWindowMs, regionEnd],
-        price: [0, 2],
-        resolution: orderBookRegionResolution,
-      });
-      tailRegionTimeMs += performance.now() - tailRegionStart;
+        const tailRegionStart = performance.now();
+        market.getOrderBookRegion({
+          timestamp: [regionEnd - regionWindowMs, regionEnd],
+          price: [0, 2],
+          resolution: orderBookRegionResolution,
+        });
+        tailRegionTimeMs += performance.now() - tailRegionStart;
+        completedRegionIterations += 1;
+      } catch (error) {
+        orderBookRegionError = error instanceof Error ? error.message : String(error);
+        break;
+      }
     }
 
     results.push({
@@ -141,9 +167,11 @@ const runProfile = async (durationMinutes: number[]) => {
       depthSize,
       orderBookRegion: {
         iterations: regionIterations,
+        completedIterations: completedRegionIterations,
         resolution: orderBookRegionResolution,
-        fullRangeAvgMs: fullRegionTimeMs / regionIterations,
-        tailRangeAvgMs: tailRegionTimeMs / regionIterations,
+        fullRangeAvgMs: completedRegionIterations > 0 ? fullRegionTimeMs / completedRegionIterations : null,
+        tailRangeAvgMs: completedRegionIterations > 0 ? tailRegionTimeMs / completedRegionIterations : null,
+        error: orderBookRegionError,
       },
       orderBookHistory: market.getOrderBookHistoryStats?.(),
       finalSpread: market.marketPriceSpread(),
