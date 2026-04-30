@@ -33,13 +33,6 @@ export type OrderBookSnapshotEntry = {
   timestamp: number;
 };
 
-export type OrderBookDeltaEntry = {
-  kind: "delta";
-  revision: number;
-  timestamp: number;
-  changes: OrderBookChange | OrderBookChange[];
-};
-
 export type OrderBookDeltaSnapshotEntry = {
   kind: "delta-snapshot";
   level: number;
@@ -49,7 +42,7 @@ export type OrderBookDeltaSnapshotEntry = {
   compactedChanges: OrderBookChange[];
 };
 
-export type OrderBookMapEntry = OrderBookSnapshotEntry | OrderBookDeltaEntry | OrderBookDeltaSnapshotEntry;
+export type OrderBookMapEntry = OrderBookSnapshotEntry | OrderBookDeltaSnapshotEntry;
 
 export type OrderBookHeatmapEntry = {
   x: number;

@@ -123,7 +123,7 @@ const {
         return [];
       }
 
-      if (latest.kind === "delta-snapshot") {
+      if (latest.level > 0) {
         const nextChangesByLevel = previousChangesByLevel.map((changes, index) =>
           index + 1 <= latest.level ? [] : compactOrderBookChanges(changes, latest.changes),
         );
@@ -137,7 +137,6 @@ const {
 
       const levelCount = levels();
       const nextChangesByLevel = previousChangesByLevel.slice();
-
       for (let level = 1; level <= levelCount; level += 1) {
         nextChangesByLevel[level - 1] = compactOrderBookChanges(nextChangesByLevel[level - 1] ?? [], latest.changes);
       }
@@ -250,10 +249,12 @@ const appendOrderBookMapEntry = (timestamp: number, changes: OrderBookChange | O
 
   setOrderBookMap((entries) => {
     entries.push({
-      kind: "delta",
+      kind: "delta-snapshot",
+      level: 0,
       revision: orderBookRevision,
       timestamp,
       changes,
+      compactedChanges: [],
     });
     return entries;
   });
@@ -304,7 +305,7 @@ const reconstructOrderBookAtIndex = (entries: OrderBookMapEntry[], targetIndex: 
       continue;
     }
 
-    if (entry.kind === "delta") {
+    if (entry.level === 0) {
       pendingChanges.push(entry.changes);
     } else {
       pendingChanges.push(entry.compactedChanges);
@@ -386,7 +387,9 @@ export const getOrderBookHistoryStats = (): {
       deltaSnapshots += 1;
       deltaSnapshotLevels[entry.level] = (deltaSnapshotLevels[entry.level] ?? 0) + 1;
       changes += entry.compactedChanges.length;
-    } else {
+    }
+
+    if (entry.kind === "delta-snapshot" && entry.level === 0) {
       deltas += 1;
       changes += Array.isArray(entry.changes) ? entry.changes.length : 1;
     }
@@ -433,8 +436,6 @@ export const getOrderBookRegion = (region: OrderBookHeatmapRegion): OrderBookHea
 
     if (entry.kind === "snapshot") {
       reconstructedOrderBook = cloneOrderBookFrom(entry.orderBook);
-    } else if (reconstructedOrderBook && entry.kind === "delta") {
-      applyOrderBookEntryChanges(reconstructedOrderBook, entry.changes);
     } else if (reconstructedOrderBook && entry.kind === "delta-snapshot") {
       applyOrderBookEntryChanges(reconstructedOrderBook, entry.changes);
     }
