@@ -59,13 +59,8 @@ export const MarketChart: Component = () => {
       candleStart <= now;
       candleStart += interval
     ) {
-      rebuiltCandles.push(
-        priceHistoryCandle(
-          candleStart,
-          Math.min(candleStart + interval, now),
-          "buy",
-        ),
-      );
+      const candle = priceHistoryCandle(candleStart, Math.min(candleStart + interval, now), "buy");
+      rebuiltCandles.push(candle);
     }
 
     return rebuiltCandles;
@@ -112,9 +107,8 @@ export const MarketChart: Component = () => {
         missingStart < candle.time;
         missingStart += interval
       ) {
-        missingCandles.push(
-          priceHistoryCandle(missingStart, missingStart + interval, "buy"),
-        );
+        const candle = priceHistoryCandle(missingStart, missingStart + interval, "buy");
+        missingCandles.push(candle);
       }
 
       return [

@@ -254,12 +254,10 @@ export const createOrderBook = (options: OrderBookOptions) => {
         // to decide spread we look at the opposite side offers
         const source = orderBook();
         return {
-          buy: source.sell[source.sell.length - 1]?.price ?? null,
-          sell: source.buy[source.buy.length - 1]?.price ?? null,
+          buy: source.sell[source.sell.length - 1]?.price ?? Infinity,
+          sell: source.buy[source.buy.length - 1]?.price ?? 0,
         };
       })();
-
-      if (spread.buy === null || spread.sell === null) return previousHistory;
 
       const next = () => {
         previousHistory.push({ revision: revision(), timestamp: Date.now(), spread });
@@ -280,13 +278,11 @@ export const createOrderBook = (options: OrderBookOptions) => {
   const marketPriceSpread = () => {
     const history = priceHistory();
     const entry = history[history.length - 1];
-    if (!entry) return null;
     return entry.spread;
   };
 
   const midPrice = () => {
     const spread = marketPriceSpread();
-    if (!spread) return null;
     return (spread.buy + spread.sell) / 2;
   };
 

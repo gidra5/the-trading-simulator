@@ -1,4 +1,4 @@
-import { getOrderBookHistogramSeries, makeOrder, marketPriceSpread, type OrderSide } from "../market/index";
+import { getOrderBookHistogramSeries, makeOrder, marketPriceSpread, midPrice, type OrderSide } from "../market/index";
 import {
   sampleBernoulli,
   sampleExponential,
@@ -8,7 +8,7 @@ import {
   sampleUniform,
   sampleUniformInteger,
 } from "../distributions";
-import { clamp } from "../utils";
+import { clamp, sigmoid } from "../utils";
 import {
   type MarketBehaviorSettings,
   type OrderPriceDistribution,
@@ -16,6 +16,7 @@ import {
   type PriceAnchorWindow,
   type RestingOrder,
 } from "./types";
+import type { PriceSpread } from "../market/orderBook";
 
 export class SimulationOrderPlacement {
   private priceAnchorIntervals = [60_000, 600_000, 1_800_000, 3_600_000] as const;
@@ -54,9 +55,7 @@ export class SimulationOrderPlacement {
     return order.restingSize > 0 ? { id: order.id, side, price, size: order.restingSize, createdAt: Date.now() } : null;
   }
 
-  updateRecentPriceAnchors(spread = marketPriceSpread(), time = Date.now()): void {
-    const price = (spread.buy + spread.sell) / 2;
-
+  updateRecentPriceAnchors(price = midPrice(), time = Date.now()): void {
     if (!Number.isFinite(price) || price <= 0) return;
 
     for (const window of this.priceAnchorWindows) {
@@ -78,10 +77,7 @@ export class SimulationOrderPlacement {
         window.highPrices.pop();
       }
 
-      while (
-        window.lowPrices.length > window.lowOffset &&
-        window.lowPrices[window.lowPrices.length - 1]! >= price
-      ) {
+      while (window.lowPrices.length > window.lowOffset && window.lowPrices[window.lowPrices.length - 1]! >= price) {
         window.lowTimes.pop();
         window.lowPrices.pop();
       }
@@ -125,7 +121,7 @@ export class SimulationOrderPlacement {
     }
   }
 
-  private sampleInSpreadOrderPrice(spread: ReturnType<typeof marketPriceSpread>): number | null {
+  private sampleInSpreadOrderPrice(spread: PriceSpread): number | null {
     const bestBid = spread.sell;
     const bestAsk = spread.buy;
 
@@ -141,9 +137,10 @@ export class SimulationOrderPlacement {
   private sampleMakerOrderPrice(side: OrderSide): number {
     const settings = this.getSettings();
     const spread = marketPriceSpread();
-    const inSpreadPrice = sampleBernoulli(settings.inSpreadOrderProbability)
-      ? this.sampleInSpreadOrderPrice(spread)
-      : null;
+    const spreadSize = spread.buy - spread.sell;
+    const rate = 10 ** settings.inSpreadOrderProbability;
+    const inSpreadProb = 2 * sigmoid(spreadSize * rate) - 1;
+    const inSpreadPrice = sampleBernoulli(inSpreadProb) ? this.sampleInSpreadOrderPrice(spread) : null;
 
     if (inSpreadPrice !== null) return inSpreadPrice;
 
@@ -197,11 +194,7 @@ export class SimulationOrderPlacement {
     return Number.isFinite(anchor) && anchor > 0 ? anchor : null;
   }
 
-  private sampleSupportResistanceAnchor(
-    side: OrderSide,
-    candidatePrice: number,
-    spread: ReturnType<typeof marketPriceSpread>,
-  ): number | null {
+  private sampleSupportResistanceAnchor(side: OrderSide, candidatePrice: number, spread: PriceSpread): number | null {
     const settings = this.getSettings();
     const currentPrice = (spread.buy + spread.sell) / 2;
 
@@ -266,7 +259,7 @@ export class SimulationOrderPlacement {
     if (!Number.isFinite(price) || price <= 0) return price;
 
     const spread = marketPriceSpread();
-    this.updateRecentPriceAnchors(spread);
+    this.updateRecentPriceAnchors(midPrice());
 
     let adjustedPrice = price;
 

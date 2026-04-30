@@ -139,7 +139,7 @@ export const defaultMarketBehaviorSettings: MarketBehaviorSettings = {
   cancelPanic: 0.05, // cancels can trigger opposite-side market pressure
   orderSpread: 0.15, // mean maker price distance percent
   orderPriceTail: 0.1, // distance dispersion: higher = more tiny and far orders
-  inSpreadOrderProbability: 0.5,
+  inSpreadOrderProbability: 4,
   orderSizeScale: 100, // mean order size
   orderSizeTail: 0.8, // size dispersion: higher = more tiny and huge orders
   anchorPreference: 0.35,

@@ -21,6 +21,8 @@ export const unreachable = (message = "Unreachable code reached"): never => {
   throw new Error(message);
 };
 
+export const sigmoid = (x: number): number => 1 / (1 + Math.exp(-x));
+
 export const clamp = (value: number, min: number, max: number): number =>
   Math.min(Math.max(value, min), max);
 
