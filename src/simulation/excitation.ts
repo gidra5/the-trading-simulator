@@ -1,5 +1,5 @@
-import { sampleMultivariateHawkesProcessEventTypes } from "./distributions";
-import { halfLifeToDecay } from "./utils";
+import { sampleMultivariateHawkesProcessEventTypes } from "../distributions";
+import { halfLifeToDecay } from "../utils";
 import {
   eventExcitationMatrix,
   eventVector,
@@ -7,7 +7,7 @@ import {
   simulationEventTypes,
   type MarketBehaviorSettings,
   type SimulationEventType,
-} from "./simulationTypes";
+} from "./types";
 
 export class SimulationExcitation {
   private excitedInterest = eventVector({

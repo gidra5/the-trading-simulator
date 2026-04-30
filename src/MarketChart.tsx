@@ -16,7 +16,7 @@ import {
   OrderBookHistogram,
   HistogramNormalization,
 } from "./OrderBookHistogram";
-import { simulationTickTime, TradingSimulation } from "./simulation";
+import { simulationTickTime, TradingSimulation } from "./simulation/index";
 import { Chart, type ChartViewport } from "./Chart";
 import { ChartSettings } from "./ChartSettings";
 import { MarketSettings } from "./MarketSettings";

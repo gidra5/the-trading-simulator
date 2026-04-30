@@ -1,5 +1,5 @@
-import { positiveFiniteOrZero } from "./utils";
-import type { OrderSide } from "./market/index";
+import type { OrderSide } from "../market/index";
+import { positiveFiniteOrZero } from "../utils";
 
 export type OrderSizeDistribution = "uniform" | "log-normal" | "power-law" | "exponential";
 export type OrderPriceDistribution = "uniform" | "abs-normal" | "log-normal" | "power-law" | "exponential";

@@ -6,7 +6,7 @@ import {
   type OrderSizeDistribution,
   type SimulationEventSettingGroup,
   type TradingSimulation,
-} from "./simulation";
+} from "./simulation/index";
 
 type ScalarMarketBehaviorSetting = Exclude<keyof MarketBehaviorSettings, "excitementHalfLife" | "branchingRatio">;
 type MarketNumberField = {

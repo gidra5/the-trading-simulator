@@ -1,4 +1,4 @@
-import { getOrderBookHistogramSeries, makeOrder, marketPriceSpread, type OrderSide } from "./market/index";
+import { getOrderBookHistogramSeries, makeOrder, marketPriceSpread, type OrderSide } from "../market/index";
 import {
   sampleBernoulli,
   sampleExponential,
@@ -7,15 +7,15 @@ import {
   samplePowerLaw,
   sampleUniform,
   sampleUniformInteger,
-} from "./distributions";
-import { clamp } from "./utils";
+} from "../distributions";
+import { clamp } from "../utils";
 import {
   type MarketBehaviorSettings,
   type OrderPriceDistribution,
   type OrderSizeDistribution,
   type PriceAnchorWindow,
   type RestingOrder,
-} from "./simulationTypes";
+} from "./types";
 
 export class SimulationOrderPlacement {
   private priceAnchorIntervals = [60_000, 600_000, 1_800_000, 3_600_000] as const;
