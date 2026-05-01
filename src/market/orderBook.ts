@@ -355,54 +355,54 @@ export const createOrderBook = (options: OrderBookOptions) => {
     });
   };
 
-const reconstructAt = (targetIndex: number): OrderBook | null => {
-  const entries = orderBookMap();
-  const pendingChanges: Array<OrderBookChange | OrderBookChange[]> = [];
-  let coveredUntilCheckpointLevel = 0;
+  const reconstructAt = (targetIndex: number): OrderBook | null => {
+    const entries = orderBookMap();
+    const pendingChanges: Array<OrderBookChange | OrderBookChange[]> = [];
+    let coveredUntilCheckpointLevel = 0;
 
-  for (let index = targetIndex; index >= 0; index -= 1) {
-    const entry = entries[index];
+    for (let index = targetIndex; index >= 0; index -= 1) {
+      const entry = entries[index];
 
-    if (!entry) continue;
+      if (!entry) continue;
 
-    if (entry.kind === "snapshot") {
-      const reconstructedOrderBook = cloneOrderBookFrom(entry.orderBook);
+      if (entry.kind === "snapshot") {
+        const reconstructedOrderBook = cloneOrderBookFrom(entry.orderBook);
 
-      for (let pendingIndex = pendingChanges.length - 1; pendingIndex >= 0; pendingIndex -= 1) {
-        applyOrderBookEntryChanges(reconstructedOrderBook, pendingChanges[pendingIndex]!);
+        for (let pendingIndex = pendingChanges.length - 1; pendingIndex >= 0; pendingIndex -= 1) {
+          applyOrderBookEntryChanges(reconstructedOrderBook, pendingChanges[pendingIndex]!);
+        }
+
+        return reconstructedOrderBook;
       }
 
-      return reconstructedOrderBook;
-    }
+      if (coveredUntilCheckpointLevel > 0) {
+        if (entry.kind === "delta-snapshot" && entry.level >= coveredUntilCheckpointLevel) {
+          pendingChanges.push(entry.compactedChanges);
+          coveredUntilCheckpointLevel = entry.level;
+        }
 
-    if (coveredUntilCheckpointLevel > 0) {
-      if (entry.kind === "delta-snapshot" && entry.level >= coveredUntilCheckpointLevel) {
+        continue;
+      }
+
+      if (entry.level === 0) {
+        pendingChanges.push(entry.changes);
+      } else {
         pendingChanges.push(entry.compactedChanges);
         coveredUntilCheckpointLevel = entry.level;
       }
-
-      continue;
     }
 
-    if (entry.level === 0) {
-      pendingChanges.push(entry.changes);
-    } else {
-      pendingChanges.push(entry.compactedChanges);
-      coveredUntilCheckpointLevel = entry.level;
-    }
-  }
+    return null;
+  };
 
-  return null;
-};
+  const reconstruct = (revision: number): OrderBook | null => {
+    const entries = orderBookMap();
+    const targetIndex = entries.findIndex((entry) => entry.revision === revision);
 
-const reconstruct = (revision: number): OrderBook | null => {
-  const entries = orderBookMap();
-  const targetIndex = entries.findIndex((entry) => entry.revision === revision);
+    if (targetIndex === -1) return null;
+    return reconstructAt(targetIndex);
+  };
 
-  if (targetIndex === -1) return null;
-  return reconstructAt(targetIndex);
-};
-  
   return {
     snapshotInterval,
     deltaSnapshotInterval,

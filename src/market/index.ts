@@ -62,8 +62,8 @@ const {
 } = createRoot(() => {
   const orderBook = createOrderBook({ deltaSnapshotInterval: 100, fanout: 5, levels: 5 });
 
-  // orderBook.appendChange(Date.now(), { kind: "add", side: "buy", order: { id: -2, price: 0.99, size: 1e2 } });
-  // orderBook.appendChange(Date.now(), { kind: "add", side: "sell", order: { id: -3, price: 1.01, size: 1e2 } });
+  orderBook.appendChange(Date.now(), { kind: "add", side: "buy", order: { id: -2, price: 0.999, size: 1e4 } });
+  orderBook.appendChange(Date.now(), { kind: "add", side: "sell", order: { id: -3, price: 1.001, size: 1e4 } });
 
   return orderBook;
 });
@@ -284,7 +284,7 @@ export const priceHistoryCandle = (start: number, end: number, side: OrderSide):
   const firstIndex = upperBoundPriceHistory(history, start);
   const endIndex = upperBoundPriceHistory(history, end);
   const openEntry = history[Math.max(0, firstIndex - 1)];
-  const open = openEntry.spread[side];
+    const open = openEntry.spread[side];
   let close = open;
   let high = open;
   let low = open;
