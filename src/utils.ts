@@ -23,6 +23,10 @@ export const unreachable = (message = "Unreachable code reached"): never => {
 
 export const sigmoid = (x: number): number => 1 / (1 + Math.exp(-x));
 
+export const formatNumber = (value: number, digits: number): string => {
+  return value.toFixed(digits);
+};
+
 export const clamp = (value: number, min: number, max: number): number =>
   Math.min(Math.max(value, min), max);
 

@@ -11,6 +11,7 @@ export type MakeOrderResult = {
   restingSize: number;
 };
 
+// todo: replace explicit tag with a size sign - negative means sell, positive is buy
 export type OrderSide = "buy" | "sell";
 
 export const compareOrders = (candidate: RegisteredOrder, side: OrderSide, target: RegisteredOrder): number => {

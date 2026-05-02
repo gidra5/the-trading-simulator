@@ -48,6 +48,8 @@ const viewportMatches = (left: ChartViewport, right: ChartViewport): boolean =>
 // TODO: fixed candle interval relative to viewport
 // TODO: micro and macro candles to smoothly transition between scales
 // TODO: side panel with order book histogram
+// todo: crosshair
+// todo: drawing tools?
 export const Chart: Component<ChartProps> = (props) => {
   let container: HTMLDivElement | undefined;
   let canvas: HTMLCanvasElement | undefined;

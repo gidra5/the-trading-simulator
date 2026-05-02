@@ -50,8 +50,6 @@ const {
   revision,
   orderBook,
   appendChange,
-  reconstructAt,
-  reconstruct,
   reconstructRegionStream,
 
   priceHistory,
@@ -67,25 +65,6 @@ const {
 
   return orderBook;
 });
-
-export const reconstructOrderBookAtRevision = reconstruct;
-
-const lowerBoundOrderBookMapByTimestamp = (entries: OrderBookMapEntry[], timestamp: number): number => {
-  let low = 0;
-  let high = entries.length;
-
-  while (low < high) {
-    const mid = Math.floor((low + high) / 2);
-
-    if (entries[mid]!.timestamp < timestamp) {
-      low = mid + 1;
-    } else {
-      high = mid;
-    }
-  }
-
-  return low;
-};
 
 export const setOrderBookDeltaSnapshotInterval = (interval: number): void => {
   if (!Number.isFinite(interval) || interval <= 0) return;
