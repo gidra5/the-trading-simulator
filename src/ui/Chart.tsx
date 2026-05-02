@@ -6,7 +6,7 @@ import {
   type Component,
   type JSX,
 } from "solid-js";
-import type { OrderBookHeatmapEntry, PriceCandle } from "./market/index";
+import type { OrderBookHeatmapEntry, PriceCandle } from "../market/index";
 import clsx from "clsx";
 import {
   drawFrame,

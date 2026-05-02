@@ -1,5 +1,5 @@
 import { createEffect, type Component, type JSX } from "solid-js";
-import type { OrderBookHeatmapEntry } from "./market/index";
+import type { OrderBookHeatmapEntry } from "../market/index";
 
 type CanvasProps = {
   width: number;

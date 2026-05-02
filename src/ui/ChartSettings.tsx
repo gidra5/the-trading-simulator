@@ -1,5 +1,5 @@
 import { createSignal, type Accessor, type Component, type Setter } from "solid-js";
-import { getOrderBookHistoryStats, setOrderBookDeltaSnapshotLevels } from "./market/index";
+import { getOrderBookHistoryStats, setOrderBookDeltaSnapshotLevels } from "../market/index";
 import { HistogramNormalization } from "./OrderBookHistogram";
 
 const formatCandleIntervalSeconds = (interval: number): string => String(interval / 1_000);

@@ -1,6 +1,6 @@
-import type { OrderBookHeatmapEntry, PriceCandle } from "./market/index";
+import type { OrderBookHeatmapEntry, PriceCandle } from "../market/index";
 import type { ChartViewport } from "./Chart";
-import { assert } from "./utils";
+import { assert } from "../utils";
 
 const floatsPerCandleInstance = 5;
 const bytesPerFloat = 4;
@@ -253,9 +253,7 @@ fn fragmentMain(input: VertexOutput) -> @location(0) vec4<f32> {
 }
 `;
 
-export const initializeRenderer = async (
-  canvas: HTMLCanvasElement,
-): Promise<RendererState> => {
+export const initializeRenderer = async (canvas: HTMLCanvasElement): Promise<RendererState> => {
   const gpu = (navigator as { gpu?: GPU }).gpu;
   assert(gpu, "WebGPU is not available in this browser.");
 
@@ -431,14 +429,9 @@ export const initializeRenderer = async (
   };
 };
 
-export const getCanvasResolution = (
-  canvas: HTMLCanvasElement,
-): [width: number, height: number] => {
+export const getCanvasResolution = (canvas: HTMLCanvasElement): [width: number, height: number] => {
   const dpr = window.devicePixelRatio || 1;
-  return [
-    Math.max(1, Math.floor(canvas.clientWidth * dpr)),
-    Math.max(1, Math.floor(canvas.clientHeight * dpr)),
-  ];
+  return [Math.max(1, Math.floor(canvas.clientWidth * dpr)), Math.max(1, Math.floor(canvas.clientHeight * dpr))];
 };
 
 const getVisibleCandles = (
@@ -448,23 +441,15 @@ const getVisibleCandles = (
 ): PriceCandle[] => {
   const visibleFrom = viewport.time[0] - candleInterval;
   const visibleTo = viewport.time[1] + candleInterval;
-  return priceCandles.filter(
-    (candle) => candle.time >= visibleFrom && candle.time <= visibleTo,
-  );
+  return priceCandles.filter((candle) => candle.time >= visibleFrom && candle.time <= visibleTo);
 };
 
-const ensureCandleInstanceCapacity = (
-  renderer: RendererState,
-  candleCount: number,
-): void => {
+const ensureCandleInstanceCapacity = (renderer: RendererState, candleCount: number): void => {
   if (candleCount <= renderer.candleInstanceCapacity) {
     return;
   }
 
-  const nextCapacity = Math.max(
-    candleCount,
-    renderer.candleInstanceCapacity * 2,
-  );
+  const nextCapacity = Math.max(candleCount, renderer.candleInstanceCapacity * 2);
   renderer.candleInstanceBuffer.destroy();
   renderer.candleInstanceBuffer = renderer.device.createBuffer({
     size: nextCapacity * bytesPerCandleInstance,
@@ -473,15 +458,8 @@ const ensureCandleInstanceCapacity = (
   renderer.candleInstanceCapacity = nextCapacity;
 };
 
-const recreateHeatmapTexture = (
-  renderer: RendererState,
-  width: number,
-  height: number,
-): void => {
-  if (
-    width === renderer.heatmapTextureSize[0] &&
-    height === renderer.heatmapTextureSize[1]
-  ) {
+const recreateHeatmapTexture = (renderer: RendererState, width: number, height: number): void => {
+  if (width === renderer.heatmapTextureSize[0] && height === renderer.heatmapTextureSize[1]) {
     return;
   }
 
@@ -512,18 +490,11 @@ const recreateHeatmapTexture = (
   renderer.heatmapTextureSize = [width, height];
 };
 
-export const writeChartUniforms = (
-  renderer: RendererState,
-  viewport: ChartViewport,
-  candleInterval: number,
-): void => {
+export const writeChartUniforms = (renderer: RendererState, viewport: ChartViewport, candleInterval: number): void => {
   const chartUniforms: ChartUniforms = {
     priceRange: viewport.price,
     resolution: viewport.resolution,
-    timeScale: [
-      Math.max(viewport.time[1] - viewport.time[0], 1),
-      candleInterval,
-    ],
+    timeScale: [Math.max(viewport.time[1] - viewport.time[0], 1), candleInterval],
     padding: [0, 0],
   };
 
@@ -539,24 +510,13 @@ export const writeChartUniforms = (
   );
 };
 
-export const writeHeatmapTexture = (
-  renderer: RendererState,
-  orderBookHeatmap: OrderBookHeatmapEntry[],
-) => {
+export const writeHeatmapTexture = (renderer: RendererState, orderBookHeatmap: OrderBookHeatmapEntry[]) => {
   if (orderBookHeatmap.length === 0) {
     return 0;
   }
 
-  const width =
-    orderBookHeatmap.reduce(
-      (current, entry) => Math.max(current, entry.x),
-      -1,
-    ) + 1;
-  const height =
-    orderBookHeatmap.reduce(
-      (current, entry) => Math.max(current, entry.y),
-      -1,
-    ) + 1;
+  const width = orderBookHeatmap.reduce((current, entry) => Math.max(current, entry.x), -1) + 1;
+  const height = orderBookHeatmap.reduce((current, entry) => Math.max(current, entry.y), -1) + 1;
   if (width <= 0 || height <= 0) {
     return 0;
   }
@@ -611,8 +571,7 @@ export const writeHeatmapTexture = (
         }
       }
 
-      const intensity =
-        maxSize > 0 ? Math.log1p(size) / Math.log1p(maxSize) : 0;
+      const intensity = maxSize > 0 ? Math.log1p(size) / Math.log1p(maxSize) : 0;
       const row = height - 1 - y;
       const textureOffset = (row * width + x) * 4;
       const channel = Math.round(intensity * 255);
@@ -639,11 +598,7 @@ export const writeHeatmapTexture = (
   );
 };
 
-const writeCandleInstance = (
-  target: Float32Array,
-  index: number,
-  candleInstance: CandleInstance,
-): void => {
+const writeCandleInstance = (target: Float32Array, index: number, candleInstance: CandleInstance): void => {
   const offset = index * floatsPerCandleInstance;
 
   target.set(
@@ -664,20 +619,14 @@ export const writeCandleInstances = (
   priceCandles: PriceCandle[],
   candleInterval: number,
 ): number => {
-  const visibleCandles = getVisibleCandles(
-    priceCandles,
-    viewport,
-    candleInterval,
-  );
+  const visibleCandles = getVisibleCandles(priceCandles, viewport, candleInterval);
   if (visibleCandles.length === 0) {
     return 0;
   }
 
   ensureCandleInstanceCapacity(renderer, visibleCandles.length);
 
-  const instanceData = new Float32Array(
-    visibleCandles.length * floatsPerCandleInstance,
-  );
+  const instanceData = new Float32Array(visibleCandles.length * floatsPerCandleInstance);
 
   visibleCandles.forEach((priceCandle, index) => {
     const candleInstance: CandleInstance = {
@@ -693,11 +642,7 @@ export const writeCandleInstances = (
     writeCandleInstance(instanceData, index, candleInstance);
   });
 
-  renderer.device.queue.writeBuffer(
-    renderer.candleInstanceBuffer,
-    0,
-    instanceData,
-  );
+  renderer.device.queue.writeBuffer(renderer.candleInstanceBuffer, 0, instanceData);
   return visibleCandles.length;
 };
 

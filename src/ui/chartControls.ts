@@ -1,5 +1,5 @@
 import type { ChartViewport } from "./Chart";
-import { clamp } from "./utils";
+import { clamp } from "../utils";
 
 type DragState = {
   pointerId: number;

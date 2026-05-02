@@ -6,7 +6,7 @@ import {
   type OrderSizeDistribution,
   type SimulationEventSettingGroup,
   type TradingSimulation,
-} from "./simulation/index";
+} from "../simulation/index";
 
 type ScalarMarketBehaviorSetting = Exclude<keyof MarketBehaviorSettings, "excitementHalfLife" | "branchingRatio">;
 type MarketNumberField = {
@@ -91,10 +91,12 @@ export const MarketSettings: Component<{
   simulation: TradingSimulation;
 }> = (props) => {
   const [marketSettings, setMarketSettings] = createSignal(props.simulation.getMarketBehaviorSettings());
-  const [selectedOrderPriceDistribution, setSelectedOrderPriceDistribution] =
-    createSignal<OrderPriceDistribution>(props.simulation.getOrderPriceDistribution());
-  const [selectedOrderSizeDistribution, setSelectedOrderSizeDistribution] =
-    createSignal<OrderSizeDistribution>(props.simulation.getOrderSizeDistribution());
+  const [selectedOrderPriceDistribution, setSelectedOrderPriceDistribution] = createSignal<OrderPriceDistribution>(
+    props.simulation.getOrderPriceDistribution(),
+  );
+  const [selectedOrderSizeDistribution, setSelectedOrderSizeDistribution] = createSignal<OrderSizeDistribution>(
+    props.simulation.getOrderSizeDistribution(),
+  );
 
   const updateOrderPriceDistribution = (distribution: OrderPriceDistribution): void => {
     setSelectedOrderPriceDistribution(distribution);

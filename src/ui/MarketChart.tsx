@@ -11,16 +11,16 @@ import {
   marketPriceSpread,
   type PriceCandle,
   priceHistoryCandle,
-} from "./market/index";
+} from "../market/index";
 import {
   OrderBookHistogram,
   HistogramNormalization,
 } from "./OrderBookHistogram";
-import { simulationTickTime, TradingSimulation } from "./simulation/index";
+import { simulationTickTime, TradingSimulation } from "../simulation/index";
 import { Chart, type ChartViewport } from "./Chart";
 import { ChartSettings } from "./ChartSettings";
 import { MarketSettings } from "./MarketSettings";
-import { createThrottledMemo } from "./utils";
+import { createThrottledMemo } from "../utils";
 
 const pollingInterval = 200;
 const startDate = Date.now();
