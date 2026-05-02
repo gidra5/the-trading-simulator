@@ -132,12 +132,11 @@ export const getOrderBookHistoryStats = (): {
     } else if (entry.kind === "delta-snapshot") {
       deltaSnapshots += 1;
       deltaSnapshotLevels[entry.level] = (deltaSnapshotLevels[entry.level] ?? 0) + 1;
-      changes += entry.compactedChanges.length;
-    }
 
-    if (entry.kind === "delta-snapshot" && entry.level === 0) {
-      deltas += 1;
-      changes += Array.isArray(entry.changes) ? entry.changes.length : 1;
+      if (entry.level === 0) {
+        deltas += 1;
+        changes += Array.isArray(entry.changes) ? entry.changes.length : 1;
+      }
     }
   }
 
@@ -284,7 +283,7 @@ export const priceHistoryCandle = (start: number, end: number, side: OrderSide):
   const firstIndex = upperBoundPriceHistory(history, start);
   const endIndex = upperBoundPriceHistory(history, end);
   const openEntry = history[Math.max(0, firstIndex - 1)];
-    const open = openEntry.spread[side];
+  const open = openEntry.spread[side];
   let close = open;
   let high = open;
   let low = open;

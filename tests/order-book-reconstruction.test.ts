@@ -152,6 +152,28 @@ test("market reconstructs every recorded revision for fuzzed change sequences", 
   );
 });
 
+test("market reconstructs recorded revisions after delta hierarchy changes", async () => {
+  const market = await loadMarket({ interval: 2, fanout: 2, levels: 2 });
+  const recordedBooks = new Map<number, ReturnType<typeof market.orderBook>>();
+
+  for (let index = 0; index < 12; index += 1) {
+    now += 100;
+    market.makeOrder("buy", {
+      price: 0.8 + index / 1_000,
+      size: index + 1,
+    });
+    recordedBooks.set(market.getOrderBookHistoryStats().revision, structuredClone(market.orderBook()));
+  }
+
+  market.setOrderBookDeltaSnapshotInterval(3);
+  market.setOrderBookDeltaSnapshotFanout(3);
+  market.setOrderBookDeltaSnapshotLevels(3);
+
+  for (const [revision, recordedBook] of recordedBooks) {
+    expect(market.reconstructOrderBookAtRevision(revision), `revision ${revision}`).toEqual(recordedBook);
+  }
+});
+
 test("market builds heatmap regions for fuzzed change sequences", async () => {
   await fc.assert(
     fc.asyncProperty(arb, async ({ interval, fanout, levels, operations }) => {
