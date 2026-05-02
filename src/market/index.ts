@@ -8,11 +8,9 @@ import {
   type RegisteredOrder,
 } from "./order";
 import {
-  applyOrderBookChange,
-  applyOrderBookEntryChanges,
+  applyChangeset,
   cloneOrderBookFrom,
   createOrderBook,
-  type OrderBook,
   type OrderBookChange,
   type OrderBookHeatmapEntry,
   type OrderBookHeatmapRegion,
@@ -31,7 +29,6 @@ export type {
   OrderBookHistogramRegion,
   OrderBookHistogramSeries,
 } from "./orderBook";
-export { applyOrderBookChange, oppositeSide };
 
 export type PriceCandle = {
   time: number;
@@ -55,6 +52,7 @@ const {
   appendChange,
   reconstructAt,
   reconstruct,
+  reconstructRegionStream,
 
   priceHistory,
   marketPriceSpread,
@@ -62,8 +60,10 @@ const {
 } = createRoot(() => {
   const orderBook = createOrderBook({ deltaSnapshotInterval: 100, fanout: 5, levels: 5 });
 
-  orderBook.appendChange(Date.now(), { kind: "add", side: "buy", order: { id: -2, price: 0.999, size: 1e4 } });
-  orderBook.appendChange(Date.now(), { kind: "add", side: "sell", order: { id: -3, price: 1.001, size: 1e4 } });
+  orderBook.appendChange(Date.now(), [
+    { kind: "add", side: "buy", order: { id: -2, price: 0.999, size: 1e4 } },
+    { kind: "add", side: "sell", order: { id: -3, price: 1.001, size: 1e4 } },
+  ]);
 
   return orderBook;
 });
@@ -167,52 +167,30 @@ export const getOrderBookRegion = (region: OrderBookHeatmapRegion): OrderBookHea
     Math.max(region.price[1] - region.price[0], Number.EPSILON) / resolution[1],
   ];
   const heatmap: Map<number, OrderBookHeatmapEntry> = new Map();
-  const entries = orderBookMap();
-  const firstRegionEntryIndex = lowerBoundOrderBookMapByTimestamp(entries, region.timestamp[0]);
-  let reconstructedOrderBook = firstRegionEntryIndex > 0 ? reconstructAt(firstRegionEntryIndex - 1) : null;
 
-  for (let entryIndex = firstRegionEntryIndex; entryIndex < entries.length; entryIndex += 1) {
-    const entry = entries[entryIndex]!;
+  reconstructRegionStream(region.timestamp, (orderBook, timestamp) => {
+    const x = Math.floor((timestamp - region.timestamp[0]) / cellSize[0]);
 
-    if (entry.timestamp > region.timestamp[1]) break;
-
-    if (entry.kind === "snapshot") {
-      reconstructedOrderBook = cloneOrderBookFrom(entry.orderBook);
-    } else if (reconstructedOrderBook && entry.kind === "delta-snapshot") {
-      try {
-        applyOrderBookEntryChanges(reconstructedOrderBook, entry.changes);
-      } catch (error) {
-        throw new Error(
-          `failed to replay order-book entry ${entry.revision}: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        );
-      }
-    }
-
-    if (!reconstructedOrderBook) continue;
-
-    const x = Math.floor((entry.timestamp - region.timestamp[0]) / cellSize[0]);
-    if (x < 0 || x >= resolution[0]) continue;
-
-    const orders = [...reconstructedOrderBook.buy, ...reconstructedOrderBook.sell];
-    for (const order of orders) {
-      if (order.price < region.price[0] || order.price > region.price[1]) continue;
+    const h = (order: RegisteredOrder) => {
+      if (order.price < region.price[0] || order.price > region.price[1]) return;
 
       const y = Math.floor((order.price - region.price[0]) / cellSize[1]);
-      if (y < 0 || y >= resolution[1]) continue;
+      if (y < 0 || y >= resolution[1]) return;
 
       const key = y * resolution[0] + x;
       const cell = heatmap.get(key);
       if (cell) cell.size += order.size;
       else heatmap.set(key, { x, y, size: order.size });
-    }
-  }
+    };
+
+    for (const order of orderBook.buy) h(order);
+    for (const order of orderBook.sell) h(order);
+  });
 
   const cells = Array.from(heatmap.values());
   cells.push({ x: resolution[0] - 1, y: resolution[1] - 1, size: 0 });
   return cells;
-};
+};;
 
 export const getOrderBookHistogram = (region: OrderBookHistogramRegion): OrderBookHistogramEntry[] => {
   const currentOrderBook = orderBook();
@@ -268,7 +246,7 @@ export const getOrderBookHistogramSeries = (
   return { cellHeight, sizes };
 };
 
-const recordMarketState = (changes: OrderBookChange | OrderBookChange[]) => {
+const recordMarketState = (changes: OrderBookChange[]) => {
   const timestamp = Date.now();
 
   if (Array.isArray(changes) && changes.length === 0) {
@@ -348,7 +326,7 @@ export const makeOrder = (side: OrderSide, order: Order): MakeOrderResult => {
 
   orderWithId.size = restingSize;
 
-  recordMarketState({ kind: "add", side, order: orderWithId });
+  recordMarketState([{ kind: "add", side, order: orderWithId }]);
 
   return { id, fulfilled: result.fulfilled, restingSize };
 };
@@ -416,8 +394,8 @@ export const cancelOrder = (id: number, side?: OrderSide): RegisteredOrder | nul
 
   if (!order) return null;
 
-  recordMarketState({ kind: "remove", side: location.side, order: cloneOrder(order) });
+  recordMarketState([{ kind: "remove", side: location.side, order: cloneOrder(order) }]);
   return order;
 };
-
+// todo: move histogram, price history, stats, heatmap related variables and functions to separate files.
 export { marketPriceSpread, midPrice, orderBook };
