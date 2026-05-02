@@ -8,6 +8,7 @@ export type RegisteredOrder = Order & { id: number };
 export type MakeOrderResult = {
   id: number;
   fulfilled: number;
+  cost: number;
   restingSize: number;
 };
 

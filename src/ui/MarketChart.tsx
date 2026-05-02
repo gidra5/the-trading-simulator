@@ -20,7 +20,8 @@ import { simulationTickTime, TradingSimulation } from "../simulation/index";
 import { Chart, type ChartViewport } from "./Chart";
 import { ChartSettings } from "./ChartSettings";
 import { MarketSettings } from "./MarketSettings";
-import { createThrottledMemo } from "../utils";
+import { createThrottledMemo, formatNumber } from "../utils";
+import { digits, Order } from "./Order";
 
 const pollingInterval = 200;
 const startDate = Date.now();
@@ -167,14 +168,15 @@ export const MarketChart: Component = () => {
 
   return (
     <div class="flex h-full w-full flex-col gap-4 bg-slate-950 p-4 text-slate-100">
-      <div class="flex flex-wrap items-end justify-between gap-3">
+      <div class="flex items-end justify-between gap-3">
         <div class="flex flex-col gap-1">
           <p class="text-xl tracking-[0.3em] text-slate-400">Market Sim</p>
           <p class="font-mono text-xs">buy / sell</p>
           <p class="font-mono text-xs">
-            {priceSpread()?.buy.toFixed(6) ?? "-"} / {priceSpread()?.sell.toFixed(6) ?? "-"}
+            {formatNumber(priceSpread().buy, digits)} / {formatNumber(priceSpread().sell, digits)}
           </p>
         </div>
+        <Order />
         <div class="max-w-5xl rounded border border-slate-800 bg-slate-900/80 px-3 py-2 font-mono text-[11px] leading-5 text-slate-300">
           <div class="mb-2 flex items-center justify-between gap-3">
             <p class="text-[10px] uppercase tracking-[0.2em] text-slate-500">Controls</p>

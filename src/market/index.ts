@@ -1,4 +1,4 @@
-import { createRoot } from "solid-js";
+import { createRoot, createSignal } from "solid-js";
 import {
   cloneOrder,
   oppositeSide,
@@ -47,6 +47,7 @@ const {
   levels,
   setLevels,
   orderBookMap,
+  orderBookHistory,
   revision,
   orderBook,
   appendChange,
@@ -65,6 +66,8 @@ const {
 
   return orderBook;
 });
+
+export { orderBookHistory };
 
 export const setOrderBookDeltaSnapshotInterval = (interval: number): void => {
   if (!Number.isFinite(interval) || interval <= 0) return;
@@ -169,7 +172,7 @@ export const getOrderBookRegion = (region: OrderBookHeatmapRegion): OrderBookHea
   const cells = Array.from(heatmap.values());
   cells.push({ x: resolution[0] - 1, y: resolution[1] - 1, size: 0 });
   return cells;
-};;
+};
 
 export const getOrderBookHistogram = (region: OrderBookHistogramRegion): OrderBookHistogramEntry[] => {
   const currentOrderBook = orderBook();
@@ -300,18 +303,23 @@ export const makeOrder = (side: OrderSide, order: Order): MakeOrderResult => {
   const restingSize = order.size - result.fulfilled;
 
   if (restingSize === 0) {
-    return { id, fulfilled: result.fulfilled, restingSize };
+    return { id, fulfilled: result.fulfilled, cost: result.cost, restingSize };
   }
 
   orderWithId.size = restingSize;
 
   recordMarketState([{ kind: "add", side, order: orderWithId }]);
 
-  return { id, fulfilled: result.fulfilled, restingSize };
+  return { id, fulfilled: result.fulfilled, cost: result.cost, restingSize };
 };
 
-export const takeOrder = (side: OrderSide, size: number, price?: number): { id: number; fulfilled: number } => {
+export const takeOrder = (
+  side: OrderSide,
+  size: number,
+  price?: number,
+): { id: number; fulfilled: number; cost: number } => {
   let fulfilled = 0;
+  let cost = 0;
   const id = nextOrderId++;
   const bookSide = oppositeSide(side);
   const orders = orderBook()[bookSide];
@@ -324,27 +332,28 @@ export const takeOrder = (side: OrderSide, size: number, price?: number): { id: 
       if (fulfilled > 0) {
         recordMarketState(changes);
       }
-      return { id, fulfilled };
+      return { id, fulfilled, cost };
     }
 
     if (price !== undefined && side === "buy" && order.price > price) {
       if (fulfilled > 0) {
         recordMarketState(changes);
       }
-      return { id, fulfilled };
+      return { id, fulfilled, cost };
     }
 
     if (price !== undefined && side === "sell" && order.price < price) {
       if (fulfilled > 0) {
         recordMarketState(changes);
       }
-      return { id, fulfilled };
+      return { id, fulfilled, cost };
     }
 
     if (fulfilled + order.size > size) {
-      const remainingSize = size - fulfilled;
-      const nextSize = order.size - remainingSize;
-      fulfilled += remainingSize;
+      const sizeToFulfill = size - fulfilled;
+      const nextSize = order.size - sizeToFulfill;
+      fulfilled += sizeToFulfill;
+      cost += order.price * sizeToFulfill;
       changes.push({
         kind: "partial-fill",
         side: bookSide,
@@ -352,16 +361,17 @@ export const takeOrder = (side: OrderSide, size: number, price?: number): { id: 
       });
       recordMarketState(changes);
 
-      return { id, fulfilled };
+      return { id, fulfilled, cost };
     }
 
     fulfilled += order.size;
+    cost += order.price * order.size;
     changes.push({ kind: "remove", side: bookSide, order: cloneOrder(order) });
     orderIndex -= 1;
   }
 
   recordMarketState(changes);
-  return { id, fulfilled };
+  return { id, fulfilled, cost };
 };
 
 export const cancelOrder = (id: number, side?: OrderSide): RegisteredOrder | null => {

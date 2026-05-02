@@ -52,6 +52,7 @@ export type OrderBookDeltaSnapshotEntry = {
   compactedChanges: OrderBookChangesetMap;
 };
 
+// todo: only deltas, move snapshots into acc structure
 type OrderBookHistoryEntry = OrderBookSnapshotEntry | OrderBookDeltaEntry;
 export type OrderBookMapEntry = OrderBookSnapshotEntry | OrderBookDeltaSnapshotEntry;
 type OrderBookHistory = OrderBookHistoryEntry[];
@@ -470,6 +471,7 @@ export const createOrderBook = (options: OrderBookOptions) => {
     orderBookMap,
     revision,
 
+    orderBookHistory,
     orderBook,
     appendChange,
     reconstruct,
