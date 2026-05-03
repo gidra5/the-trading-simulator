@@ -1,10 +1,4 @@
-import {
-  Show,
-  createSignal,
-  onCleanup,
-  onMount,
-  type Component,
-} from "solid-js";
+import { Show, createSignal, onCleanup, onMount, type Component } from "solid-js";
 import {
   getOrderBookHistogram,
   getOrderBookRegion,
@@ -12,10 +6,7 @@ import {
   type PriceCandle,
   priceHistoryCandle,
 } from "../market/index";
-import {
-  OrderBookHistogram,
-  HistogramNormalization,
-} from "./OrderBookHistogram";
+import { OrderBookHistogram, HistogramNormalization } from "./OrderBookHistogram";
 import { simulationTickTime, TradingSimulation } from "../simulation/index";
 import { Chart, type ChartViewport } from "./Chart";
 import { ChartSettings } from "./ChartSettings";
@@ -31,16 +22,15 @@ type SettingsTab = "chart" | "market";
 export const MarketChart: Component = () => {
   const simulation = new TradingSimulation();
   const priceSpread = createThrottledMemo(marketPriceSpread, pollingInterval);
-  const [activeSettingsTab, setActiveSettingsTab] =
-    createSignal<SettingsTab>("chart");
+  const [activeSettingsTab, setActiveSettingsTab] = createSignal<SettingsTab>("chart");
   const [candleInterval, setCandleInterval] = createSignal(1_000);
   const [isHeatmapEnabled, setIsHeatmapEnabled] = createSignal(false);
   const [isHistogramEnabled, setIsHistogramEnabled] = createSignal(true);
   const [isHistogramCumulative, setIsHistogramCumulative] = createSignal(true);
-  const [histogramNormalization, setHistogramNormalization] =
-    createSignal<HistogramNormalization>(HistogramNormalization.Linear);
-  const [histogramWindowFraction, setHistogramWindowFraction] =
-    createSignal(0.01);
+  const [histogramNormalization, setHistogramNormalization] = createSignal<HistogramNormalization>(
+    HistogramNormalization.Linear,
+  );
+  const [histogramWindowFraction, setHistogramWindowFraction] = createSignal(0.01);
   const [viewport, setViewport] = createSignal<ChartViewport>({
     time: [startDate, startDate + 1 * 60 * 1000],
     price: [0.7, 1.3],
@@ -48,18 +38,11 @@ export const MarketChart: Component = () => {
   });
   let previousCandleInterval = candleInterval();
 
-  const rebuildCandles = (
-    interval: number,
-    now = Date.now(),
-  ): PriceCandle[] => {
+  const rebuildCandles = (interval: number, now = Date.now()): PriceCandle[] => {
     const alignedStart = Math.floor(startDate / interval) * interval;
     const rebuiltCandles: PriceCandle[] = [];
 
-    for (
-      let candleStart = alignedStart;
-      candleStart <= now;
-      candleStart += interval
-    ) {
+    for (let candleStart = alignedStart; candleStart <= now; candleStart += interval) {
       const candle = priceHistoryCandle(candleStart, Math.min(candleStart + interval, now), "buy");
       rebuiltCandles.push(candle);
     }
@@ -71,56 +54,32 @@ export const MarketChart: Component = () => {
     setCandleInterval(nextInterval);
   };
 
-  const candles = createThrottledMemo<PriceCandle[]>(
-    (currentCandles = []) => {
-      const now = Date.now();
-      const interval = candleInterval();
+  const candles = createThrottledMemo<PriceCandle[]>((currentCandles = []) => {
+    const now = Date.now();
+    const interval = candleInterval();
 
-      if (interval !== previousCandleInterval) {
-        previousCandleInterval = interval;
-        return rebuildCandles(interval, now);
-      }
+    if (interval !== previousCandleInterval) {
+      previousCandleInterval = interval;
+      return rebuildCandles(interval, now);
+    }
 
-      const candleStart = Math.floor(now / interval) * interval;
-      const candle = priceHistoryCandle(candleStart, now, "buy");
-      const latestCandle = currentCandles[currentCandles.length - 1];
+    const candleStart = Math.floor(now / interval) * interval;
+    const candle = priceHistoryCandle(candleStart, now, "buy");
+    const latestCandle = currentCandles[currentCandles.length - 1];
 
-      if (!latestCandle) {
-        return [candle];
-      }
+    if (!latestCandle) return [candle];
+    if (latestCandle.time === candle.time) return [...currentCandles.slice(0, -1), candle];
+    if (latestCandle.time > candle.time) return currentCandles;
 
-      if (latestCandle.time === candle.time) {
-        return [...currentCandles.slice(0, -1), candle];
-      }
+    const finalizedLatestCandle = priceHistoryCandle(latestCandle.time, latestCandle.time + interval, "buy");
+    const missingCandles: PriceCandle[] = [];
+    for (let missingStart = latestCandle.time + interval; missingStart < candle.time; missingStart += interval) {
+      const candle = priceHistoryCandle(missingStart, missingStart + interval, "buy");
+      missingCandles.push(candle);
+    }
 
-      if (latestCandle.time > candle.time) {
-        return currentCandles;
-      }
-
-      const finalizedLatestCandle = priceHistoryCandle(
-        latestCandle.time,
-        latestCandle.time + interval,
-        "buy",
-      );
-      const missingCandles: PriceCandle[] = [];
-      for (
-        let missingStart = latestCandle.time + interval;
-        missingStart < candle.time;
-        missingStart += interval
-      ) {
-        const candle = priceHistoryCandle(missingStart, missingStart + interval, "buy");
-        missingCandles.push(candle);
-      }
-
-      return [
-        ...currentCandles.slice(0, -1),
-        finalizedLatestCandle,
-        ...missingCandles,
-        candle,
-      ];
-    },
-    pollingInterval,
-  );
+    return [...currentCandles.slice(0, -1), finalizedLatestCandle, ...missingCandles, candle];
+  }, pollingInterval);
 
   const heatmap = createThrottledMemo(() => {
     if (!isHeatmapEnabled()) return null;
@@ -156,10 +115,7 @@ export const MarketChart: Component = () => {
   };
 
   onMount(() => {
-    const simulationIntervalId = setInterval(
-      () => simulation.tick(simulationTickTime),
-      simulationTickTime,
-    );
+    const simulationIntervalId = setInterval(() => simulation.tick(simulationTickTime), simulationTickTime);
 
     onCleanup(() => {
       clearInterval(simulationIntervalId);

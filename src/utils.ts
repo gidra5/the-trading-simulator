@@ -1,14 +1,6 @@
-import {
-  createMemo,
-  createSignal,
-  onCleanup,
-  type Accessor,
-} from "solid-js";
+import { createMemo, createSignal, onCleanup, type Accessor } from "solid-js";
 
-export const assert: (
-  condition: unknown,
-  message?: string,
-) => asserts condition = (
+export const assert: (condition: unknown, message?: string) => asserts condition = (
   condition: unknown,
   message = "Assertion failed",
 ): asserts condition => {
@@ -27,11 +19,9 @@ export const formatNumber = (value: number, digits: number): string => {
   return value.toFixed(digits);
 };
 
-export const clamp = (value: number, min: number, max: number): number =>
-  Math.min(Math.max(value, min), max);
+export const clamp = (value: number, min: number, max: number): number => Math.min(Math.max(value, min), max);
 
-export const positiveFiniteOrZero = (value: number): number =>
-  Number.isFinite(value) && value > 0 ? value : 0;
+export const positiveFiniteOrZero = (value: number): number => (Number.isFinite(value) && value > 0 ? value : 0);
 
 export const halfLifeToDecay = (halfLifeSeconds: number): number => {
   const halfLife = positiveFiniteOrZero(halfLifeSeconds);

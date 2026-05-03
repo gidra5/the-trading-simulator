@@ -146,7 +146,7 @@ test("market reconstructs every recorded revision for fuzzed change sequences", 
       });
 
       for (const [revision, recordedBook] of recordedBooks) {
-        expect(market.reconstructOrderBookAtRevision(revision), `revision ${revision}`).toEqual(recordedBook);
+        expect(market.reconstruct(revision), `revision ${revision}`).toEqual(recordedBook);
       }
     }),
   );
@@ -170,7 +170,7 @@ test("market reconstructs recorded revisions after delta hierarchy changes", asy
   market.setOrderBookDeltaSnapshotLevels(3);
 
   for (const [revision, recordedBook] of recordedBooks) {
-    expect(market.reconstructOrderBookAtRevision(revision), `revision ${revision}`).toEqual(recordedBook);
+    expect(market.reconstruct(revision), `revision ${revision}`).toEqual(recordedBook);
   }
 });
 

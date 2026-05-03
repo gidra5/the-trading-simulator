@@ -61,9 +61,7 @@ export const ChartSettings: Component<ChartSettingsProps> = (props) => {
 
   return (
     <>
-      <p>
-        Drag: pan viewport. Wheel: scale time. Shift + wheel: scale price. Ctrl + wheel: zoom both axes.
-      </p>
+      <p>Drag: pan viewport. Wheel: scale time. Shift + wheel: scale price. Ctrl + wheel: zoom both axes.</p>
       <div class="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
         <label class="flex items-center gap-2 text-slate-200">
           <span>Candle interval, s</span>

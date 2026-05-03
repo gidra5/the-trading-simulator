@@ -13,11 +13,7 @@ type OrderBookHeatmapProps = CanvasProps & {
   resolution: [time: number, price: number];
 };
 
-const resizeCanvas = (
-  canvas: HTMLCanvasElement,
-  width: number,
-  height: number,
-): CanvasRenderingContext2D | null => {
+const resizeCanvas = (canvas: HTMLCanvasElement, width: number, height: number): CanvasRenderingContext2D | null => {
   const safeWidth = Math.max(0, Math.floor(width));
   const safeHeight = Math.max(0, Math.floor(height));
 
@@ -75,10 +71,7 @@ export const OrderBookHeatmap: Component<OrderBookHeatmapProps> = (props) => {
       return;
     }
 
-    const maxSize = props.data.reduce(
-      (current, entry) => Math.max(current, entry.size),
-      0,
-    );
+    const maxSize = props.data.reduce((current, entry) => Math.max(current, entry.size), 0);
     if (maxSize <= 0) {
       return;
     }
@@ -96,12 +89,7 @@ export const OrderBookHeatmap: Component<OrderBookHeatmapProps> = (props) => {
       const y = props.height - (entry.y + 1) * cellHeight;
 
       context.fillStyle = heatmapColor(intensity);
-      context.fillRect(
-        x,
-        y,
-        Math.ceil(cellWidth) + 1,
-        Math.ceil(cellHeight) + 1,
-      );
+      context.fillRect(x, y, Math.ceil(cellWidth) + 1, Math.ceil(cellHeight) + 1);
     }
   });
 

@@ -1,7 +1,7 @@
-import { defineConfig } from 'vitest/config';
-import solidPlugin from 'vite-plugin-solid';
-import devtools from 'solid-devtools/vite';
-import UnocssPlugin from '@unocss/vite';
+import { defineConfig } from "vitest/config";
+import solidPlugin from "vite-plugin-solid";
+import devtools from "solid-devtools/vite";
+import UnocssPlugin from "@unocss/vite";
 
 export default defineConfig({
   plugins: [
@@ -14,9 +14,9 @@ export default defineConfig({
     port: 3000,
   },
   build: {
-    target: 'esnext',
+    target: "esnext",
   },
   test: {
-    environment: 'node',
+    environment: "node",
   },
 });

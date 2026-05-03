@@ -344,7 +344,9 @@ export const sampleMultivariateHawkesProcessEventTypes = (
 ): number[] => {
   const dimension = baselineRatePerSecond.length;
   const excitedRate =
-    initialExcitedRatePerSecond.length === dimension ? initialExcitedRatePerSecond : new Array<number>(dimension).fill(0);
+    initialExcitedRatePerSecond.length === dimension
+      ? initialExcitedRatePerSecond
+      : new Array<number>(dimension).fill(0);
 
   if (dimension === 0 || !Number.isFinite(intervalMs) || intervalMs <= 0) {
     return excitedRate;

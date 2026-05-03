@@ -52,6 +52,7 @@ const {
   orderBook,
   appendChange,
   reconstructRegionStream,
+  reconstruct,
 
   priceHistory,
   marketPriceSpread,
@@ -67,7 +68,7 @@ const {
   return orderBook;
 });
 
-export { orderBookHistory };
+export { orderBookHistory, reconstruct };
 
 export const setOrderBookDeltaSnapshotInterval = (interval: number): void => {
   if (!Number.isFinite(interval) || interval <= 0) return;

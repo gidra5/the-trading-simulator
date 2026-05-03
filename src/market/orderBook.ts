@@ -392,6 +392,7 @@ export const createOrderBook = (options: OrderBookOptions) => {
         for (let pendingIndex = pendingChanges.length - 1; pendingIndex >= 0; pendingIndex -= 1) {
           const changeset = entries[pendingChanges[pendingIndex]!];
           assert(changeset.kind !== "snapshot");
+
           if (changeset.level > 0) {
             applyChangesetMap(reconstructedOrderBook, changeset.compactedChanges);
           } else applyChangeset(reconstructedOrderBook, changeset.changes);
@@ -452,6 +453,7 @@ export const createOrderBook = (options: OrderBookOptions) => {
 
     for (let index = orderBookIndex + 1; index < orderBookHistory().length; index += 1) {
       const entry = orderBookHistory()[index]!;
+
       if (entry.kind === "snapshot") orderBook = cloneOrderBookFrom(entry.orderBook);
       else applyChangeset(orderBook, entry.changes);
       stream(orderBook, entry.timestamp);
@@ -482,4 +484,4 @@ export const createOrderBook = (options: OrderBookOptions) => {
     marketPriceSpread,
     midPrice,
   };
-};;;;
+};

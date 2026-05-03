@@ -111,11 +111,7 @@ export class SimulationCancellation {
     return 0;
   }
 
-  private farOrderCancellationProbability(
-    order: RestingOrder,
-    now = Date.now(),
-    spread = marketPriceSpread(),
-  ): number {
+  private farOrderCancellationProbability(order: RestingOrder, now = Date.now(), spread = marketPriceSpread()): number {
     const settings = this.getSettings();
 
     if (now - order.createdAt < settings.cancellationFarOrderMinAge) return 0;
@@ -172,7 +168,10 @@ export class SimulationCancellation {
         const minPrice = candidate.order.price * (1 - settings.cancellationLocalVolumeWindow);
         const maxPrice = candidate.order.price * (1 + settings.cancellationLocalVolumeWindow);
 
-        while (rightIndex < priceSortedCandidates.length && priceSortedCandidates[rightIndex]!.order.price <= maxPrice) {
+        while (
+          rightIndex < priceSortedCandidates.length &&
+          priceSortedCandidates[rightIndex]!.order.price <= maxPrice
+        ) {
           localVolume += priceSortedCandidates[rightIndex]!.order.size;
           rightIndex += 1;
         }

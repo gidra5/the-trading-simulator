@@ -72,7 +72,9 @@ const normalizeLinear = (value: number, maxValue: number): number => {
 };
 
 const normalize = (value: number, maxValue: number, mode: HistogramNormalization): number => {
-  return mode === HistogramNormalization.Logarithmic ? normalizeLogarithmic(value, maxValue) : normalizeLinear(value, maxValue);
+  return mode === HistogramNormalization.Logarithmic
+    ? normalizeLogarithmic(value, maxValue)
+    : normalizeLinear(value, maxValue);
 };
 
 const getAveragingWindowSize = (rowCount: number, windowFraction: number): number => {

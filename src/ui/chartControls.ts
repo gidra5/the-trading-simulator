@@ -47,22 +47,14 @@ const scaleRange = (
   const nextSpan = Math.max(minimumSpan, span * scale);
   const anchorValue = range[0] + span * anchor;
 
-  return [
-    anchorValue - nextSpan * anchor,
-    anchorValue + nextSpan * (1 - anchor),
-  ];
+  return [anchorValue - nextSpan * anchor, anchorValue + nextSpan * (1 - anchor)];
 };
 
-export const createChartControls = (
-  options: ChartControlsOptions,
-): ChartControls => {
+export const createChartControls = (options: ChartControlsOptions): ChartControls => {
   let dragState: DragState | undefined;
 
   const clearDragState = (pointerId?: number): void => {
-    if (
-      !dragState ||
-      (pointerId !== undefined && dragState.pointerId !== pointerId)
-    ) {
+    if (!dragState || (pointerId !== undefined && dragState.pointerId !== pointerId)) {
       return;
     }
 
@@ -70,9 +62,7 @@ export const createChartControls = (
     options.setDragging(false);
   };
 
-  const getPointerCoordinates = (
-    event: PointerEvent | WheelEvent,
-  ): PointerCoordinates | null => {
+  const getPointerCoordinates = (event: PointerEvent | WheelEvent): PointerCoordinates | null => {
     const canvas = options.getCanvas();
     if (!canvas) {
       return null;
@@ -121,28 +111,16 @@ export const createChartControls = (
 
     const width = Math.max(canvas.clientWidth, 1);
     const height = Math.max(canvas.clientHeight, 1);
-    const timeSpan = Math.max(
-      dragState.viewport.time[1] - dragState.viewport.time[0],
-      minTimeSpanMs,
-    );
-    const priceSpan = Math.max(
-      dragState.viewport.price[1] - dragState.viewport.price[0],
-      minPriceSpan,
-    );
+    const timeSpan = Math.max(dragState.viewport.time[1] - dragState.viewport.time[0], minTimeSpanMs);
+    const priceSpan = Math.max(dragState.viewport.price[1] - dragState.viewport.price[0], minPriceSpan);
     const deltaX = event.clientX - dragState.startX;
     const deltaY = event.clientY - dragState.startY;
     const timeOffset = (deltaX / width) * timeSpan;
     const priceOffset = (deltaY / height) * priceSpan;
 
     options.updateViewport({
-      time: [
-        dragState.viewport.time[0] - timeOffset,
-        dragState.viewport.time[1] - timeOffset,
-      ],
-      price: [
-        dragState.viewport.price[0] + priceOffset,
-        dragState.viewport.price[1] + priceOffset,
-      ],
+      time: [dragState.viewport.time[0] - timeOffset, dragState.viewport.time[1] - timeOffset],
+      price: [dragState.viewport.price[0] + priceOffset, dragState.viewport.price[1] + priceOffset],
     });
 
     event.preventDefault();
@@ -175,12 +153,8 @@ export const createChartControls = (
     const scalePrice = event.ctrlKey || event.shiftKey;
 
     options.updateViewport({
-      time: scaleTime
-        ? scaleRange(viewport.time, anchorX, zoomFactor, minTimeSpanMs)
-        : viewport.time,
-      price: scalePrice
-        ? scaleRange(viewport.price, priceAnchor, zoomFactor, minPriceSpan)
-        : viewport.price,
+      time: scaleTime ? scaleRange(viewport.time, anchorX, zoomFactor, minTimeSpanMs) : viewport.time,
+      price: scalePrice ? scaleRange(viewport.price, priceAnchor, zoomFactor, minPriceSpan) : viewport.price,
     });
 
     event.preventDefault();

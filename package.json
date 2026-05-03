@@ -10,7 +10,8 @@
     "profile:page": "node scripts/profile-page-heatmap.mjs",
     "test": "vitest run",
     "serve": "vite preview",
-    "check": "tsc --noEmit"
+    "check": "tsc --noEmit",
+    "fmt": "prettier --write ./src ./tests"
   },
   "license": "MIT",
   "devDependencies": {
@@ -19,6 +20,7 @@
     "@webgpu/types": "^0.1.61",
     "fast-check": "^4.7.0",
     "playwright": "^1.59.1",
+    "prettier": "^3.8.3",
     "solid-devtools": "^0.34.3",
     "typescript": "^5.9.2",
     "vite": "^7.1.4",

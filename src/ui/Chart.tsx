@@ -1,11 +1,4 @@
-import {
-  createSignal,
-  onCleanup,
-  onMount,
-  Show,
-  type Component,
-  type JSX,
-} from "solid-js";
+import { createSignal, onCleanup, onMount, Show, type Component, type JSX } from "solid-js";
 import type { OrderBookHeatmapEntry, PriceCandle } from "../market/index";
 import clsx from "clsx";
 import {
@@ -77,10 +70,7 @@ export const Chart: Component<ChartProps> = (props) => {
       resolution: getCanvasResolution(canvas),
     };
 
-    if (
-      lastReportedViewport &&
-      viewportMatches(lastReportedViewport, nextViewport)
-    ) {
+    if (lastReportedViewport && viewportMatches(lastReportedViewport, nextViewport)) {
       return;
     }
 
@@ -88,9 +78,7 @@ export const Chart: Component<ChartProps> = (props) => {
     props.onViewportChange?.(nextViewport);
   };
 
-  const updateViewport = (
-    viewport: Pick<ChartViewport, "time" | "price">,
-  ): void => {
+  const updateViewport = (viewport: Pick<ChartViewport, "time" | "price">): void => {
     reportViewport(viewport);
   };
   const controls = createChartControls({
@@ -163,9 +151,7 @@ export const Chart: Component<ChartProps> = (props) => {
         renderer = await initializeRenderer(canvas);
         setStatus(null);
         void renderer.device.lost.then((info: GPUDeviceLostInfo) => {
-          setStatus(
-            `WebGPU device was lost${info.message ? `: ${info.message}` : "."}`,
-          );
+          setStatus(`WebGPU device was lost${info.message ? `: ${info.message}` : "."}`);
         });
 
         const renderFrame = (timestamp: number) => {
@@ -188,11 +174,7 @@ export const Chart: Component<ChartProps> = (props) => {
 
         animationFrame = window.requestAnimationFrame(renderFrame);
       } catch (error) {
-        setStatus(
-          error instanceof Error
-            ? error.message
-            : "Failed to initialize WebGPU.",
-        );
+        setStatus(error instanceof Error ? error.message : "Failed to initialize WebGPU.");
       }
     })();
 
@@ -214,11 +196,7 @@ export const Chart: Component<ChartProps> = (props) => {
   });
 
   return (
-    <div
-      ref={container}
-      class={clsx(`relative overflow-hidden`, props.class ?? "")}
-      style={props.style}
-    >
+    <div ref={container} class={clsx(`relative overflow-hidden`, props.class ?? "")} style={props.style}>
       <canvas
         ref={canvas}
         class={clsx(

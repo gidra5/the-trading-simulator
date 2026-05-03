@@ -13,12 +13,7 @@
     "noEmit": true,
     // Type Checking & Safety
     "strict": true,
-    "types": [
-      "vite/client",
-      "@webgpu/types"
-    ]
+    "types": ["vite/client", "@webgpu/types"]
   },
-  "include": [
-    "src"
-  ]
+  "include": ["src"]
 }
