@@ -66,12 +66,6 @@ export type RestingOrder = {
   size: number;
   createdAt: number;
 };
-
-export type PricePoint = {
-  time: number;
-  price: number;
-};
-
 export type PriceAnchorWindow = {
   durationMs: number;
   highTimes: number[];

@@ -1,226 +1,257 @@
-import { cancelOrder, hasOrder, marketPriceSpread, type OrderSide } from "../market/index";
-import { sampleBernoulli, sampleUniform, sampleUniformInteger } from "../distributions";
-import { assert, clamp } from "../utils";
-import type { MarketBehaviorSettings, PricePoint, RestingOrder } from "./types";
+import {
+  cancelOrder,
+  latestOrderBookChange,
+  marketPriceSpread,
+  orderBook,
+  priceHistory,
+  type OrderSide,
+} from "../market/index";
+import { sampleBernoulli, sampleUniform } from "../distributions";
 
-export class SimulationCancellation {
-  private cancellationTimeWeighting = 0.5;
-  private cancellationPriceMovementWeighting = 0.5;
-  private cancellationLocalVolumeWeighting = 0.5;
-  private cancellationFarOrderWeighting = 0.5;
-  private restingOrdersBySide: Record<OrderSide, RestingOrder[]> = {
-    buy: [],
-    sell: [],
+import type { RestingOrder } from "./types";
+import { Accessor, createEffect, createMemo, createSignal } from "solid-js";
+import { oppositeSide } from "../market/order";
+
+// const recentPriceHistory = createMemo<PricePoint[]>((recentHistory) => {
+//   const history = priceHistory();
+//   const latest = history[history.length - 1];
+//   const now = Date.now();
+//   const expiredIndex = (() => {
+//     for (let i = 0; i < recentHistory.length; i += 1) {
+//       const entry = recentHistory[i];
+//       if (entry.time + priceMemory() >= now) return i;
+//     }
+//   })();
+
+//   recentHistory.splice(0, expiredIndex);
+//   recentHistory.push({ time: latest.timestamp, ...latest.spread });
+//   return recentHistory;
+// }, [], { equals: false });
+
+// type PriceAnchors = {
+//   minSell: number;
+//   maxSell: number;
+//   minBuy: number;
+//   maxBuy: number;
+// };
+// const priceAnchors = createMemo<number>(() => {
+
+type Options = {
+  timeWeightingProbability: Accessor<number>;
+  priceMovement: {
+    probability: Accessor<number>;
+    recencyDecay: Accessor<number>;
   };
-  private touchPriceHistory: Record<OrderSide, PricePoint[]> = {
-    buy: [],
-    sell: [],
+  localVolume: {
+    probability: Accessor<number>;
+    window: Accessor<number>;
   };
-  private touchPriceHistoryOffset: Record<OrderSide, number> = {
-    buy: 0,
-    sell: 0,
+  farOrder: {
+    probability: Accessor<number>;
+    minAge: Accessor<number>;
+    window: Accessor<number>;
+    ramp: Accessor<number>;
   };
+};
 
-  constructor(private getSettings: () => MarketBehaviorSettings) {}
+export const createCancellationState = (options: Options) => {
+  const { timeWeightingProbability, priceMovement, localVolume, farOrder } = options;
 
-  setCancellationTimeWeighting(weighting: number): void {
-    this.cancellationTimeWeighting = clamp(weighting, 0, 1);
-  }
+  // todo: remove linear dependence on amount of orders
+  const [restingOrders, setRestingOrders] = createSignal<RestingOrder[]>([]);
 
-  setCancellationPriceMovementWeighting(weighting: number): void {
-    this.cancellationPriceMovementWeighting = clamp(weighting, 0, 1);
-  }
+  createEffect(() => {
+    const latest = latestOrderBookChange();
+    const removed = latest.changes.filter((change) => change.kind === "remove");
+    const partialFilled = latest.changes.filter((change) => change.kind === "partial-fill");
+    setRestingOrders((orders) => {
+      let didChange = false;
+      const updated = orders
+        .filter((order) => {
+          const willRemove = !removed.some((change) => change.order.id === order.id);
+          didChange = didChange || willRemove;
+          return willRemove;
+        })
+        .map((order) => {
+          const change = partialFilled.find((change) => change.order.id === order.id);
+          const changed = !!change;
+          didChange = didChange || changed;
+          return changed ? { ...order, size: change.order.size } : order;
+        });
 
-  setCancellationLocalVolumeWeighting(weighting: number): void {
-    this.cancellationLocalVolumeWeighting = clamp(weighting, 0, 1);
-  }
+      return didChange ? updated : orders;
+    });
+  });
 
-  setCancellationFarOrderWeighting(weighting: number): void {
-    this.cancellationFarOrderWeighting = clamp(weighting, 0, 1);
-  }
+  type VolumeIndexState = {
+    index: Map<number, number>;
+    window: number;
+  };
+  const volumeIndexState = createMemo<VolumeIndexState>(
+    (state) => {
+      // todo: rebuild index using full orderbook
+      if (state.window !== localVolume.window()) {
+        const window = localVolume.window();
+        const index = new Map<number, number>();
+        const book = orderBook();
+        const orders = restingOrders();
 
-  trackRestingOrder(order: RestingOrder): void {
-    this.restingOrdersBySide[order.side].push(order);
-  }
+        for (let i = 0; i < orders.length; i += 1) {
+          const candidate = orders[i]!;
+          const sign = candidate.side === "buy" ? 1 : -1;
+          const minPrice = sign < 0 ? candidate.price : candidate.price * (1 - window);
+          const maxPrice = sign < 0 ? candidate.price * (1 + window) : candidate.price;
+          let volume = 0;
 
-  simulateCancellationEvent(side: OrderSide): boolean {
-    const candidate = this.randomRestingOrder(
-      side,
-      sampleBernoulli(this.cancellationTimeWeighting),
-      sampleBernoulli(this.cancellationPriceMovementWeighting),
-      sampleBernoulli(this.cancellationLocalVolumeWeighting),
-      sampleBernoulli(this.cancellationFarOrderWeighting),
-    );
+          const startIdx = book[candidate.side].findIndex((order) => order.price >= minPrice);
+          const endIdx = book[candidate.side].findIndex((order) => order.price <= maxPrice);
 
-    if (!candidate) return false;
-
-    this.removeRestingOrder(candidate.order.side, candidate.index);
-    return cancelOrder(candidate.order.id, candidate.order.side) !== null;
-  }
-
-  updateTouchPriceHistory(spread = marketPriceSpread(), time = Date.now()): void {
-    const expiresBefore = time - this.getSettings().cancellationPriceMovementWindow;
-
-    for (const side of ["buy", "sell"] as const) {
-      const price = spread[side];
-
-      if (!Number.isFinite(price) || price <= 0) continue;
-
-      const history = this.touchPriceHistory[side];
-      history.push({ time, price });
-
-      while (
-        this.touchPriceHistoryOffset[side] + 1 < history.length &&
-        history[this.touchPriceHistoryOffset[side] + 1]!.time <= expiresBefore
-      ) {
-        this.touchPriceHistoryOffset[side] += 1;
+          for (let i = startIdx; i < endIdx; i += 1) {
+            volume += book[candidate.side][i].size;
+          }
+          index.set(candidate.id, volume);
+        }
+        return { index, window };
       }
+      const { index, window } = state;
 
-      this.touchPriceHistoryOffset[side] = this.compactPricePoints(history, this.touchPriceHistoryOffset[side]);
-    }
-  }
+      const orders = restingOrders();
+      const latest = latestOrderBookChange();
 
-  private removeRestingOrder(side: OrderSide, index: number): RestingOrder {
-    const [order] = this.restingOrdersBySide[side].splice(index, 1);
-    assert(order, "Expected tracked resting order to exist");
+      for (const change of latest.changes) {
+        if (orders.some((order) => order.id === change.order.id)) {
+          if (change.kind === "add") {
+            index.set(change.order.id, change.order.size);
+          } else if (change.kind === "remove") {
+            index.delete(change.order.id);
+          } else if (change.kind === "partial-fill") {
+            const delta = change.prevSize - change.order.size;
+            const next = index.get(change.order.id)! - delta;
+            index.set(change.order.id, next);
+          }
+        }
+        const sign = change.side === "buy" ? 1 : -1;
+        const minPrice = sign > 0 ? change.order.price : change.order.price * (1 - window);
+        const maxPrice = sign > 0 ? change.order.price * (1 + window) : change.order.price;
+        const startIdx = orders.findIndex((order) => order.price >= minPrice);
+        if (startIdx === -1) continue;
+        const endIdx = orders.findLastIndex((order) => order.price <= maxPrice);
+        const delta = (() => {
+          if (change.kind === "add") {
+            return change.order.size;
+          } else if (change.kind === "remove") {
+            return -change.order.size;
+          } else if (change.kind === "partial-fill") {
+            return change.order.size - change.prevSize;
+          }
+          return 0;
+        })();
+        for (let i = startIdx; i < (endIdx === -1 ? orders.length : endIdx); i += 1) {
+          const order = orders[i];
+          const size = index.get(order.id)!;
+          index.set(order.id, size + delta);
+        }
+      }
+      return { index, window: localVolume.window() };
+    },
+    { index: new Map<number, number>(), window: localVolume.window() },
+    { equals: false },
+  );
 
-    return order;
-  }
+  const orderWeights = (order: RestingOrder) => {
+    // todo: debug why it can get negative
+    // const volumeWeight = volumeIndexState().index.get(order.id)!;
+    const volumeWeight = Math.abs(volumeIndexState().index.get(order.id)!);
 
-  private priceMovedAwayFromOrder(order: RestingOrder, spread = marketPriceSpread()): boolean {
-    const currentTouch = spread[order.side];
-    const previousTouch = this.touchPriceHistory[order.side][this.touchPriceHistoryOffset[order.side]]?.price;
+    const age = Date.now() - order.createdAt;
+    const opposite = oppositeSide(order.side);
 
-    if (!Number.isFinite(currentTouch) || currentTouch <= 0 || !Number.isFinite(previousTouch) || previousTouch <= 0) {
-      return false;
-    }
+    const movement = (() => {
+      const history = priceHistory();
+      const latest = history[history.length - 1];
+      const prev = history[history.length - 2];
+      if (!prev || !latest) return 0;
+      const prevPrice = prev.spread[opposite];
+      const latestPrice = latest.spread[opposite];
+      const sign = order.side === "buy" ? 1 : -1;
+      return Math.max(0, sign * (latestPrice - prevPrice));
+    })();
 
-    const currentDistance = Math.abs(currentTouch - order.price) / currentTouch;
+    const recency = Math.exp(-age / priceMovement.recencyDecay());
+    const movementWeight = movement * recency;
 
-    if (currentDistance > this.getSettings().cancellationNearTouchDistance) return false;
+    const farWeight = (() => {
+      if (age < farOrder.minAge()) return 0;
 
-    const previousDistance = Math.abs(previousTouch - order.price) / previousTouch;
+      const current = marketPriceSpread()[opposite];
+      const distance = Math.abs(order.price - current) / current;
+      const excessDistance = distance - farOrder.window();
+      if (excessDistance <= 0) return 0;
 
-    return currentDistance > previousDistance;
-  }
+      return 1 - Math.exp(-excessDistance / farOrder.ramp());
+    })();
 
-  private compactPricePoints(points: PricePoint[], offset: number): number {
-    if (offset < 64 || offset * 2 < points.length) return offset;
+    return { ageWeight: age, volumeWeight, movementWeight, farWeight };
+  };
 
-    points.splice(0, offset);
-    return 0;
-  }
-
-  private farOrderCancellationProbability(order: RestingOrder, now = Date.now(), spread = marketPriceSpread()): number {
-    const settings = this.getSettings();
-
-    if (now - order.createdAt < settings.cancellationFarOrderMinAge) return 0;
-
-    const midPrice = (spread.buy + spread.sell) / 2;
-
-    if (!Number.isFinite(midPrice) || midPrice <= 0) return 0;
-
-    const distance = Math.abs(order.price - midPrice) / midPrice;
-    const excessDistance = distance - settings.cancellationFarOrderWindow;
-
-    if (excessDistance <= 0) return 0;
-
-    return 1 - Math.exp(-excessDistance / settings.cancellationFarOrderRamp);
-  }
-
-  private randomRestingOrder(
+  const randomRestingOrder = (
     side: OrderSide,
     weightByAge = false,
     weightByPriceMovement = false,
     weightByLocalVolume = false,
     weightByFarOrder = false,
-  ): {
-    order: RestingOrder;
-    index: number;
-  } | null {
-    const restingOrders = this.restingOrdersBySide[side];
+  ): RestingOrder | null => {
+    const orders = restingOrders().filter((order) => order.side === side);
+    const weights = orders.map((order) => {
+      const weights = orderWeights(order);
+      // console.log(weights);
 
-    for (let index = restingOrders.length - 1; index >= 0; index -= 1) {
-      const order = restingOrders[index];
-
-      if (!order || !hasOrder(order.id, order.side)) {
-        this.removeRestingOrder(side, index);
-      }
-    }
-
-    const candidates = restingOrders.map((order, index) => ({ order, index }));
-
-    if (candidates.length === 0) return null;
-
-    const settings = this.getSettings();
-    const now = Date.now();
-    const spread = marketPriceSpread();
-    const localVolumeByCandidateIndex = new Map<number, number>();
-
-    if (weightByLocalVolume) {
-      const priceSortedCandidates = [...candidates].sort((left, right) => left.order.price - right.order.price);
-      let leftIndex = 0;
-      let rightIndex = 0;
-      let localVolume = 0;
-
-      for (let index = 0; index < priceSortedCandidates.length; index += 1) {
-        const candidate = priceSortedCandidates[index]!;
-        const minPrice = candidate.order.price * (1 - settings.cancellationLocalVolumeWindow);
-        const maxPrice = candidate.order.price * (1 + settings.cancellationLocalVolumeWindow);
-
-        while (
-          rightIndex < priceSortedCandidates.length &&
-          priceSortedCandidates[rightIndex]!.order.price <= maxPrice
-        ) {
-          localVolume += priceSortedCandidates[rightIndex]!.order.size;
-          rightIndex += 1;
-        }
-
-        while (leftIndex < priceSortedCandidates.length && priceSortedCandidates[leftIndex]!.order.price < minPrice) {
-          localVolume -= priceSortedCandidates[leftIndex]!.order.size;
-          leftIndex += 1;
-        }
-
-        localVolumeByCandidateIndex.set(candidate.index, Math.max(Number.EPSILON, localVolume));
-      }
-    }
-
-    const candidateWeight = (candidate: { order: RestingOrder; index: number }): number => {
-      let weight = weightByLocalVolume ? (localVolumeByCandidateIndex.get(candidate.index) ?? Number.EPSILON) : 1;
-
-      if (weightByPriceMovement && this.priceMovedAwayFromOrder(candidate.order, spread)) {
-        const age = Math.max(0, now - candidate.order.createdAt);
-        const recency = Math.exp(-age / settings.cancellationPriceMovementOrderDecay);
-
-        weight *= 1 + (settings.cancellationPriceMovementBoost - 1) * recency;
-      }
-
-      if (weightByFarOrder) {
-        weight *= this.farOrderCancellationProbability(candidate.order, now, spread);
-      }
-
-      if (weightByAge) {
-        weight *= Math.max(1, now - candidate.order.createdAt);
-      }
-
+      let weight = 1;
+      if (weightByAge) weight += weights.ageWeight;
+      if (weightByPriceMovement) weight += weights.movementWeight;
+      if (weightByLocalVolume) weight += weights.volumeWeight;
+      if (weightByFarOrder) weight += weights.farWeight;
       return weight;
-    };
-    let totalWeight = 0;
+    });
 
-    for (const candidate of candidates) {
-      totalWeight += candidateWeight(candidate);
-    }
-
-    if (totalWeight <= 0) return null;
+    let totalWeight = weights.reduce((total, weight) => total + weight, 0);
 
     let targetWeight = sampleUniform(0, totalWeight);
 
-    for (const candidate of candidates) {
-      targetWeight -= candidateWeight(candidate);
+    for (let i = 0; i < weights.length; i += 1) {
+      targetWeight -= weights[i];
 
-      if (targetWeight <= 0) return candidate;
+      if (targetWeight <= 0) return orders[i];
     }
 
-    return candidates[sampleUniformInteger(0, candidates.length)] ?? null;
-  }
-}
+    return null;
+  };
+
+  const removeRestingOrder = (id: number) => {
+    setRestingOrders((orders) => orders.filter((order) => order.id !== id));
+  };
+
+  const simulate = (side: OrderSide) => {
+    const order = randomRestingOrder(
+      side,
+      sampleBernoulli(timeWeightingProbability()),
+      sampleBernoulli(priceMovement.probability()),
+      sampleBernoulli(localVolume.probability()),
+      sampleBernoulli(farOrder.probability()),
+    );
+    if (!order) return false;
+
+    removeRestingOrder(order.id);
+    return cancelOrder(order.id, order.side) !== null;
+  };
+
+  const addOrder = (order: RestingOrder): void => {
+    // todo: binary search insert?
+    setRestingOrders((orders) => [...orders, order].sort((left, right) => left.price - right.price));
+  };
+
+  return {
+    simulate,
+    addOrder,
+  };
+};

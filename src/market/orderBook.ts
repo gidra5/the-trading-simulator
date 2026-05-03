@@ -22,6 +22,7 @@ export type OrderBookRemoveChange = {
 export type OrderBookPartialFillChange = {
   kind: "partial-fill";
   side: OrderSide;
+  prevSize: number;
   order: RegisteredOrder;
 };
 
@@ -34,6 +35,7 @@ export type OrderBookSnapshotEntry = {
   revision: number;
   timestamp: number;
   orderBook: OrderBook;
+  changes: OrderBookChangeset;
 };
 
 export type OrderBookDeltaEntry = {
@@ -198,14 +200,16 @@ export const createOrderBook = ({ deltaSnapshotInterval, fanout, levels }: Order
         revision: 0,
         timestamp: Date.now(),
         orderBook: initialOrderBook,
+        changes: [],
       },
     ],
     { equals: false },
   );
+  const latestOrderBookChange = () => orderBookHistory()[orderBookHistory().length - 1];
   const revision = () => orderBookHistory()[orderBookHistory().length - 1].revision;
-  const createOrderBookSnapshot = (timestamp: number, orderBook: OrderBook) =>
+  const createOrderBookSnapshot = (timestamp: number, orderBook: OrderBook, changes: OrderBookChangeset) =>
     setOrderBookHistory((entries) => {
-      entries.push({ kind: "snapshot", revision: revision() + 1, timestamp, orderBook });
+      entries.push({ kind: "snapshot", revision: revision() + 1, timestamp, orderBook, changes });
       return entries;
     });
   const createOrderBookDelta = (timestamp: number, changes: OrderBookChangeset) =>
@@ -287,6 +291,7 @@ export const createOrderBook = ({ deltaSnapshotInterval, fanout, levels }: Order
     return level;
   };
 
+  // todo: optimize for powers of two fanout and use the same trick as for candles
   const acceleratedOrderBookMapState = createMemo<AcceleratedOrderBookMapState>(
     (previousState) => {
       const sourceEntries = orderBookHistory();
@@ -366,7 +371,7 @@ export const createOrderBook = ({ deltaSnapshotInterval, fanout, levels }: Order
     if (orderBookRevision % snapshotInterval() === 0) {
       const nextOrderBook = cloneOrderBookFrom(orderBook());
       applyChangeset(nextOrderBook, changes);
-      createOrderBookSnapshot(timestamp, nextOrderBook);
+      createOrderBookSnapshot(timestamp, nextOrderBook, changes);
       return;
     }
 
@@ -465,6 +470,7 @@ export const createOrderBook = ({ deltaSnapshotInterval, fanout, levels }: Order
     revision,
 
     orderBookHistory,
+    latestOrderBookChange,
     orderBook,
     appendChange,
     reconstruct,

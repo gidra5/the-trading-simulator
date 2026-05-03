@@ -1,5 +1,6 @@
+import { createSignal } from "solid-js";
 import { takeOrder, type OrderSide } from "../market/index";
-import { SimulationCancellation } from "./cancellation";
+import { createCancellationState } from "./cancellation";
 import { SimulationExcitation } from "./excitation";
 import { SimulationOrderPlacement } from "./orderPlacement";
 import {
@@ -29,7 +30,29 @@ export class TradingSimulation {
   private orderPriceDistribution: OrderPriceDistribution = "power-law";
   private orderSizeDistribution: OrderSizeDistribution = "power-law";
   private excitation = new SimulationExcitation(() => this.marketBehaviorSettings);
-  private cancellation = new SimulationCancellation(() => this.marketBehaviorSettings);
+  private cancellationProbabilities = {
+    time: createSignal(0.5),
+    priceMovement: createSignal(0.5),
+    localVolume: createSignal(0.5),
+    farOrder: createSignal(0.5),
+  };
+  private cancellation = createCancellationState({
+    timeWeightingProbability: this.cancellationProbabilities.time[0],
+    priceMovement: {
+      probability: this.cancellationProbabilities.priceMovement[0],
+      recencyDecay: () => this.marketBehaviorSettings.cancellationPriceMovementOrderDecay,
+    },
+    localVolume: {
+      probability: this.cancellationProbabilities.localVolume[0],
+      window: () => this.marketBehaviorSettings.cancellationLocalVolumeWindow,
+    },
+    farOrder: {
+      probability: this.cancellationProbabilities.farOrder[0],
+      minAge: () => this.marketBehaviorSettings.cancellationFarOrderMinAge,
+      window: () => this.marketBehaviorSettings.cancellationFarOrderWindow,
+      ramp: () => this.marketBehaviorSettings.cancellationFarOrderRamp,
+    },
+  });
   private orderPlacement = new SimulationOrderPlacement(
     () => this.marketBehaviorSettings,
     () => this.orderPriceDistribution,
@@ -75,19 +98,19 @@ export class TradingSimulation {
   }
 
   setCancellationTimeWeighting(weighting: number): void {
-    this.cancellation.setCancellationTimeWeighting(weighting);
+    this.cancellationProbabilities.time[1](weighting);
   }
 
   setCancellationPriceMovementWeighting(weighting: number): void {
-    this.cancellation.setCancellationPriceMovementWeighting(weighting);
+    this.cancellationProbabilities.priceMovement[1](weighting);
   }
 
   setCancellationLocalVolumeWeighting(weighting: number): void {
-    this.cancellation.setCancellationLocalVolumeWeighting(weighting);
+    this.cancellationProbabilities.localVolume[1](weighting);
   }
 
   setCancellationFarOrderWeighting(weighting: number): void {
-    this.cancellation.setCancellationFarOrderWeighting(weighting);
+    this.cancellationProbabilities.farOrder[1](weighting);
   }
 
   // TODO: separate economy simulation model to allow for news impacts
@@ -116,22 +139,21 @@ export class TradingSimulation {
         this.simulateLimitOrderEvent("sell");
         break;
       case "cancel-buy":
-        this.cancellation.simulateCancellationEvent("buy");
+        this.cancellation.simulate("buy");
         break;
       case "cancel-sell":
-        this.cancellation.simulateCancellationEvent("sell");
+        this.cancellation.simulate("sell");
         break;
     }
 
     this.orderPlacement.updateRecentPriceAnchors();
-    this.cancellation.updateTouchPriceHistory();
   }
 
   private simulateLimitOrderEvent(side: OrderSide): void {
     const restingOrder = this.orderPlacement.simulateLimitOrderEvent(side);
 
     if (restingOrder !== null) {
-      this.cancellation.trackRestingOrder(restingOrder);
+      this.cancellation.addOrder(restingOrder);
     }
   }
 

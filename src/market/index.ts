@@ -47,6 +47,7 @@ const {
   levels,
   setLevels,
   orderBookMap,
+  latestOrderBookChange,
   orderBookHistory,
   revision,
   orderBook,
@@ -73,6 +74,8 @@ const {
 });
 
 export {
+  priceHistory,
+  latestOrderBookChange,
   orderBookHistory,
   reconstruct,
   deltaSnapshotInterval,
@@ -234,6 +237,11 @@ const recordMarketState = (changes: OrderBookChange[]) => {
   appendChange(timestamp, changes);
 };
 
+// todo: candle acceleration structure
+// create a hierarchy of candles in powers of two
+// each level is a list of candles
+// to compute a candle of arbitrary interval, look at the binary of the integer
+// and combine the candles at the corresponding levels
 export const priceHistoryCandle = (start: number, end: number, side: OrderSide): PriceCandle => {
   const history = priceHistory();
   const firstIndex = upperBoundPriceHistory(history, start);
@@ -353,6 +361,7 @@ export const takeOrder = (
       changes.push({
         kind: "partial-fill",
         side: bookSide,
+        prevSize: order.size,
         order: { ...order, size: nextSize },
       });
       recordMarketState(changes);

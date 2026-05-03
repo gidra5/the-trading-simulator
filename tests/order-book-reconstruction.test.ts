@@ -30,9 +30,9 @@ const loadMarket = async (settings: { interval?: number; fanout?: number; levels
   vi.spyOn(Date, "now").mockImplementation(() => now);
 
   const market = await import("../src/market/index");
-  market.setOrderBookDeltaSnapshotInterval(settings.interval ?? 2);
-  market.setOrderBookDeltaSnapshotFanout(settings.fanout ?? 2);
-  market.setOrderBookDeltaSnapshotLevels(settings.levels);
+  market.setDeltaSnapshotInterval(settings.interval ?? 2);
+  market.setFanout(settings.fanout ?? 2);
+  market.setLevels(settings.levels);
 
   return market;
 };
@@ -165,9 +165,9 @@ test("market reconstructs recorded revisions after delta hierarchy changes", asy
     recordedBooks.set(market.getOrderBookHistoryStats().revision, structuredClone(market.orderBook()));
   }
 
-  market.setOrderBookDeltaSnapshotInterval(3);
-  market.setOrderBookDeltaSnapshotFanout(3);
-  market.setOrderBookDeltaSnapshotLevels(3);
+  market.setDeltaSnapshotInterval(3);
+  market.setFanout(3);
+  market.setLevels(3);
 
   for (const [revision, recordedBook] of recordedBooks) {
     expect(market.reconstruct(revision), `revision ${revision}`).toEqual(recordedBook);
