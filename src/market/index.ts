@@ -58,34 +58,29 @@ const {
   marketPriceSpread,
   midPrice,
 } = createRoot(() => {
-  const orderBook = createOrderBook({ deltaSnapshotInterval: 100, fanout: 5, levels: 5 });
+  const [deltaSnapshotInterval, setDeltaSnapshotInterval] = createSignal(100);
+  const [fanout, setFanout] = createSignal(5);
+  const [levels, setLevels] = createSignal(5);
+
+  const orderBook = createOrderBook({ deltaSnapshotInterval, fanout, levels });
 
   orderBook.appendChange(Date.now(), [
     { kind: "add", side: "buy", order: { id: -2, price: 0.999, size: 1e4 } },
     { kind: "add", side: "sell", order: { id: -3, price: 1.001, size: 1e4 } },
   ]);
 
-  return orderBook;
+  return { ...orderBook, deltaSnapshotInterval, setDeltaSnapshotInterval, fanout, setFanout, levels, setLevels };
 });
 
-export { orderBookHistory, reconstruct };
-
-export const setOrderBookDeltaSnapshotInterval = (interval: number): void => {
-  if (!Number.isFinite(interval) || interval <= 0) return;
-
-  setDeltaSnapshotInterval(Math.floor(interval));
-};
-
-export const setOrderBookDeltaSnapshotFanout = (fanout: number): void => {
-  if (!Number.isFinite(fanout) || fanout < 2) return;
-
-  setFanout(Math.floor(fanout));
-};
-
-export const setOrderBookDeltaSnapshotLevels = (levels: number): void => {
-  if (!Number.isFinite(levels) || levels < 1) return;
-
-  setLevels(Math.floor(levels));
+export {
+  orderBookHistory,
+  reconstruct,
+  deltaSnapshotInterval,
+  setDeltaSnapshotInterval,
+  fanout,
+  setFanout,
+  levels,
+  setLevels,
 };
 
 export const getOrderBookHistoryStats = (): {

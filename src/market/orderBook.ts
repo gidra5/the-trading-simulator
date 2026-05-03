@@ -1,4 +1,4 @@
-import { createMemo, createSignal } from "solid-js";
+import { Accessor, createMemo, createSignal } from "solid-js";
 import { assert } from "../utils";
 import { cloneOrder, compareOrders, type OrderSide, type RegisteredOrder } from "./order";
 
@@ -182,15 +182,12 @@ const mergeIntoChangesetMap = (prev: OrderBookChangesetMap, nextChanges: OrderBo
 };
 
 type OrderBookOptions = {
-  deltaSnapshotInterval: number;
-  fanout: number;
-  levels: number;
+  deltaSnapshotInterval: Accessor<number>;
+  fanout: Accessor<number>;
+  levels: Accessor<number>;
 };
 
-export const createOrderBook = (options: OrderBookOptions) => {
-  const [deltaSnapshotInterval, setDeltaSnapshotInterval] = createSignal(options.deltaSnapshotInterval);
-  const [fanout, setFanout] = createSignal(options.fanout);
-  const [levels, setLevels] = createSignal(options.levels);
+export const createOrderBook = ({ deltaSnapshotInterval, fanout, levels }: OrderBookOptions) => {
   const snapshotInterval = () => deltaSnapshotInterval() * fanout() ** levels();
 
   const initialOrderBook: OrderBook = { buy: [], sell: [] };
@@ -464,12 +461,6 @@ export const createOrderBook = (options: OrderBookOptions) => {
 
   return {
     snapshotInterval,
-    deltaSnapshotInterval,
-    setDeltaSnapshotInterval,
-    fanout,
-    setFanout,
-    levels,
-    setLevels,
     orderBookMap,
     revision,
 

@@ -1,10 +1,9 @@
 import { createSignal, type Accessor, type Component, type Setter } from "solid-js";
-import { getOrderBookHistoryStats, setOrderBookDeltaSnapshotLevels } from "../market/index";
+import { deltaSnapshotInterval, fanout, levels, setDeltaSnapshotInterval, setFanout, setLevels } from "../market/index";
 import { HistogramNormalization } from "./OrderBookHistogram";
 
 const formatCandleIntervalSeconds = (interval: number): string => String(interval / 1_000);
 const formatHistogramWindowFraction = (windowFraction: number): string => String(windowFraction);
-const formatOrderBookDeltaSnapshotLevels = (levels: number): string => String(levels);
 
 type ChartSettingsProps = {
   candleInterval: Accessor<number>;
@@ -28,9 +27,6 @@ export const ChartSettings: Component<ChartSettingsProps> = (props) => {
   const [histogramWindowFractionInput, setHistogramWindowFractionInput] = createSignal(
     formatHistogramWindowFraction(props.histogramWindowFraction()),
   );
-  const [orderBookDeltaSnapshotLevelsInput, setOrderBookDeltaSnapshotLevelsInput] = createSignal(
-    formatOrderBookDeltaSnapshotLevels(getOrderBookHistoryStats().deltaSnapshotLevelCount),
-  );
 
   const handleCandleIntervalInput = (value: string): void => {
     setCandleIntervalInput(value);
@@ -50,13 +46,27 @@ export const ChartSettings: Component<ChartSettingsProps> = (props) => {
     props.setHistogramWindowFraction(nextWindowFraction);
   };
 
-  const handleOrderBookDeltaSnapshotLevelsInput = (value: string): void => {
-    setOrderBookDeltaSnapshotLevelsInput(value);
+  const handleLevelsInput = (value: string): void => {
+    const next = Number(value);
+    if (!Number.isInteger(next)) return;
+    if (next < 0) return;
+    setLevels(next);
+  };
 
-    const nextLevels = Number(value);
-    if (!Number.isFinite(nextLevels) || nextLevels < 1) return;
+  const handleDeltaSnapshotIntervalInput = (value: string): void => {
+    const next = Number(value);
+    if (!Number.isInteger(next)) return;
+    if (next <= 0) return;
 
-    setOrderBookDeltaSnapshotLevels(nextLevels);
+    setDeltaSnapshotInterval(next);
+  };
+
+  const handleFanoutInput = (value: string): void => {
+    const next = Number(value);
+    if (!Number.isInteger(next)) return;
+    if (next < 1) return;
+
+    setFanout(next);
   };
 
   return (
@@ -126,19 +136,33 @@ export const ChartSettings: Component<ChartSettingsProps> = (props) => {
           />
         </label>
         <label class="flex items-center gap-2 text-slate-200">
-          <span>Book delta levels</span>
+          <span>Book Acceleration Structure</span>
+          <span>Levels:</span>
           <input
             class="w-20 rounded border border-slate-700 bg-slate-950 px-2 py-1 text-right text-slate-100 outline-none transition focus:border-cyan-400"
             type="number"
             min="1"
             step="1"
-            value={orderBookDeltaSnapshotLevelsInput()}
-            onInput={(event) => handleOrderBookDeltaSnapshotLevelsInput(event.currentTarget.value)}
-            onBlur={() =>
-              setOrderBookDeltaSnapshotLevelsInput(
-                formatOrderBookDeltaSnapshotLevels(getOrderBookHistoryStats().deltaSnapshotLevelCount),
-              )
-            }
+            value={levels()}
+            onChange={(event) => handleLevelsInput(event.currentTarget.value)}
+          />
+          <span>Interval:</span>
+          <input
+            class="w-20 rounded border border-slate-700 bg-slate-950 px-2 py-1 text-right text-slate-100 outline-none transition focus:border-cyan-400"
+            type="number"
+            min="1"
+            step="1"
+            value={deltaSnapshotInterval()}
+            onChange={(event) => handleDeltaSnapshotIntervalInput(event.currentTarget.value)}
+          />
+          <span>Fanout:</span>
+          <input
+            class="w-20 rounded border border-slate-700 bg-slate-950 px-2 py-1 text-right text-slate-100 outline-none transition focus:border-cyan-400"
+            type="number"
+            min="2"
+            step="1"
+            value={fanout()}
+            onChange={(event) => handleFanoutInput(event.currentTarget.value)}
           />
         </label>
       </div>
