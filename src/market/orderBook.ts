@@ -3,6 +3,8 @@ import { assert } from "../utils";
 import { cloneOrder, compareOrders, type OrderSide, type RegisteredOrder } from "./order";
 
 export type OrderBook = {
+  // sorted by price and then id
+  // since id is unique and sequential, it is also a queue order
   buy: RegisteredOrder[];
   sell: RegisteredOrder[];
 };

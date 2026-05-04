@@ -2,14 +2,14 @@ import {
   cancelOrder,
   latestOrderBookChange,
   marketPriceSpread,
-  orderBook,
   priceHistory,
+  querySideVolumeInPriceRange,
   type OrderSide,
 } from "../market/index";
-import { sampleBernoulli, sampleUniform } from "../distributions";
+import { sampleUniform } from "../distributions";
 
 import type { RestingOrder } from "./types";
-import { Accessor, createEffect, createMemo, createSignal } from "solid-js";
+import { Accessor, createEffect, createSignal } from "solid-js";
 import { oppositeSide } from "../market/order";
 
 // const recentPriceHistory = createMemo<PricePoint[]>((recentHistory) => {
@@ -91,18 +91,11 @@ export const createCancellationState = (options: Options) => {
     });
   });
 
-  type VolumeIndexState = {
-    index: Map<number, number>;
-    window: number;
-  };
-
   const orderWeights = (order: RestingOrder) => {
-    // todo: use histogram data
-    // const volume = volumeIndexState().index.get(order.id)!;
-    // assert(volume >= 0, "expected volume weight to be positive");
-    // const volumeWeight = 1-Math.exp(-Math.abs(volume) / localVolume.ramp());
-    // const volumeWeight = 1-Math.exp(-volume / localVolume.ramp());
-    const volumeWeight = 1;
+    const volumePriceMin = order.side === "buy" ? order.price : marketPriceSpread().sell;
+    const volumePriceMax = order.side === "buy" ? marketPriceSpread().buy : order.price;
+    const volume = querySideVolumeInPriceRange(order.side, volumePriceMin, volumePriceMax);
+    const volumeWeight = 1 - Math.exp(-volume / localVolume.ramp());
 
     const age = Date.now() - order.createdAt;
     const opposite = oppositeSide(order.side);

@@ -254,7 +254,7 @@ const drawArea = (
 };
 
 // TODO: proper heights for non cumulative
-// TODO: resize bug on first open
+// TODO: resize bug on first page load, after reload disappears
 export const OrderBookHistogram: Component<OrderBookHistogramProps> = (props) => {
   let canvas: HTMLCanvasElement | undefined;
   const [size, setSize] = createSignal<CanvasSize>({ width: 0, height: 0 });

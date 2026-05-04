@@ -20,6 +20,7 @@ import {
   type OrderBookMapEntry,
   type PriceHistoryEntry,
 } from "./orderBook";
+import { createHistogramState } from "./histogram";
 
 export type { MakeOrderResult, OrderSide } from "./order";
 export type {
@@ -173,67 +174,17 @@ export const getOrderBookRegion = (region: OrderBookHeatmapRegion): OrderBookHea
   return cells;
 };
 
-export const getOrderBookHistogram = (region: OrderBookHistogramRegion): OrderBookHistogramEntry[] => {
-  const currentOrderBook = orderBook();
-  const resolution = Math.max(0, Math.floor(region.resolution));
-  const cellHeight = Math.max(region.price[1] - region.price[0], Number.EPSILON) / Math.max(resolution, 1);
-  const buySizes = new Array<number>(resolution).fill(0);
-  const sellSizes = new Array<number>(resolution).fill(0);
-  const histogram: OrderBookHistogramEntry[] = [];
-
-  for (const [orders, sizes] of [
-    [currentOrderBook.buy, buySizes],
-    [currentOrderBook.sell, sellSizes],
-  ] as const) {
-    for (const order of orders) {
-      if (order.price < region.price[0] || order.price > region.price[1]) {
-        continue;
-      }
-
-      const y = Math.floor((order.price - region.price[0]) / cellHeight);
-      if (y < 0 || y >= resolution) continue;
-
-      sizes[y] += order.size;
-    }
-  }
-
-  for (let y = 0; y < resolution; y += 1) {
-    histogram.push({ y, kind: "buy", size: buySizes[y] ?? 0 });
-    histogram.push({ y, kind: "sell", size: sellSizes[y] ?? 0 });
-  }
-
-  return histogram;
-};
-
-export const getOrderBookHistogramSeries = (
-  region: OrderBookHistogramRegion,
-  side: OrderSide,
-): OrderBookHistogramSeries => {
-  const resolution = Math.max(0, Math.floor(region.resolution));
-  const cellHeight = Math.max(region.price[1] - region.price[0], Number.EPSILON) / Math.max(resolution, 1);
-  const sizes = new Array<number>(resolution).fill(0);
-
-  for (const order of orderBook()[side]) {
-    if (order.price < region.price[0] || order.price > region.price[1]) {
-      continue;
-    }
-
-    const y = Math.floor((order.price - region.price[0]) / cellHeight);
-    if (y < 0 || y >= resolution) continue;
-
-    sizes[y] += order.size;
-  }
-
-  return { cellHeight, sizes };
-};
+export const { getOrderBookHistogram, getOrderBookHistogramSeries, querySideVolumeInPriceRange } = createRoot(() =>
+  createHistogramState({
+    orderBookChangeset: () => latestOrderBookChange().changes,
+    priceReference: () => 1,
+  }),
+);
 
 const recordMarketState = (changes: OrderBookChange[]) => {
+  if (changes.length === 0) return;
+
   const timestamp = Date.now();
-
-  if (Array.isArray(changes) && changes.length === 0) {
-    return;
-  }
-
   appendChange(timestamp, changes);
 };
 
@@ -281,13 +232,11 @@ const upperBoundPriceHistory = (history: PriceHistoryEntry[], timestamp: number)
   return low;
 };
 
-// // for each order id, tradeHistory.filter(id).sum() == order.size
-// const tradeHistory: TradeHistoryEntry[] = [];
-
 let nextOrderId = 0;
 const findOrderLocation = (id: number, side?: OrderSide): { side: OrderSide; index: number } | null => {
   const sides = side ? [side] : (["buy", "sell"] as const);
 
+  // todo: binary search, ids are sorted
   for (const candidateSide of sides) {
     const index = orderBook()[candidateSide].findIndex((order) => order.id === id);
     if (index !== -1) {
@@ -297,8 +246,6 @@ const findOrderLocation = (id: number, side?: OrderSide): { side: OrderSide; ind
 
   return null;
 };
-
-export const hasOrder = (id: number, side?: OrderSide): boolean => findOrderLocation(id, side) !== null;
 
 export const makeOrder = (side: OrderSide, order: Order): MakeOrderResult => {
   const id = nextOrderId++;
