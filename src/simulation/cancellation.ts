@@ -37,17 +37,17 @@ import { oppositeSide } from "../market/order";
 // const priceAnchors = createMemo<number>(() => {
 
 type Options = {
-  timeWeightingProbability: Accessor<number>;
+  ageWeight: Accessor<number>;
   priceMovement: {
-    probability: Accessor<number>;
+    weight: Accessor<number>;
     recencyDecay: Accessor<number>;
   };
   localVolume: {
-    probability: Accessor<number>;
-    window: Accessor<number>;
+    weight: Accessor<number>;
+    ramp: Accessor<number>;
   };
   farOrder: {
-    probability: Accessor<number>;
+    weight: Accessor<number>;
     minAge: Accessor<number>;
     window: Accessor<number>;
     ramp: Accessor<number>;
@@ -55,30 +55,38 @@ type Options = {
 };
 
 export const createCancellationState = (options: Options) => {
-  const { timeWeightingProbability, priceMovement, localVolume, farOrder } = options;
+  const { ageWeight, priceMovement, localVolume, farOrder } = options;
+  const totalWeight = () => ageWeight() + priceMovement.weight() + localVolume.weight() + farOrder.weight();
 
   // todo: remove linear dependence on amount of orders
-  const [restingOrders, setRestingOrders] = createSignal<RestingOrder[]>([]);
+  type RestingOrders = { buy: RestingOrder[]; sell: RestingOrder[] };
+  const [restingOrders, setRestingOrders] = createSignal<RestingOrders>({ buy: [], sell: [] });
 
   createEffect(() => {
     const latest = latestOrderBookChange();
     const removed = latest.changes.filter((change) => change.kind === "remove");
     const partialFilled = latest.changes.filter((change) => change.kind === "partial-fill");
+
     setRestingOrders((orders) => {
       let didChange = false;
-      const updated = orders
-        .filter((order) => {
-          const willRemove = !removed.some((change) => change.order.id === order.id);
-          didChange = didChange || willRemove;
-          return willRemove;
-        })
-        .map((order) => {
-          const change = partialFilled.find((change) => change.order.id === order.id);
-          const changed = !!change;
-          didChange = didChange || changed;
-          return changed ? { ...order, size: change.order.size } : order;
-        });
-
+      const updatedOrders = (orders: RestingOrder[]) => {
+        return orders
+          .filter((order) => {
+            const willRemove = !removed.some((change) => change.order.id === order.id);
+            didChange = didChange || willRemove;
+            return willRemove;
+          })
+          .map((order) => {
+            const change = partialFilled.find((change) => change.order.id === order.id);
+            const changed = !!change;
+            didChange = didChange || changed;
+            return changed ? { ...order, size: change.order.size } : order;
+          });
+      };
+      const updated = {
+        buy: updatedOrders(orders.buy),
+        sell: updatedOrders(orders.sell),
+      };
       return didChange ? updated : orders;
     });
   });
@@ -87,81 +95,14 @@ export const createCancellationState = (options: Options) => {
     index: Map<number, number>;
     window: number;
   };
-  const volumeIndexState = createMemo<VolumeIndexState>(
-    (state) => {
-      // todo: rebuild index using full orderbook
-      if (state.window !== localVolume.window()) {
-        const window = localVolume.window();
-        const index = new Map<number, number>();
-        const book = orderBook();
-        const orders = restingOrders();
-
-        for (let i = 0; i < orders.length; i += 1) {
-          const candidate = orders[i]!;
-          const sign = candidate.side === "buy" ? 1 : -1;
-          const minPrice = sign < 0 ? candidate.price : candidate.price * (1 - window);
-          const maxPrice = sign < 0 ? candidate.price * (1 + window) : candidate.price;
-          let volume = 0;
-
-          const startIdx = book[candidate.side].findIndex((order) => order.price >= minPrice);
-          const endIdx = book[candidate.side].findIndex((order) => order.price <= maxPrice);
-
-          for (let i = startIdx; i < endIdx; i += 1) {
-            volume += book[candidate.side][i].size;
-          }
-          index.set(candidate.id, volume);
-        }
-        return { index, window };
-      }
-      const { index, window } = state;
-
-      const orders = restingOrders();
-      const latest = latestOrderBookChange();
-
-      for (const change of latest.changes) {
-        if (orders.some((order) => order.id === change.order.id)) {
-          if (change.kind === "add") {
-            index.set(change.order.id, change.order.size);
-          } else if (change.kind === "remove") {
-            index.delete(change.order.id);
-          } else if (change.kind === "partial-fill") {
-            const delta = change.prevSize - change.order.size;
-            const next = index.get(change.order.id)! - delta;
-            index.set(change.order.id, next);
-          }
-        }
-        const sign = change.side === "buy" ? 1 : -1;
-        const minPrice = sign > 0 ? change.order.price : change.order.price * (1 - window);
-        const maxPrice = sign > 0 ? change.order.price * (1 + window) : change.order.price;
-        const startIdx = orders.findIndex((order) => order.price >= minPrice);
-        if (startIdx === -1) continue;
-        const endIdx = orders.findLastIndex((order) => order.price <= maxPrice);
-        const delta = (() => {
-          if (change.kind === "add") {
-            return change.order.size;
-          } else if (change.kind === "remove") {
-            return -change.order.size;
-          } else if (change.kind === "partial-fill") {
-            return change.order.size - change.prevSize;
-          }
-          return 0;
-        })();
-        for (let i = startIdx; i < (endIdx === -1 ? orders.length : endIdx); i += 1) {
-          const order = orders[i];
-          const size = index.get(order.id)!;
-          index.set(order.id, size + delta);
-        }
-      }
-      return { index, window: localVolume.window() };
-    },
-    { index: new Map<number, number>(), window: localVolume.window() },
-    { equals: false },
-  );
 
   const orderWeights = (order: RestingOrder) => {
-    // todo: debug why it can get negative
-    // const volumeWeight = volumeIndexState().index.get(order.id)!;
-    const volumeWeight = Math.abs(volumeIndexState().index.get(order.id)!);
+    // todo: use histogram data
+    // const volume = volumeIndexState().index.get(order.id)!;
+    // assert(volume >= 0, "expected volume weight to be positive");
+    // const volumeWeight = 1-Math.exp(-Math.abs(volume) / localVolume.ramp());
+    // const volumeWeight = 1-Math.exp(-volume / localVolume.ramp());
+    const volumeWeight = 1;
 
     const age = Date.now() - order.createdAt;
     const opposite = oppositeSide(order.side);
@@ -191,28 +132,22 @@ export const createCancellationState = (options: Options) => {
       return 1 - Math.exp(-excessDistance / farOrder.ramp());
     })();
 
-    return { ageWeight: age, volumeWeight, movementWeight, farWeight };
+    let weight = 1;
+    weight += age * ageWeight();
+    weight += movementWeight * priceMovement.weight();
+    weight += volumeWeight * localVolume.weight();
+    weight += farWeight * farOrder.weight();
+    return weight;
   };
 
-  const randomRestingOrder = (
-    side: OrderSide,
-    weightByAge = false,
-    weightByPriceMovement = false,
-    weightByLocalVolume = false,
-    weightByFarOrder = false,
-  ): RestingOrder | null => {
-    const orders = restingOrders().filter((order) => order.side === side);
-    const weights = orders.map((order) => {
-      const weights = orderWeights(order);
-      // console.log(weights);
-
-      let weight = 1;
-      if (weightByAge) weight += weights.ageWeight;
-      if (weightByPriceMovement) weight += weights.movementWeight;
-      if (weightByLocalVolume) weight += weights.volumeWeight;
-      if (weightByFarOrder) weight += weights.farWeight;
-      return weight;
-    });
+  const randomRestingOrder = (side: OrderSide): RestingOrder | null => {
+    // todo: make it constant time? or log time at least
+    // for that remove conditional weighting and replace with weighted sum
+    // then move that into a memo (or some other way precompute it)
+    // and then binary search through it
+    // or binning to create a hashmap
+    const orders = restingOrders()[side];
+    const weights = orders.map(orderWeights);
 
     let totalWeight = weights.reduce((total, weight) => total + weight, 0);
 
@@ -228,17 +163,14 @@ export const createCancellationState = (options: Options) => {
   };
 
   const removeRestingOrder = (id: number) => {
-    setRestingOrders((orders) => orders.filter((order) => order.id !== id));
+    setRestingOrders((orders) => ({
+      buy: orders.buy.filter((order) => order.id !== id),
+      sell: orders.sell.filter((order) => order.id !== id),
+    }));
   };
 
   const simulate = (side: OrderSide) => {
-    const order = randomRestingOrder(
-      side,
-      sampleBernoulli(timeWeightingProbability()),
-      sampleBernoulli(priceMovement.probability()),
-      sampleBernoulli(localVolume.probability()),
-      sampleBernoulli(farOrder.probability()),
-    );
+    const order = randomRestingOrder(side);
     if (!order) return false;
 
     removeRestingOrder(order.id);
@@ -247,7 +179,17 @@ export const createCancellationState = (options: Options) => {
 
   const addOrder = (order: RestingOrder): void => {
     // todo: binary search insert?
-    setRestingOrders((orders) => [...orders, order].sort((left, right) => left.price - right.price));
+    setRestingOrders((orders) =>
+      order.side === "buy"
+        ? {
+            buy: [...orders.buy, order].sort((left, right) => left.price - right.price),
+            sell: orders.sell,
+          }
+        : {
+            buy: orders.buy,
+            sell: [...orders.sell, order].sort((left, right) => left.price - right.price),
+          },
+    );
   };
 
   return {

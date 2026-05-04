@@ -53,7 +53,7 @@ export type MarketBehaviorSettings = {
   cancellationNearTouchDistance: number;
   cancellationPriceMovementBoost: number;
   cancellationPriceMovementOrderDecay: number;
-  cancellationLocalVolumeWindow: number;
+  cancellationLocalVolumeRamp: number;
   cancellationFarOrderWindow: number;
   cancellationFarOrderRamp: number;
   cancellationFarOrderMinAge: number;
@@ -146,7 +146,7 @@ export const defaultMarketBehaviorSettings: MarketBehaviorSettings = {
   cancellationNearTouchDistance: 0.005,
   cancellationPriceMovementBoost: 4,
   cancellationPriceMovementOrderDecay: 5_000,
-  cancellationLocalVolumeWindow: 0.001,
+  cancellationLocalVolumeRamp: 1,
   cancellationFarOrderWindow: 0.15,
   cancellationFarOrderRamp: 0.15,
   cancellationFarOrderMinAge: 60_000,

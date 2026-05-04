@@ -23,8 +23,8 @@ export {
   type SimulationEventSettingGroup,
 } from "./types";
 
-// TODO:  Preference to place orders in the direction of the movement
-// TODO: in spread orders prob proportional to size of the spread
+// TODO: Preference to place orders in the direction of the movement
+// todo: Preference to place orders closer to spread?
 export class TradingSimulation {
   private marketBehaviorSettings = cloneMarketBehaviorSettings(defaultMarketBehaviorSettings);
   private orderPriceDistribution: OrderPriceDistribution = "power-law";
@@ -37,17 +37,17 @@ export class TradingSimulation {
     farOrder: createSignal(0.5),
   };
   private cancellation = createCancellationState({
-    timeWeightingProbability: this.cancellationProbabilities.time[0],
+    ageWeight: this.cancellationProbabilities.time[0],
     priceMovement: {
-      probability: this.cancellationProbabilities.priceMovement[0],
+      weight: this.cancellationProbabilities.priceMovement[0],
       recencyDecay: () => this.marketBehaviorSettings.cancellationPriceMovementOrderDecay,
     },
     localVolume: {
-      probability: this.cancellationProbabilities.localVolume[0],
-      window: () => this.marketBehaviorSettings.cancellationLocalVolumeWindow,
+      weight: this.cancellationProbabilities.localVolume[0],
+      ramp: () => this.marketBehaviorSettings.cancellationLocalVolumeRamp,
     },
     farOrder: {
-      probability: this.cancellationProbabilities.farOrder[0],
+      weight: this.cancellationProbabilities.farOrder[0],
       minAge: () => this.marketBehaviorSettings.cancellationFarOrderMinAge,
       window: () => this.marketBehaviorSettings.cancellationFarOrderWindow,
       ramp: () => this.marketBehaviorSettings.cancellationFarOrderRamp,
