@@ -29,6 +29,9 @@ export const halfLifeToDecay = (halfLifeSeconds: number): number => {
   return halfLife > 0 ? Math.LN2 / halfLife : 0;
 };
 
+export const inRangeInclusive = (x: number, min: number, max: number) => x >= min && x <= max;
+export const inRange = (x: number, min: number, max: number) => x >= min && x < max;
+
 export const createThrottledMemo = <Value>(
   computation: (previous: Value | undefined) => Value,
   timeoutMs: number,

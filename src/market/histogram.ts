@@ -1,6 +1,7 @@
 import { Accessor, createMemo } from "solid-js";
 import { OrderSide, RegisteredOrder } from "./order";
 import { OrderBookChangeset } from "./orderBook";
+import { inRange } from "../utils";
 
 export type OrderBookHistogramEntry = {
   kind: OrderSide;
@@ -38,7 +39,7 @@ type TreeState = {
 const FANOUT = 2;
 
 // todo: update to require price reference
-const getLogPrice = (price: number, ref = 1) => Math.log2(price / ref);
+const getLogPrice = (price: number, ref = 1) => Math.log2(price / ref) / Math.log2(FANOUT);
 
 const makeLeaf = (minLogPrice: number, maxLogPrice: number): TreeState => ({
   minLogPrice,
@@ -74,11 +75,9 @@ const canSplit = (state: TreeState, depth: number): boolean => {
 
 const insertOrder = (state: TreeState, order: RegisteredOrder, depth = 0): boolean => {
   const logPrice = getLogPrice(order.price);
-  const volume = order.size;
+  if (!inRange(logPrice, state.minLogPrice, state.maxLogPrice)) return false;
 
-  if (logPrice < state.minLogPrice || logPrice >= state.maxLogPrice) {
-    return false;
-  }
+  const volume = order.size;
 
   if (state.kind === "leaf") {
     const canStayLeaf = leafPriceMatches(state, logPrice) || !canSplit(state, depth);
@@ -179,6 +178,7 @@ type Options = {
   priceReference: Accessor<number>;
 };
 
+// todo: lazy update propagation
 export const createHistogramState = (options: Options) => {
   const treeState = createMemo<{ buyTree: TreeState; sellTree: TreeState }>(
     (state) => {
@@ -257,6 +257,7 @@ export const createHistogramState = (options: Options) => {
     if (maxLogPrice <= state.minLogPrice || state.maxLogPrice <= minLogPrice) return 0;
     if (minLogPrice <= state.minLogPrice && state.maxLogPrice <= maxLogPrice) return state.volume;
 
+    // todo: approximate as a fraction of node volume when reaching a certain depth?
     if (state.kind === "node") {
       let volume = 0;
 

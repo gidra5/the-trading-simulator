@@ -91,6 +91,7 @@ export const createCancellationState = (options: Options) => {
     });
   });
 
+  // todo: large individual orders are less likely to be cancelled
   const orderWeights = (order: RestingOrder) => {
     const volumePriceMin = order.side === "buy" ? order.price : marketPriceSpread().sell;
     const volumePriceMax = order.side === "buy" ? marketPriceSpread().buy : order.price;
