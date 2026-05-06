@@ -9,6 +9,7 @@ import {
   type MarketBehaviorSettings,
   type OrderPriceDistribution,
   type OrderSizeDistribution,
+  type RestingOrder,
   type SimulationEventSettingGroup,
   type SimulationEventType,
 } from "./types";
@@ -95,6 +96,10 @@ export class TradingSimulation {
 
   getOrderSizeDistribution(): OrderSizeDistribution {
     return this.orderSizeDistribution;
+  }
+
+  getCancellationRestingOrders(side: OrderSide): RestingOrder[] {
+    return this.cancellation.getRestingOrders(side);
   }
 
   setCancellationTimeWeighting(weighting: number): void {

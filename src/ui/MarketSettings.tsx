@@ -81,7 +81,7 @@ const cancellationFields: MarketNumberField[] = [
   { key: "cancellationNearTouchDistance", label: "Near touch distance", min: 0, step: "0.001" },
   { key: "cancellationPriceMovementBoost", label: "Move boost", min: 0, step: "0.1" },
   { key: "cancellationPriceMovementOrderDecay", label: "Move decay, ms", min: 0, step: "100" },
-  { key: "cancellationLocalVolumeWindow", label: "Local volume window", min: 0, step: "0.001" },
+  { key: "cancellationLocalVolumeRamp", label: "Local volume ramp", min: 0, step: "0.001" },
   { key: "cancellationFarOrderWindow", label: "Far order window", min: 0, step: "0.01" },
   { key: "cancellationFarOrderRamp", label: "Far order ramp", min: 0, step: "0.01" },
   { key: "cancellationFarOrderMinAge", label: "Far min age, ms", min: 0, step: "1000" },

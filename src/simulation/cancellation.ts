@@ -6,11 +6,12 @@ import {
   querySideVolumeInPriceRange,
   type OrderSide,
 } from "../market/index";
-import { sampleUniform } from "../distributions";
 
 import type { RestingOrder } from "./types";
-import { Accessor, createEffect, createSignal } from "solid-js";
+import { createEffect, createSignal, type Accessor } from "solid-js";
 import { oppositeSide } from "../market/order";
+import type { PriceHistoryEntry, PriceSpread } from "../market/orderBook";
+import { sampleWeightedList } from "../sampling";
 
 // const recentPriceHistory = createMemo<PricePoint[]>((recentHistory) => {
 //   const history = priceHistory();
@@ -36,7 +37,7 @@ import { oppositeSide } from "../market/order";
 // };
 // const priceAnchors = createMemo<number>(() => {
 
-type Options = {
+export type CancellationOptions = {
   ageWeight: Accessor<number>;
   priceMovement: {
     weight: Accessor<number>;
@@ -54,12 +55,128 @@ type Options = {
   };
 };
 
-export const createCancellationState = (options: Options) => {
-  const { ageWeight, priceMovement, localVolume, farOrder } = options;
-  const totalWeight = () => ageWeight() + priceMovement.weight() + localVolume.weight() + farOrder.weight();
+export type CancellationWeightEnvironment = {
+  now: Accessor<number>;
+  marketPriceSpread: Accessor<PriceSpread>;
+  priceHistory: Accessor<PriceHistoryEntry[]>;
+  querySideVolumeInPriceRange: (side: OrderSide, minPrice: number, maxPrice: number, includeMax?: boolean) => number;
+};
 
+export type CancellationOrderFeatures = {
+  age: number;
+  distanceFromMid: number;
+  localVolume: number;
+  localVolumeWeight: number;
+  priceMovement: number;
+  priceMovementWeight: number;
+  cancellationPriceDistance: number;
+  farWeight: number;
+  isFar: boolean;
+};
+
+export type WeightedCancellationOrder = {
+  order: RestingOrder;
+  index: number;
+  weight: number;
+  features: CancellationOrderFeatures;
+};
+
+type RestingOrders = { buy: RestingOrder[]; sell: RestingOrder[] };
+
+const defaultCancellationWeightEnvironment: CancellationWeightEnvironment = {
+  now: () => Date.now(),
+  marketPriceSpread,
+  priceHistory,
+  querySideVolumeInPriceRange,
+};
+
+const getCancellationOrderWeightFromFeatures = (
+  features: CancellationOrderFeatures,
+  options: CancellationOptions,
+): number => {
+  const { ageWeight, priceMovement, localVolume, farOrder } = options;
+
+  let weight = 1;
+  weight += features.age * ageWeight();
+  weight += features.priceMovementWeight * priceMovement.weight();
+  weight += features.localVolumeWeight * localVolume.weight();
+  weight += features.farWeight * farOrder.weight();
+  return weight;
+};
+
+export const getCancellationOrderFeatures = (
+  order: RestingOrder,
+  options: CancellationOptions,
+  environment = defaultCancellationWeightEnvironment,
+): CancellationOrderFeatures => {
+  const spread = environment.marketPriceSpread();
+  const volumePriceMin = order.side === "buy" ? order.price : spread.sell;
+  const volumePriceMax = order.side === "buy" ? spread.buy : order.price;
+  const localVolumeValue = environment.querySideVolumeInPriceRange(order.side, volumePriceMin, volumePriceMax);
+  const localVolumeWeight = 1 - Math.exp(-localVolumeValue / options.localVolume.ramp());
+
+  const age = environment.now() - order.createdAt;
+  const opposite = oppositeSide(order.side);
+
+  const priceMovementValue = (() => {
+    const history = environment.priceHistory();
+    const latest = history[history.length - 1];
+    const prev = history[history.length - 2];
+    if (!prev || !latest) return 0;
+    const prevPrice = prev.spread[opposite];
+    const latestPrice = latest.spread[opposite];
+    const sign = order.side === "buy" ? 1 : -1;
+    return Math.max(0, sign * (latestPrice - prevPrice));
+  })();
+
+  const priceMovementWeight = priceMovementValue * Math.exp(-age / options.priceMovement.recencyDecay());
+
+  const cancellationReferencePrice = spread[opposite];
+  const cancellationPriceDistance = Math.abs(order.price - cancellationReferencePrice) / cancellationReferencePrice;
+
+  const farWeight = (() => {
+    if (age < options.farOrder.minAge()) return 0;
+
+    const excessDistance = cancellationPriceDistance - options.farOrder.window();
+    if (excessDistance <= 0) return 0;
+
+    return 1 - Math.exp(-excessDistance / options.farOrder.ramp());
+  })();
+
+  const midPrice = (spread.buy + spread.sell) / 2;
+  const distanceFromMid = Math.abs(order.price - midPrice) / midPrice;
+
+  return {
+    age,
+    distanceFromMid,
+    localVolume: localVolumeValue,
+    localVolumeWeight,
+    priceMovement: priceMovementValue,
+    priceMovementWeight,
+    cancellationPriceDistance,
+    farWeight,
+    isFar: farWeight > 0,
+  };
+};
+
+export const getWeightedCancellationOrders = (
+  orders: RestingOrder[],
+  options: CancellationOptions,
+  environment = defaultCancellationWeightEnvironment,
+): WeightedCancellationOrder[] =>
+  orders.map((order, index) => {
+    const features = getCancellationOrderFeatures(order, options, environment);
+
+    return {
+      order,
+      index,
+      features,
+      weight: getCancellationOrderWeightFromFeatures(features, options),
+    };
+  });
+
+export const createCancellationState = (options: CancellationOptions) => {
   // todo: remove linear dependence on amount of orders
-  type RestingOrders = { buy: RestingOrder[]; sell: RestingOrder[] };
   const [restingOrders, setRestingOrders] = createSignal<RestingOrders>({ buy: [], sell: [] });
 
   createEffect(() => {
@@ -91,69 +208,13 @@ export const createCancellationState = (options: Options) => {
     });
   });
 
-  // todo: large individual orders are less likely to be cancelled
-  const orderWeights = (order: RestingOrder) => {
-    const volumePriceMin = order.side === "buy" ? order.price : marketPriceSpread().sell;
-    const volumePriceMax = order.side === "buy" ? marketPriceSpread().buy : order.price;
-    const volume = querySideVolumeInPriceRange(order.side, volumePriceMin, volumePriceMax);
-    const volumeWeight = 1 - Math.exp(-volume / localVolume.ramp());
-
-    const age = Date.now() - order.createdAt;
-    const opposite = oppositeSide(order.side);
-
-    const movement = (() => {
-      const history = priceHistory();
-      const latest = history[history.length - 1];
-      const prev = history[history.length - 2];
-      if (!prev || !latest) return 0;
-      const prevPrice = prev.spread[opposite];
-      const latestPrice = latest.spread[opposite];
-      const sign = order.side === "buy" ? 1 : -1;
-      return Math.max(0, sign * (latestPrice - prevPrice));
-    })();
-
-    const recency = Math.exp(-age / priceMovement.recencyDecay());
-    const movementWeight = movement * recency;
-
-    const farWeight = (() => {
-      if (age < farOrder.minAge()) return 0;
-
-      const current = marketPriceSpread()[opposite];
-      const distance = Math.abs(order.price - current) / current;
-      const excessDistance = distance - farOrder.window();
-      if (excessDistance <= 0) return 0;
-
-      return 1 - Math.exp(-excessDistance / farOrder.ramp());
-    })();
-
-    let weight = 1;
-    weight += age * ageWeight();
-    weight += movementWeight * priceMovement.weight();
-    weight += volumeWeight * localVolume.weight();
-    weight += farWeight * farOrder.weight();
-    return weight;
-  };
-
   const randomRestingOrder = (side: OrderSide): RestingOrder | null => {
     // todo: make it constant time? or log time at least
     // for that remove conditional weighting and replace with weighted sum
     // then move that into a memo (or some other way precompute it)
     // and then binary search through it
     // or binning to create a hashmap
-    const orders = restingOrders()[side];
-    const weights = orders.map(orderWeights);
-
-    let totalWeight = weights.reduce((total, weight) => total + weight, 0);
-
-    let targetWeight = sampleUniform(0, totalWeight);
-
-    for (let i = 0; i < weights.length; i += 1) {
-      targetWeight -= weights[i];
-
-      if (targetWeight <= 0) return orders[i];
-    }
-
-    return null;
+    return sampleWeightedList(getWeightedCancellationOrders(restingOrders()[side], options))?.order ?? null;
   };
 
   const removeRestingOrder = (id: number) => {
@@ -186,8 +247,19 @@ export const createCancellationState = (options: Options) => {
     );
   };
 
+  const getRestingOrders = (side: OrderSide): RestingOrder[] => [...restingOrders()[side]];
+  const getAllRestingOrders = (): RestingOrders => ({
+    buy: getRestingOrders("buy"),
+    sell: getRestingOrders("sell"),
+  });
+  const getWeightedRestingOrders = (side: OrderSide): WeightedCancellationOrder[] =>
+    getWeightedCancellationOrders(restingOrders()[side], options);
+
   return {
     simulate,
     addOrder,
+    getAllRestingOrders,
+    getRestingOrders,
+    getWeightedRestingOrders,
   };
 };
