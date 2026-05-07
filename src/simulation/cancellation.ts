@@ -12,11 +12,12 @@ import { createEffect, createSignal, type Accessor } from "solid-js";
 import { oppositeSide } from "../market/order";
 import type { PriceHistoryEntry, PriceSpread } from "../market/orderBook";
 import { sampleWeightedList } from "../sampling";
+import { time } from "./time";
 
 // const recentPriceHistory = createMemo<PricePoint[]>((recentHistory) => {
 //   const history = priceHistory();
 //   const latest = history[history.length - 1];
-//   const now = Date.now();
+//   const now = time();
 //   const expiredIndex = (() => {
 //     for (let i = 0; i < recentHistory.length; i += 1) {
 //       const entry = recentHistory[i];
@@ -56,7 +57,6 @@ export type CancellationOptions = {
 };
 
 export type CancellationWeightEnvironment = {
-  now: Accessor<number>;
   marketPriceSpread: Accessor<PriceSpread>;
   priceHistory: Accessor<PriceHistoryEntry[]>;
   querySideVolumeInPriceRange: (side: OrderSide, minPrice: number, maxPrice: number, includeMax?: boolean) => number;
@@ -84,7 +84,6 @@ export type WeightedCancellationOrder = {
 type RestingOrders = { buy: RestingOrder[]; sell: RestingOrder[] };
 
 const defaultCancellationWeightEnvironment: CancellationWeightEnvironment = {
-  now: () => Date.now(),
   marketPriceSpread,
   priceHistory,
   querySideVolumeInPriceRange,
@@ -115,7 +114,7 @@ export const getCancellationOrderFeatures = (
   const localVolumeValue = environment.querySideVolumeInPriceRange(order.side, volumePriceMin, volumePriceMax);
   const localVolumeWeight = 1 - Math.exp(-localVolumeValue / options.localVolume.ramp());
 
-  const age = environment.now() - order.createdAt;
+  const age = time() - order.createdAt;
   const opposite = oppositeSide(order.side);
 
   const priceMovementValue = (() => {

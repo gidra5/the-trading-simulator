@@ -3,6 +3,7 @@ import { takeOrder, type OrderSide } from "../market/index";
 import { createCancellationState } from "./cancellation";
 import { SimulationExcitation } from "./excitation";
 import { SimulationOrderPlacement } from "./orderPlacement";
+import { advance, time } from "./time";
 import {
   cloneMarketBehaviorSettings,
   defaultMarketBehaviorSettings,
@@ -126,6 +127,7 @@ export class TradingSimulation {
   // TODO: external factors like news, events, reports, etc. All infer a "sentiment" of the market
   // https://chatgpt.com/c/69e01063-a9c8-8390-a2db-4f314b4d59f1
   tick(dt: number): void {
+    advance(dt);
     this.excitation.forEachEvent(dt, (eventType) => this.simulateEvent(eventType));
   }
 

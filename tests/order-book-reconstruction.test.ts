@@ -2,6 +2,7 @@ import { afterAll, expect, test, vi } from "vitest";
 import fc from "fast-check";
 
 type MarketModule = typeof import("../src/market/index");
+type SimulationTimeModule = typeof import("../src/simulation/time");
 type Operation =
   | {
       kind: "limit";
@@ -21,20 +22,20 @@ type Operation =
       size: number;
     };
 
-let now = 1_000;
-
-const loadMarket = async (settings: { interval?: number; fanout?: number; levels: number }): Promise<MarketModule> => {
-  now = 1_000;
+const loadMarket = async (settings: {
+  interval?: number;
+  fanout?: number;
+  levels: number;
+}): Promise<{ market: MarketModule; clock: SimulationTimeModule }> => {
   vi.restoreAllMocks();
   vi.resetModules();
-  vi.spyOn(Date, "now").mockImplementation(() => now);
 
-  const market = await import("../src/market/index");
+  const [market, clock] = await Promise.all([import("../src/market/index"), import("../src/simulation/time")]);
   market.setDeltaSnapshotInterval(settings.interval ?? 2);
   market.setFanout(settings.fanout ?? 2);
   market.setLevels(settings.levels);
 
-  return market;
+  return { market, clock };
 };
 
 const operationArbitrary: fc.Arbitrary<Operation> = fc.oneof(
@@ -110,8 +111,9 @@ const applyOperation = (
 
 const replayMarket = (
   market: MarketModule,
+  clock: SimulationTimeModule,
   operations: Operation[],
-  onRevision: (timestamp: number, revision: number) => void,
+  onRevision?: (revision: number) => void,
 ): void => {
   const restingOrderIds: Record<"buy" | "sell", number[]> = {
     buy: [],
@@ -119,14 +121,14 @@ const replayMarket = (
   };
 
   for (const operation of operations) {
-    now += 100;
+    clock.advance(100);
     const previousRevision = market.getOrderBookHistoryStats().revision;
 
     applyOperation(market, operation, restingOrderIds);
 
     const revision = market.getOrderBookHistoryStats().revision;
     if (revision !== previousRevision) {
-      onRevision(now, revision);
+      onRevision?.(revision);
     }
   }
 };
@@ -138,10 +140,10 @@ afterAll(() => {
 test("market reconstructs every recorded revision for fuzzed change sequences", async () => {
   await fc.assert(
     fc.asyncProperty(arb, async ({ interval, fanout, levels, operations }) => {
-      const market = await loadMarket({ interval, fanout, levels });
+      const { market, clock } = await loadMarket({ interval, fanout, levels });
       const recordedBooks = new Map<number, ReturnType<typeof market.orderBook>>();
 
-      replayMarket(market, operations, (_timestamp, revision) => {
+      replayMarket(market, clock, operations, (revision) => {
         recordedBooks.set(revision, structuredClone(market.orderBook()));
       });
 
@@ -153,11 +155,11 @@ test("market reconstructs every recorded revision for fuzzed change sequences", 
 });
 
 test("market reconstructs recorded revisions after delta hierarchy changes", async () => {
-  const market = await loadMarket({ interval: 2, fanout: 2, levels: 2 });
+  const { market, clock } = await loadMarket({ interval: 2, fanout: 2, levels: 2 });
   const recordedBooks = new Map<number, ReturnType<typeof market.orderBook>>();
 
   for (let index = 0; index < 12; index += 1) {
-    now += 100;
+    clock.advance(100);
     market.makeOrder("buy", {
       price: 0.8 + index / 1_000,
       size: index + 1,
@@ -177,20 +179,16 @@ test("market reconstructs recorded revisions after delta hierarchy changes", asy
 test("market builds heatmap regions for fuzzed change sequences", async () => {
   await fc.assert(
     fc.asyncProperty(arb, async ({ interval, fanout, levels, operations }) => {
-      const market = await loadMarket({ interval, fanout, levels });
-      let firstTimestamp = 0;
-      let lastTimestamp = 0;
+      const { market, clock } = await loadMarket({ interval, fanout, levels });
 
-      replayMarket(market, operations, (timestamp) => {
-        firstTimestamp ||= timestamp;
-        lastTimestamp = timestamp;
-      });
+      replayMarket(market, clock, operations);
 
-      if (firstTimestamp === 0) return;
+      const lastTimestamp = clock.time();
+      if (market.getOrderBookHistoryStats().revision === 0) return;
 
       expect(() =>
         market.getOrderBookRegion({
-          timestamp: [firstTimestamp, lastTimestamp + 100],
+          timestamp: [0, lastTimestamp + 100],
           price: [0.7, 1.3],
           resolution: [Math.max(market.getOrderBookHistoryStats().revision + 1, 2), 601],
         }),

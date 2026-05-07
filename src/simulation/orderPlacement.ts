@@ -17,6 +17,7 @@ import {
   type RestingOrder,
 } from "./types";
 import type { PriceSpread } from "../market/orderBook";
+import { time } from "./time";
 
 export class SimulationOrderPlacement {
   private priceAnchorIntervals = [60_000, 600_000, 1_800_000, 3_600_000] as const;
@@ -52,14 +53,16 @@ export class SimulationOrderPlacement {
     const price = this.applyOrderPricePsychology(side, this.sampleMakerOrderPrice(side));
     const order = makeOrder(side, { price, size });
 
-    return order.restingSize > 0 ? { id: order.id, side, price, size: order.restingSize, createdAt: Date.now() } : null;
+    return order.restingSize > 0
+      ? { id: order.id, side, price, size: order.restingSize, createdAt: time() }
+      : null;
   }
 
-  updateRecentPriceAnchors(price = midPrice(), time = Date.now()): void {
+  updateRecentPriceAnchors(price = midPrice()): void {
     if (!Number.isFinite(price) || price <= 0) return;
 
     for (const window of this.priceAnchorWindows) {
-      const expiresBefore = time - window.durationMs;
+      const expiresBefore = time() - window.durationMs;
 
       while (window.highOffset < window.highTimes.length && window.highTimes[window.highOffset]! < expiresBefore) {
         window.highOffset += 1;
@@ -82,9 +85,9 @@ export class SimulationOrderPlacement {
         window.lowPrices.pop();
       }
 
-      window.highTimes.push(time);
+      window.highTimes.push(time());
       window.highPrices.push(price);
-      window.lowTimes.push(time);
+      window.lowTimes.push(time());
       window.lowPrices.push(price);
       window.highOffset = this.compactPricePoints(window.highTimes, window.highPrices, window.highOffset);
       window.lowOffset = this.compactPricePoints(window.lowTimes, window.lowPrices, window.lowOffset);

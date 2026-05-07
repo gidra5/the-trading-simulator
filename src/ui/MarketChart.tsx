@@ -13,14 +13,15 @@ import { ChartSettings } from "./ChartSettings";
 import { MarketSettings } from "./MarketSettings";
 import { createThrottledMemo, formatNumber } from "../utils";
 import { digits, Order } from "./Order";
+import { time } from "../simulation/time";
 
 const pollingInterval = 200;
-const startDate = Date.now();
 const showFrameRate = true;
 type SettingsTab = "chart" | "market";
 
 export const MarketChart: Component = () => {
   const simulation = new TradingSimulation();
+  const startTime = time();
   const priceSpread = createThrottledMemo(marketPriceSpread, pollingInterval);
   const [activeSettingsTab, setActiveSettingsTab] = createSignal<SettingsTab>("chart");
   const [candleInterval, setCandleInterval] = createSignal(1_000);
@@ -32,18 +33,18 @@ export const MarketChart: Component = () => {
   );
   const [histogramWindowFraction, setHistogramWindowFraction] = createSignal(0.01);
   const [viewport, setViewport] = createSignal<ChartViewport>({
-    time: [startDate, startDate + 1 * 60 * 1000],
+    time: [startTime, startTime + 1 * 60 * 1000],
     price: [0.7, 1.3],
     resolution: [1, 1],
   });
   let previousCandleInterval = candleInterval();
 
-  const rebuildCandles = (interval: number, now = Date.now()): PriceCandle[] => {
-    const alignedStart = Math.floor(startDate / interval) * interval;
+  const rebuildCandles = (interval: number): PriceCandle[] => {
+    const alignedStart = Math.floor(startTime / interval) * interval;
     const rebuiltCandles: PriceCandle[] = [];
 
-    for (let candleStart = alignedStart; candleStart <= now; candleStart += interval) {
-      const candle = priceHistoryCandle(candleStart, Math.min(candleStart + interval, now), "buy");
+    for (let candleStart = alignedStart; candleStart <= time(); candleStart += interval) {
+      const candle = priceHistoryCandle(candleStart, Math.min(candleStart + interval, time()), "buy");
       rebuiltCandles.push(candle);
     }
 
@@ -55,16 +56,15 @@ export const MarketChart: Component = () => {
   };
 
   const candles = createThrottledMemo<PriceCandle[]>((currentCandles = []) => {
-    const now = Date.now();
     const interval = candleInterval();
 
     if (interval !== previousCandleInterval) {
       previousCandleInterval = interval;
-      return rebuildCandles(interval, now);
+      return rebuildCandles(interval);
     }
 
-    const candleStart = Math.floor(now / interval) * interval;
-    const candle = priceHistoryCandle(candleStart, now, "buy");
+    const candleStart = Math.floor(time() / interval) * interval;
+    const candle = priceHistoryCandle(candleStart, time(), "buy");
     const latestCandle = currentCandles[currentCandles.length - 1];
 
     if (!latestCandle) return [candle];

@@ -65,36 +65,31 @@ const buildSamplingFixture = async (): Promise<{
   options: CancellationOptions;
   orders: RestingOrder[];
 }> => {
-  let now = 1_700_000_000_000;
-
   vi.resetModules();
-  vi.spyOn(Date, "now").mockImplementation(() => now);
   vi.spyOn(Math, "random").mockImplementation(seededRandom(0x5eed));
 
-  const [{ TradingSimulation }, cancellation] = await Promise.all([
+  const [{ TradingSimulation }, cancellation, { advance }] = await Promise.all([
     import("../src/simulation/index"),
     import("../src/simulation/cancellation"),
+    import("../src/simulation/time"),
   ]);
   const simulation = new TradingSimulation();
 
   simulation.setMarketBehaviorSetting("publicInterestRate", 80);
-  simulation.setMarketBehaviorSetting("patience", 1);
-  simulation.setMarketBehaviorSetting("greed", 0);
+  simulation.setMarketBehaviorSetting("patience", 0.99);
+  simulation.setMarketBehaviorSetting("greed", 0.1);
   simulation.setMarketBehaviorSetting("fear", 0.52);
-  simulation.setOrderPriceDistribution("abs-normal");
-  simulation.setOrderSizeDistribution("log-normal");
 
   for (const eventType of eventTypes) {
     simulation.setMarketBehaviorEventSetting("branchingRatio", eventType, 0);
   }
 
   for (let tick = 0; tick < 16; tick += 1) {
-    now += 250;
     simulation.tick(250);
   }
 
   const settings = simulation.getMarketBehaviorSettings();
-  now += settings.cancellationFarOrderMinAge + 1_000;
+  advance(settings.cancellationFarOrderMinAge + 1_000);
 
   const orders = sides.flatMap((side) => simulation.getCancellationRestingOrders(side));
   expect(orders.length).toBeGreaterThan(20);

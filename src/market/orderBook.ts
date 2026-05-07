@@ -1,6 +1,7 @@
 import { Accessor, createMemo, createSignal } from "solid-js";
 import { assert } from "../utils";
 import { cloneOrder, compareOrders, type OrderSide, type RegisteredOrder } from "./order";
+import { time } from "../simulation/time";
 
 export type OrderBook = {
   // sorted by price and then id
@@ -200,7 +201,7 @@ export const createOrderBook = ({ deltaSnapshotInterval, fanout, levels }: Order
       {
         kind: "snapshot",
         revision: 0,
-        timestamp: Date.now(),
+        timestamp: time(),
         orderBook: initialOrderBook,
         changes: [],
       },
@@ -249,7 +250,7 @@ export const createOrderBook = ({ deltaSnapshotInterval, fanout, levels }: Order
       })();
 
       const next = () => {
-        previousHistory.push({ revision: revision(), timestamp: Date.now(), spread });
+        previousHistory.push({ revision: revision(), timestamp: latestOrderBookChange().timestamp, spread });
         return previousHistory;
       };
 
@@ -365,7 +366,7 @@ export const createOrderBook = ({ deltaSnapshotInterval, fanout, levels }: Order
 
   const orderBookMap = () => acceleratedOrderBookMapState().entries;
 
-  const appendChange = (timestamp: number, changes: OrderBookChangeset): void => {
+  const appendChange = (changes: OrderBookChangeset): void => {
     if (changes.length === 0) return;
 
     const orderBookRevision = revision() + 1;
@@ -373,11 +374,11 @@ export const createOrderBook = ({ deltaSnapshotInterval, fanout, levels }: Order
     if (orderBookRevision % snapshotInterval() === 0) {
       const nextOrderBook = cloneOrderBookFrom(orderBook());
       applyChangeset(nextOrderBook, changes);
-      createOrderBookSnapshot(timestamp, nextOrderBook, changes);
+      createOrderBookSnapshot(time(), nextOrderBook, changes);
       return;
     }
 
-    createOrderBookDelta(timestamp, changes);
+    createOrderBookDelta(time(), changes);
   };
 
   const reconstructAt = (targetIndex: number): OrderBook | null => {

@@ -8,19 +8,14 @@ import {
   type RegisteredOrder,
 } from "./order";
 import {
-  applyChangeset,
-  cloneOrderBookFrom,
   createOrderBook,
   type OrderBookChange,
   type OrderBookHeatmapEntry,
   type OrderBookHeatmapRegion,
-  type OrderBookHistogramEntry,
-  type OrderBookHistogramRegion,
-  type OrderBookHistogramSeries,
-  type OrderBookMapEntry,
   type PriceHistoryEntry,
 } from "./orderBook";
 import { createHistogramState } from "./histogram";
+import { time } from "../simulation/time";
 
 export type { MakeOrderResult, OrderSide } from "./order";
 export type {
@@ -66,7 +61,7 @@ const {
 
   const orderBook = createOrderBook({ deltaSnapshotInterval, fanout, levels });
 
-  orderBook.appendChange(Date.now(), [
+  orderBook.appendChange([
     { kind: "add", side: "buy", order: { id: -2, price: 0.999, size: 1e4 } },
     { kind: "add", side: "sell", order: { id: -3, price: 1.001, size: 1e4 } },
   ]);
@@ -181,12 +176,6 @@ export const { getOrderBookHistogram, getOrderBookHistogramSeries, querySideVolu
   }),
 );
 
-const recordMarketState = (changes: OrderBookChange[]) => {
-  if (changes.length === 0) return;
-
-  const timestamp = Date.now();
-  appendChange(timestamp, changes);
-};
 
 // todo: candle acceleration structure
 // create a hierarchy of candles in powers of two
@@ -247,6 +236,10 @@ const findOrderLocation = (id: number, side?: OrderSide): { side: OrderSide; ind
   return null;
 };
 
+export const hasOrder = (id: number, side?: OrderSide): boolean => findOrderLocation(id, side) !== null;
+
+// todo: seeding rng
+// todo: economic simulation
 export const makeOrder = (side: OrderSide, order: Order): MakeOrderResult => {
   const id = nextOrderId++;
   const orderWithId = { ...order, id };
@@ -259,7 +252,7 @@ export const makeOrder = (side: OrderSide, order: Order): MakeOrderResult => {
 
   orderWithId.size = restingSize;
 
-  recordMarketState([{ kind: "add", side, order: orderWithId }]);
+  appendChange([{ kind: "add", side, order: orderWithId }]);
 
   return { id, fulfilled: result.fulfilled, cost: result.cost, restingSize };
 };
@@ -281,21 +274,21 @@ export const takeOrder = (
     const order = orders[orderIndex];
     if (!order) {
       if (fulfilled > 0) {
-        recordMarketState(changes);
+        appendChange(changes);
       }
       return { id, fulfilled, cost };
     }
 
     if (price !== undefined && side === "buy" && order.price > price) {
       if (fulfilled > 0) {
-        recordMarketState(changes);
+        appendChange(changes);
       }
       return { id, fulfilled, cost };
     }
 
     if (price !== undefined && side === "sell" && order.price < price) {
       if (fulfilled > 0) {
-        recordMarketState(changes);
+        appendChange(changes);
       }
       return { id, fulfilled, cost };
     }
@@ -311,7 +304,7 @@ export const takeOrder = (
         prevSize: order.size,
         order: { ...order, size: nextSize },
       });
-      recordMarketState(changes);
+      appendChange(changes);
 
       return { id, fulfilled, cost };
     }
@@ -322,7 +315,7 @@ export const takeOrder = (
     orderIndex -= 1;
   }
 
-  recordMarketState(changes);
+  appendChange(changes);
   return { id, fulfilled, cost };
 };
 
@@ -335,7 +328,7 @@ export const cancelOrder = (id: number, side?: OrderSide): RegisteredOrder | nul
 
   if (!order) return null;
 
-  recordMarketState([{ kind: "remove", side: location.side, order: cloneOrder(order) }]);
+  appendChange([{ kind: "remove", side: location.side, order: cloneOrder(order) }]);
   return order;
 };
 // todo: move histogram, price history, stats, heatmap related variables and functions to separate files.
