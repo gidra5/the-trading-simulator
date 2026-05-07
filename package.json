@@ -7,8 +7,9 @@
     "start": "vite",
     "dev": "vite",
     "build": "vite build",
+    "measure:cancellation-sampling": "vitest run tests/cancellation-sampling-report.test.ts --reporter=verbose",
     "profile:page": "node scripts/profile-page-heatmap.mjs",
-    "test": "vitest run",
+    "test": "vitest run --exclude tests/cancellation-sampling-report.test.ts",
     "serve": "vite preview",
     "check": "tsc --noEmit",
     "fmt": "prettier --write ./src ./tests"
