@@ -115,6 +115,7 @@ export const MarketChart: Component = () => {
   };
 
   onMount(() => {
+    // todo: frame dependant tick, not fixed interval
     const simulationIntervalId = setInterval(() => simulation.tick(simulationTickTime), simulationTickTime);
 
     onCleanup(() => {

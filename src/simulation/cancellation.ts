@@ -88,6 +88,7 @@ type CancellationAgeMemo = Record<OrderSide, { count: number; totalCreatedAt: nu
 type ApproximateCancellationSamplingOptions = {
   candidateCount?: number;
   minimumProposalAge?: number;
+  proposal?: "age" | "exact" | "uniform";
 };
 
 type ApproximateCancellationResamplingOptions = ApproximateCancellationSamplingOptions & {
@@ -128,8 +129,9 @@ type CancellationCoverageLookup = {
 const approximateCancellationSampleDefaults = {
   candidateCount: 64,
   minimumProposalAge: 0,
+  proposal: "age",
   sampleCount: 4096,
-};
+} as const;
 
 const defaultCancellationWeightEnvironment: CancellationWeightEnvironment = {
   marketPriceSpread,
@@ -160,7 +162,8 @@ export const getCancellationOrderFeatures = (
   const volumePriceMin = order.side === "buy" ? order.price : spread.sell;
   const volumePriceMax = order.side === "buy" ? spread.buy : order.price;
   const localVolumeValue = environment.querySideVolumeInPriceRange(order.side, volumePriceMin, volumePriceMax);
-  const localVolumeWeight = 1 - Math.exp(-localVolumeValue / options.localVolume.ramp());
+  // const localVolumeWeight = 1 - Math.exp(-localVolumeValue / options.localVolume.ramp());
+  const localVolumeWeight = localVolumeValue;
 
   const age = time() - order.createdAt;
   const opposite = oppositeSide(order.side);
@@ -204,7 +207,7 @@ export const getCancellationOrderFeatures = (
     farWeight,
     isFar: farWeight > 0,
   };
-};
+};;
 
 export const getWeightedCancellationOrders = (
   orders: RestingOrder[],
@@ -228,17 +231,45 @@ const getAgeProposalWeight = (order: RestingOrder, minimumProposalAge: number, n
 const getAgeProposalTotalWeight = (
   orders: RestingOrder[],
   minimumProposalAge: number,
+  proposal: "age" | "exact" | "uniform",
+  options: CancellationOptions,
+  environment: CancellationWeightEnvironment,
   memo?: { count: number; totalCreatedAt: number },
   now = time(),
 ): number => {
+  if (proposal === "uniform") return orders.length;
+  if (proposal === "exact")
+    return orders.reduce(
+      (total, order) =>
+        total + getCancellationOrderWeightFromFeatures(getCancellationOrderFeatures(order, options, environment), options),
+      0,
+    );
   if (minimumProposalAge <= 0 && memo) return Math.max(0, memo.count * now - memo.totalCreatedAt);
 
   return orders.reduce((total, order) => total + getAgeProposalWeight(order, minimumProposalAge, now), 0);
 };
 
+const getProposalWeight = (
+  order: RestingOrder,
+  minimumProposalAge: number,
+  proposal: "age" | "exact" | "uniform",
+  options: CancellationOptions,
+  environment: CancellationWeightEnvironment,
+  now = time(),
+): number => {
+  if (proposal === "uniform") return 1;
+  if (proposal === "exact")
+    return getCancellationOrderWeightFromFeatures(getCancellationOrderFeatures(order, options, environment), options);
+
+  return getAgeProposalWeight(order, minimumProposalAge, now);
+};
+
 const createAgeProposalSampler = (
   orders: RestingOrder[],
   minimumProposalAge: number,
+  proposal: "age" | "exact" | "uniform",
+  options: CancellationOptions,
+  environment: CancellationWeightEnvironment,
   memo?: { count: number; totalCreatedAt: number },
 ): AgeProposalSampler => {
   const now = time();
@@ -247,13 +278,13 @@ const createAgeProposalSampler = (
   let cumulativeWeight = 0;
 
   for (const order of orders) {
-    const proposalWeight = getAgeProposalWeight(order, minimumProposalAge, now);
+    const proposalWeight = getProposalWeight(order, minimumProposalAge, proposal, options, environment, now);
     proposalWeights.push(proposalWeight);
     cumulativeWeight += proposalWeight;
     cumulativeWeights.push(cumulativeWeight);
   }
 
-  const totalWeight = getAgeProposalTotalWeight(orders, minimumProposalAge, memo, now);
+  const totalWeight = getAgeProposalTotalWeight(orders, minimumProposalAge, proposal, options, environment, memo, now);
 
   return {
     totalWeight,
@@ -281,16 +312,21 @@ const createAgeProposalSampler = (
 
 const getNormalizedApproximateSamplingOptions = (
   samplingOptions: ApproximateCancellationSamplingOptions,
-): Required<ApproximateCancellationSamplingOptions> => ({
-  candidateCount: Math.max(
-    1,
-    Math.floor(samplingOptions.candidateCount ?? approximateCancellationSampleDefaults.candidateCount),
-  ),
-  minimumProposalAge: Math.max(
-    0,
-    samplingOptions.minimumProposalAge ?? approximateCancellationSampleDefaults.minimumProposalAge,
-  ),
-});
+): Required<ApproximateCancellationSamplingOptions> => {
+  const proposal = samplingOptions.proposal ?? approximateCancellationSampleDefaults.proposal;
+
+  return {
+    candidateCount: Math.max(
+      1,
+      Math.floor(samplingOptions.candidateCount ?? approximateCancellationSampleDefaults.candidateCount),
+    ),
+    minimumProposalAge: Math.max(
+      0,
+      samplingOptions.minimumProposalAge ?? approximateCancellationSampleDefaults.minimumProposalAge,
+    ),
+    proposal: proposal === "uniform" || proposal === "exact" ? proposal : "age",
+  };
+};
 
 const getApproximateWeightedCancellationOrdersFromProposal = (
   proposalSampler: AgeProposalSampler,
@@ -361,22 +397,20 @@ const getApproximateSamplingDiagnostics = (
   candidateCount: number,
   candidateCoverage = getExactWeightCoverage(approximateOrders, coverageLookup),
 ): ApproximateCancellationSamplingDiagnostics => {
-  const totalRatioWeight = approximateOrders.reduce((total, order) => total + order.weight, 0);
+  const totalWeight = approximateOrders.reduce((total, order) => total + order.weight, 0);
   const sumSquaredWeights = approximateOrders.reduce((total, order) => total + order.weight ** 2, 0);
-  const ratios = approximateOrders.map((order) =>
-    "weightRatio" in order && typeof order.weightRatio === "number" ? order.weightRatio : order.weight,
-  );
-  const minWeightRatio = ratios.length > 0 ? Math.min(...ratios) : 0;
-  const maxWeightRatio = ratios.length > 0 ? Math.max(...ratios) : 0;
+  const weights = approximateOrders.map((order) => order.weight);
+  const minWeight = weights.length > 0 ? Math.min(...weights) : 0;
+  const maxWeight = weights.length > 0 ? Math.max(...weights) : 0;
 
   return {
     candidateCount,
     uniqueCandidateCount: approximateOrders.length,
     candidateCoverage,
-    effectiveSampleSize: sumSquaredWeights > 0 ? totalRatioWeight ** 2 / sumSquaredWeights : 0,
-    minWeightRatio,
-    maxWeightRatio,
-    weightRatioSpread: minWeightRatio > 0 ? maxWeightRatio / minWeightRatio : Number.POSITIVE_INFINITY,
+    effectiveSampleSize: sumSquaredWeights > 0 ? totalWeight ** 2 / sumSquaredWeights : 0,
+    minWeightRatio: minWeight,
+    maxWeightRatio: maxWeight,
+    weightRatioSpread: minWeight > 0 ? maxWeight / minWeight : Number.POSITIVE_INFINITY,
   };
 };
 
@@ -390,8 +424,8 @@ export const getApproximateWeightedCancellationOrders = (
   orders: WeightedCancellationOrder[];
   diagnostics: ApproximateCancellationSamplingDiagnostics;
 } => {
-  const { candidateCount, minimumProposalAge } = getNormalizedApproximateSamplingOptions(samplingOptions);
-  const proposalSampler = createAgeProposalSampler(orders, minimumProposalAge, ageMemo);
+  const { candidateCount, minimumProposalAge, proposal } = getNormalizedApproximateSamplingOptions(samplingOptions);
+  const proposalSampler = createAgeProposalSampler(orders, minimumProposalAge, proposal, options, environment, ageMemo);
   const coverageLookup = getCancellationCoverageLookup(orders, options, environment);
   const approximateOrders = getApproximateWeightedCancellationOrdersFromProposal(
     proposalSampler,
@@ -417,12 +451,12 @@ export const getResampledApproximateWeightedCancellationOrders = (
   orders: WeightedCancellationOrder[];
   diagnostics: ApproximateCancellationSamplingDiagnostics & { sampleCount: number };
 } => {
-  const { candidateCount, minimumProposalAge } = getNormalizedApproximateSamplingOptions(samplingOptions);
+  const { candidateCount, minimumProposalAge, proposal } = getNormalizedApproximateSamplingOptions(samplingOptions);
   const sampleCount = Math.max(
     1,
     Math.floor(samplingOptions.sampleCount ?? approximateCancellationSampleDefaults.sampleCount),
   );
-  const proposalSampler = createAgeProposalSampler(orders, minimumProposalAge, ageMemo);
+  const proposalSampler = createAgeProposalSampler(orders, minimumProposalAge, proposal, options, environment, ageMemo);
   const coverageLookup = getCancellationCoverageLookup(orders, options, environment);
   const samples = new Map<number, WeightedCancellationOrder>();
   let totalCandidateCoverage = 0;
@@ -472,12 +506,13 @@ const sampleApproximateCancellationOrder = (
   orders: RestingOrder[],
   options: CancellationOptions,
   samplingOptions: ApproximateCancellationSamplingOptions = {},
-  environment = defaultCancellationWeightEnvironment,
   ageMemo?: { count: number; totalCreatedAt: number },
 ): RestingOrder | null =>
   sampleWeightedList(
-    getApproximateWeightedCancellationOrders(orders, options, samplingOptions, environment, ageMemo).orders,
+    getApproximateWeightedCancellationOrders(orders, options, samplingOptions, undefined, ageMemo).orders,
   )?.order ?? null;
+
+const createSampler = () => {};
 
 export const createCancellationState = (options: CancellationOptions) => {
   const [restingOrders, setRestingOrders] = createSignal<RestingOrders>({ buy: [], sell: [] });
@@ -527,7 +562,7 @@ export const createCancellationState = (options: CancellationOptions) => {
   });
 
   const randomRestingOrder = (side: OrderSide): RestingOrder | null => {
-    return sampleApproximateCancellationOrder(restingOrders()[side], options, undefined, undefined, ageMemo[side]);
+    return sampleApproximateCancellationOrder(restingOrders()[side], options, undefined, ageMemo[side]);
   };
 
   const removeRestingOrder = (id: number) => {

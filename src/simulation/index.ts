@@ -3,7 +3,7 @@ import { takeOrder, type OrderSide } from "../market/index";
 import { createCancellationState } from "./cancellation";
 import { SimulationExcitation } from "./excitation";
 import { SimulationOrderPlacement } from "./orderPlacement";
-import { advance, time } from "./time";
+import { advance } from "./time";
 import {
   cloneMarketBehaviorSettings,
   defaultMarketBehaviorSettings,
@@ -125,6 +125,8 @@ export class TradingSimulation {
   // TODO: Trading at certain times of the day
   // TODO: Trading character defined by what parameters and features a particular actor uses
   // TODO: external factors like news, events, reports, etc. All infer a "sentiment" of the market
+  // TODO: add saturation of order book, so that once we hit that only cancels or market orders happen
+  // TODO: macro laws?
   // https://chatgpt.com/c/69e01063-a9c8-8390-a2db-4f314b4d59f1
   tick(dt: number): void {
     advance(dt);

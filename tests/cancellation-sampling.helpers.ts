@@ -62,14 +62,16 @@ const createCancellationOptions = (
 });
 
 export const buildSamplingFixture = async (fixtureOptions: {
+  seed?: number;
   ticks: number;
 }): Promise<{
   cancellation: CancellationModule;
   options: CancellationOptions;
   orders: RestingOrder[];
 }> => {
+  vi.restoreAllMocks();
   vi.resetModules();
-  vi.spyOn(Math, "random").mockImplementation(seededRandom(0x5eed));
+  vi.spyOn(Math, "random").mockImplementation(seededRandom(fixtureOptions.seed ?? 0x5eed));
 
   const [{ TradingSimulation }, cancellation, { advance }] = await Promise.all([
     import("../src/simulation/index"),
@@ -77,15 +79,6 @@ export const buildSamplingFixture = async (fixtureOptions: {
     import("../src/simulation/time"),
   ]);
   const simulation = new TradingSimulation();
-
-  simulation.setMarketBehaviorSetting("publicInterestRate", 80);
-  simulation.setMarketBehaviorSetting("patience", 0.99);
-  simulation.setMarketBehaviorSetting("greed", 0.1);
-  simulation.setMarketBehaviorSetting("fear", 0.52);
-
-  for (const eventType of eventTypes) {
-    simulation.setMarketBehaviorEventSetting("branchingRatio", eventType, 0);
-  }
 
   for (let tick = 0; tick < fixtureOptions.ticks; tick += 1) {
     simulation.tick(250);
@@ -115,6 +108,10 @@ const totalVariationDistance = (
 ): number => {
   const preciseTotal = totalWeight(preciseOrders);
   const approximateTotal = totalWeight(approximateOrders);
+  if (!Number.isFinite(preciseTotal) || !Number.isFinite(approximateTotal) || preciseTotal <= 0 || approximateTotal <= 0) {
+    return 1;
+  }
+
   const approximateProbability = new Map(
     approximateOrders.map((order) => [order.order.id, order.weight / approximateTotal]),
   );
@@ -135,6 +132,19 @@ const measureFeatures = (
 ): SamplingFeatures => {
   const preciseById = new Map(preciseOrders.map((order) => [order.order.id, order]));
   const total = totalWeight(selectionWeights);
+  if (!Number.isFinite(total) || total <= 0) {
+    return {
+      averageAge: 0,
+      averageDistanceFromMid: 0,
+      averageLocalVolume: 0,
+      fractionBuy: 0,
+      fractionSell: 0,
+      fractionFar: 0,
+      averageTrueWeight: 0,
+      averageCancellationPriceDistance: 0,
+    };
+  }
+
   const features: SamplingFeatures = {
     averageAge: 0,
     averageDistanceFromMid: 0,
@@ -166,9 +176,12 @@ const measureFeatures = (
 };
 
 const relativeError = (actual: number, expected: number): number => {
+  if (!Number.isFinite(actual) && !Number.isFinite(expected)) return 0;
+  if (!Number.isFinite(actual)) return Number.MAX_SAFE_INTEGER;
+  if (!Number.isFinite(expected)) return Math.abs(actual);
   if (expected === 0) return Math.abs(actual);
 
-  return Math.abs((actual - expected) / (expected + Number.EPSILON));
+  return Math.abs((actual - expected) / expected);
 };
 
 const featureRelativeErrors = (
