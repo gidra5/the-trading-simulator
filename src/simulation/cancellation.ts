@@ -39,6 +39,7 @@ import { createResampler } from "../sampling";
 
 export type CancellationOptions = {
   candidatesCount: Accessor<number>;
+  onCancel: (order: RestingOrder) => boolean;
 
   ageWeight: Accessor<number>;
   priceMovement: {
@@ -129,7 +130,7 @@ export const createCancellationState = (options: CancellationOptions) => {
     const items = restingOrders()[side];
     if (items.length === 0) return null;
     const index = Math.floor(Math.random() * items.length);
-    return { item: items[index], weight: 1 };
+    return { item: items[index], weight: 1 / items.length };
   };
 
   const ordersSampler = {
@@ -176,7 +177,7 @@ export const createCancellationState = (options: CancellationOptions) => {
   });
 
   const randomRestingOrder = (side: OrderSide): RestingOrder | null => {
-    return ordersSampler[side].sample()?.item ?? null;
+    return ordersSampler[side].sample();
   };
 
   const removeRestingOrder = (id: number) => {
@@ -191,7 +192,7 @@ export const createCancellationState = (options: CancellationOptions) => {
     if (!order) return false;
 
     removeRestingOrder(order.id);
-    return cancelOrder(order.id, order.side) !== null;
+    return options.onCancel(order);
   };
 
   const addOrder = (order: RestingOrder): void => {

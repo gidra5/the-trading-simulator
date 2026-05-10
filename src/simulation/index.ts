@@ -1,8 +1,6 @@
 import { createSignal } from "solid-js";
 import {
-  marketPriceSpread,
-  priceHistory,
-  querySideVolumeInPriceRange,
+  cancelOrder,
   takeOrder,
   type OrderSide,
 } from "../market/index";
@@ -46,6 +44,7 @@ export class TradingSimulation {
   };
   private cancellation = createCancellationState({
     candidatesCount: () => 64,
+    onCancel: (order) => cancelOrder(order.id, order.side) !== null,
 
     ageWeight: this.cancellationProbabilities.time[0],
     priceMovement: {

@@ -1,9 +1,43 @@
 import { expect, vi } from "vitest";
-import type { CancellationOptions, WeightedCancellationOrder } from "../src/simulation/cancellation";
+import type { CancellationOptions, createCancellationState } from "../src/simulation/cancellation";
+import type { OrderSide } from "../src/market";
 import type { MarketBehaviorSettings, RestingOrder, SimulationEventType } from "../src/simulation/types";
-import { sampleWeightedList } from "../src/sampling";
 
-type CancellationModule = typeof import("../src/simulation/cancellation");
+type CancellationState = ReturnType<typeof createCancellationState>;
+type PriceSpread = { buy: number; sell: number };
+type PriceHistoryEntry = {
+  revision: number;
+  timestamp: number;
+  spread: PriceSpread;
+};
+type CancellationSamplingContext = {
+  marketPriceSpread: () => PriceSpread;
+  oppositeSide: (side: OrderSide) => OrderSide;
+  priceHistory: () => PriceHistoryEntry[];
+  querySideVolumeInPriceRange: (side: OrderSide, minPrice: number, maxPrice: number, includeMax?: boolean) => number;
+  time: () => number;
+};
+
+type CancellationOrderFeatures = {
+  age: number;
+  distanceFromMid: number;
+  localVolume: number;
+  localVolumeWeight: number;
+  priceMovement: number;
+  priceMovementWeight: number;
+  cancellationPriceDistance: number;
+  farWeight: number;
+  isFar: boolean;
+};
+
+export type WeightedCancellationOrder = {
+  order: RestingOrder;
+  features: CancellationOrderFeatures;
+  weight: number;
+  index?: number;
+};
+
+export type CancellationProposal = "exact" | "age" | "uniform";
 
 export type SamplingFeatures = {
   averageAge: number;
@@ -37,6 +71,7 @@ export const seededRandom = (seed: number): (() => number) => {
 
 const createCancellationOptions = (
   settings: MarketBehaviorSettings,
+  onCancel: (order: RestingOrder) => boolean,
   weights = {
     age: 0.000_001,
     priceMovement: 0.5,
@@ -44,6 +79,8 @@ const createCancellationOptions = (
     farOrder: 0.5,
   },
 ): CancellationOptions => ({
+  candidatesCount: () => 64,
+  onCancel,
   ageWeight: () => weights.age,
   priceMovement: {
     weight: () => weights.priceMovement,
@@ -65,38 +102,377 @@ export const buildSamplingFixture = async (fixtureOptions: {
   seed?: number;
   ticks: number;
 }): Promise<{
-  cancellation: CancellationModule;
+  context: CancellationSamplingContext;
   options: CancellationOptions;
+  sampleStateCancellation: (side: OrderSide) => RestingOrder | null;
+  state: CancellationState;
   orders: RestingOrder[];
 }> => {
   vi.restoreAllMocks();
   vi.resetModules();
   vi.spyOn(Math, "random").mockImplementation(seededRandom(fixtureOptions.seed ?? 0x5eed));
+  let latestCanceledOrder: RestingOrder | null = null;
 
-  const [{ TradingSimulation }, cancellation, { advance }] = await Promise.all([
+  const [{ TradingSimulation }, cancellation, market, order, timeModule] = await Promise.all([
     import("../src/simulation/index"),
     import("../src/simulation/cancellation"),
+    import("../src/market"),
+    import("../src/market/order"),
     import("../src/simulation/time"),
   ]);
   const simulation = new TradingSimulation();
 
-  for (let tick = 0; tick < fixtureOptions.ticks; tick += 1) {
+  let orders: RestingOrder[] = [];
+  let tick = 0;
+  for (; tick < fixtureOptions.ticks; tick += 1) {
     simulation.tick(250);
   }
 
-  const settings = simulation.getMarketBehaviorSettings();
-  advance(settings.cancellationFarOrderMinAge + 1_000);
+  while (tick < fixtureOptions.ticks * 20) {
+    orders = sides.flatMap((side) => simulation.getCancellationRestingOrders(side));
+    if (
+      orders.length > 20 &&
+      orders.some((order) => order.side === "buy") &&
+      orders.some((order) => order.side === "sell")
+    ) {
+      break;
+    }
 
-  const orders = sides.flatMap((side) => simulation.getCancellationRestingOrders(side));
+    simulation.tick(250);
+    tick += 1;
+  }
+
+  const settings = simulation.getMarketBehaviorSettings();
+  timeModule.advance(settings.cancellationFarOrderMinAge + 1_000);
+
+  orders = sides.flatMap((side) => simulation.getCancellationRestingOrders(side));
   expect(orders.length).toBeGreaterThan(20);
   expect(orders.some((order) => order.side === "buy")).toBe(true);
   expect(orders.some((order) => order.side === "sell")).toBe(true);
 
+  const options = createCancellationOptions(settings, (order) => {
+    latestCanceledOrder = order;
+    return true;
+  });
+  const state = cancellation.createCancellationState(options);
+  for (const order of orders) {
+    state.addOrder(order);
+  }
+
+  const sampleStateCancellation = (side: OrderSide): RestingOrder | null => {
+    latestCanceledOrder = null;
+    state.simulate(side);
+    const order = latestCanceledOrder;
+    if (order) state.addOrder(order);
+    return order;
+  };
+
   return {
-    cancellation,
-    options: createCancellationOptions(settings),
+    context: {
+      marketPriceSpread: market.marketPriceSpread,
+      oppositeSide: order.oppositeSide,
+      priceHistory: market.priceHistory,
+      querySideVolumeInPriceRange: market.querySideVolumeInPriceRange,
+      time: timeModule.time,
+    },
+    options,
+    sampleStateCancellation,
+    state,
     orders,
   };
+};
+
+const getAllRestingOrders = (state: CancellationState): RestingOrder[] => [
+  ...state.getRestingOrders("buy"),
+  ...state.getRestingOrders("sell"),
+];
+
+const getOrderFeatures = (
+  order: RestingOrder,
+  options: CancellationOptions,
+  context: CancellationSamplingContext,
+): CancellationOrderFeatures => {
+  const spread = context.marketPriceSpread();
+  const volumePriceMin = order.side === "buy" ? order.price : spread.sell;
+  const volumePriceMax = order.side === "buy" ? spread.buy : order.price;
+  const localVolumeValue = context.querySideVolumeInPriceRange(order.side, volumePriceMin, volumePriceMax);
+  const localVolumeWeight = localVolumeValue;
+
+  const age = context.time() - order.createdAt;
+  const opposite = context.oppositeSide(order.side);
+
+  const priceMovementValue = (() => {
+    const history = context.priceHistory();
+    const latest = history[history.length - 1];
+    const prev = history[history.length - 2];
+    if (!prev || !latest) return 0;
+
+    const prevPrice = prev.spread[opposite];
+    const latestPrice = latest.spread[opposite];
+    if (!Number.isFinite(prevPrice) || !Number.isFinite(latestPrice)) return 0;
+
+    const sign = order.side === "buy" ? 1 : -1;
+    return Math.max(0, sign * (latestPrice - prevPrice));
+  })();
+
+  const priceMovementWeight = priceMovementValue * Math.exp(-age / options.priceMovement.recencyDecay());
+
+  const cancellationReferencePrice = spread[opposite];
+  const cancellationPriceDistance =
+    Number.isFinite(cancellationReferencePrice) && cancellationReferencePrice > 0
+      ? Math.abs(order.price - cancellationReferencePrice) / cancellationReferencePrice
+      : 0;
+
+  const farWeight = (() => {
+    if (age < options.farOrder.minAge()) return 0;
+
+    const excessDistance = cancellationPriceDistance - options.farOrder.window();
+    if (excessDistance <= 0) return 0;
+
+    return 1 - Math.exp(-excessDistance / options.farOrder.ramp());
+  })();
+
+  const midPrice = (spread.buy + spread.sell) / 2;
+  const distanceFromMid =
+    Number.isFinite(midPrice) && midPrice > 0 ? Math.abs(order.price - midPrice) / midPrice : 0;
+
+  return {
+    age,
+    distanceFromMid,
+    localVolume: localVolumeValue,
+    localVolumeWeight,
+    priceMovement: priceMovementValue,
+    priceMovementWeight,
+    cancellationPriceDistance,
+    farWeight,
+    isFar: farWeight > 0,
+  };
+};
+
+const getOrderWeight = (
+  order: RestingOrder,
+  options: CancellationOptions,
+  context: CancellationSamplingContext,
+): number => {
+  const features = getOrderFeatures(order, options, context);
+  const { ageWeight, priceMovement, localVolume, farOrder } = options;
+
+  let weight = 1;
+  weight += features.age * ageWeight();
+  weight += features.priceMovementWeight * priceMovement.weight();
+  weight += features.localVolumeWeight * localVolume.weight();
+  weight += features.farWeight * farOrder.weight();
+  return weight;
+};
+
+export const getWeightedCancellationOrders = (
+  state: CancellationState,
+  options: CancellationOptions,
+  context: CancellationSamplingContext,
+): WeightedCancellationOrder[] =>
+  getAllRestingOrders(state).map((order) => ({
+    order,
+    features: getOrderFeatures(order, options, context),
+    weight: getOrderWeight(order, options, context),
+  }));
+
+const getProposalWeight = (order: WeightedCancellationOrder, proposal: CancellationProposal): number => {
+  switch (proposal) {
+    case "exact":
+      return order.weight;
+    case "age":
+      return Math.max(order.features.age, Number.EPSILON);
+    case "uniform":
+      return 1;
+  }
+};
+
+export const getResampledApproximateWeightedCancellationOrders = (
+  state: CancellationState,
+  options: CancellationOptions,
+  context: CancellationSamplingContext,
+  {
+    candidateCount,
+    proposal = "age",
+    sampleCount,
+  }: {
+    candidateCount: number;
+    proposal?: CancellationProposal;
+    sampleCount: number;
+  },
+): {
+  orders: WeightedCancellationOrder[];
+  diagnostics: {
+    candidateCount: number;
+    sampleCount: number;
+    uniqueCandidateCount: number;
+    candidateCoverage: number;
+    effectiveSampleSize: number;
+    minWeightRatio: number;
+    maxWeightRatio: number;
+    weightRatioSpread: number;
+  };
+} => {
+  const preciseOrders = getWeightedCancellationOrders(state, options, context);
+  const proposalOrders = preciseOrders.map((order) => ({
+    ...order,
+    weight: getProposalWeight(order, proposal),
+  }));
+  const sampleProposalOrder = createWeightedSampler(proposalOrders);
+  const makeSampledCandidate = (candidate: WeightedCancellationOrder): WeightedCancellationOrder => ({
+    ...candidate,
+    weight: getOrderWeight(candidate.order, options, context) / Math.max(candidate.weight, Number.EPSILON),
+  });
+  const makeExhaustiveCandidate = (candidate: WeightedCancellationOrder): WeightedCancellationOrder => ({
+    ...candidate,
+    weight: getOrderWeight(candidate.order, options, context),
+  });
+  const candidates: WeightedCancellationOrder[] =
+    candidateCount >= proposalOrders.length ? proposalOrders.map(makeExhaustiveCandidate) : [];
+  const approximateOrders = new Map<number, WeightedCancellationOrder>();
+  const candidateIds = new Set<number>(candidates.map((candidate) => candidate.order.id));
+  let minWeightRatio = Infinity;
+  let maxWeightRatio = 0;
+  let effectiveSampleSizeTotal = 0;
+  let successfulCandidateSets = 0;
+
+  for (let sample = 0; sample < sampleCount; sample += 1) {
+    const sampleCandidates = [...candidates];
+
+    for (let index = sampleCandidates.length; index < candidateCount; index += 1) {
+      const candidate = sampleProposalOrder();
+      if (!candidate) break;
+
+      sampleCandidates.push(makeSampledCandidate(candidate));
+    }
+
+    for (const candidate of sampleCandidates) {
+      candidateIds.add(candidate.order.id);
+      if (Number.isFinite(candidate.weight) && candidate.weight > 0) {
+        minWeightRatio = Math.min(minWeightRatio, candidate.weight);
+        maxWeightRatio = Math.max(maxWeightRatio, candidate.weight);
+      }
+    }
+
+    const weightTotal = sampleCandidates.reduce((total, candidate) => total + candidate.weight, 0);
+    const squaredWeightTotal = sampleCandidates.reduce((total, candidate) => total + candidate.weight ** 2, 0);
+    if (squaredWeightTotal > 0) {
+      effectiveSampleSizeTotal += weightTotal ** 2 / squaredWeightTotal;
+      successfulCandidateSets += 1;
+    }
+
+    const selected = sampleWeightedList(sampleCandidates);
+    if (!selected) continue;
+
+    const existing = approximateOrders.get(selected.order.id);
+    if (existing) {
+      existing.weight += 1;
+      continue;
+    }
+
+    approximateOrders.set(selected.order.id, { ...selected, weight: 1 });
+  }
+
+  const uniqueCandidateCount = candidateIds.size;
+  if (!Number.isFinite(minWeightRatio)) minWeightRatio = 0;
+
+  return {
+    orders: [...approximateOrders.values()],
+    diagnostics: {
+      candidateCount,
+      sampleCount,
+      uniqueCandidateCount,
+      candidateCoverage: preciseOrders.length > 0 ? uniqueCandidateCount / preciseOrders.length : 0,
+      effectiveSampleSize: successfulCandidateSets > 0 ? effectiveSampleSizeTotal / successfulCandidateSets : 0,
+      minWeightRatio,
+      maxWeightRatio,
+      weightRatioSpread: minWeightRatio > 0 ? maxWeightRatio / minWeightRatio : 0,
+    },
+  };
+};
+
+export const getSideStratifiedResampledCancellationOrders = (
+  preciseOrders: WeightedCancellationOrder[],
+  {
+    candidateCount,
+    sampleCount,
+  }: {
+    candidateCount: number;
+    sampleCount: number;
+  },
+): WeightedCancellationOrder[] => {
+  const preciseBySide = {
+    buy: preciseOrders.filter((order) => order.order.side === "buy"),
+    sell: preciseOrders.filter((order) => order.order.side === "sell"),
+  };
+  const sideWeights = {
+    buy: totalWeight(preciseBySide.buy),
+    sell: totalWeight(preciseBySide.sell),
+  };
+  const sideTotal = sideWeights.buy + sideWeights.sell;
+  const proposalSamplers = {
+    buy: createUniformSampler(preciseBySide.buy),
+    sell: createUniformSampler(preciseBySide.sell),
+  };
+  const samples = new Map<number, WeightedCancellationOrder>();
+
+  for (let sample = 0; sample < sampleCount; sample += 1) {
+    const side = Math.random() * sideTotal < sideWeights.buy ? "buy" : "sell";
+    const candidates: WeightedCancellationOrder[] = [];
+
+    for (let index = 0; index < candidateCount; index += 1) {
+      const candidate = proposalSamplers[side]();
+      if (!candidate) break;
+
+      candidates.push(candidate);
+    }
+
+    const selected = sampleWeightedList(candidates);
+    if (!selected) continue;
+
+    const existing = samples.get(selected.order.id);
+    if (existing) {
+      existing.weight += 1;
+      continue;
+    }
+
+    samples.set(selected.order.id, { ...selected, weight: 1 });
+  }
+
+  return [...samples.values()];
+};
+
+export const empiricalStateCancellationWeights = (
+  preciseOrders: WeightedCancellationOrder[],
+  sampleCount: number,
+  sampleStateCancellation: (side: OrderSide) => RestingOrder | null,
+): WeightedCancellationOrder[] => {
+  const preciseById = new Map(preciseOrders.map((order) => [order.order.id, order]));
+  const sideWeights = {
+    buy: totalWeight(preciseOrders.filter((order) => order.order.side === "buy")),
+    sell: totalWeight(preciseOrders.filter((order) => order.order.side === "sell")),
+  };
+  const sideTotal = sideWeights.buy + sideWeights.sell;
+  const samples = new Map<number, WeightedCancellationOrder>();
+
+  for (let sample = 0; sample < sampleCount; sample += 1) {
+    const side = Math.random() * sideTotal < sideWeights.buy ? "buy" : "sell";
+    const selectedOrder = sampleStateCancellation(side);
+    if (!selectedOrder) continue;
+
+    const precise = preciseById.get(selectedOrder.id);
+    if (!precise) continue;
+
+    const existing = samples.get(selectedOrder.id);
+    if (existing) {
+      existing.weight += 1;
+      continue;
+    }
+
+    samples.set(selectedOrder.id, { ...precise, weight: 1 });
+  }
+
+  return [...samples.values()];
 };
 
 export const totalWeight = (orders: WeightedCancellationOrder[]): number =>
@@ -229,9 +605,10 @@ export const empiricalSampleWeights = (
   sampleCount: number,
 ): WeightedCancellationOrder[] => {
   const samples = new Map<number, WeightedCancellationOrder>();
+  const sampleOrder = createWeightedSampler(orders);
 
   for (let sample = 0; sample < sampleCount; sample += 1) {
-    const selected = sampleWeightedList(orders);
+    const selected = sampleOrder();
     if (!selected) continue;
 
     const existing = samples.get(selected.order.id);
@@ -245,4 +622,59 @@ export const empiricalSampleWeights = (
   }
 
   return [...samples.values()];
+};
+
+const createWeightedSampler = <T extends { weight: number }>(orders: T[]): (() => T | null) => {
+  const cumulativeWeights: number[] = [];
+  let total = 0;
+
+  for (const order of orders) {
+    if (!Number.isFinite(order.weight) || order.weight <= 0) {
+      cumulativeWeights.push(total);
+      continue;
+    }
+
+    total += order.weight;
+    cumulativeWeights.push(total);
+  }
+
+  return () => {
+    if (!Number.isFinite(total) || total <= 0) return null;
+
+    const target = Math.random() * total;
+    let left = 0;
+    let right = cumulativeWeights.length;
+
+    while (left < right) {
+      const mid = Math.floor((left + right) / 2);
+
+      if (cumulativeWeights[mid]! <= target) left = mid + 1;
+      else right = mid;
+    }
+
+    return orders[left] ?? null;
+  };
+};
+
+const createUniformSampler = <T>(items: T[]): (() => T | null) => {
+  return () => {
+    if (items.length === 0) return null;
+
+    return items[Math.floor(Math.random() * items.length)] ?? null;
+  };
+};
+
+const sampleWeightedList = (orders: WeightedCancellationOrder[]): WeightedCancellationOrder | null => {
+  const total = totalWeight(orders);
+  if (!Number.isFinite(total) || total <= 0) return null;
+
+  const target = Math.random() * total;
+  let cumulative = 0;
+
+  for (const order of orders) {
+    cumulative += order.weight;
+    if (cumulative > target) return order;
+  }
+
+  return orders[orders.length - 1] ?? null;
 };

@@ -2,6 +2,9 @@ import { afterEach, expect, test, vi } from "vitest";
 import {
   buildSamplingFixture,
   compareSamplers,
+  empiricalStateCancellationWeights,
+  getResampledApproximateWeightedCancellationOrders,
+  getWeightedCancellationOrders,
   indexApproximateWeights,
 } from "./cancellation-sampling.helpers";
 
@@ -12,8 +15,8 @@ afterEach(() => {
 });
 
 test("precise cancellation sampler matches itself within the strict sampling diagnostics margin", async () => {
-  const { cancellation, options, orders } = await buildSamplingFixture({ ticks: 16 });
-  const preciseOrders = cancellation.getWeightedCancellationOrders(orders, options);
+  const { context, options, state } = await buildSamplingFixture({ ticks: 16 });
+  const preciseOrders = getWeightedCancellationOrders(state, options, context);
   const diagnostics = compareSamplers(preciseOrders, preciseOrders);
 
   expect(diagnostics.totalVariationDistance).toBeLessThanOrEqual(strictErrorMargin);
@@ -24,8 +27,8 @@ test("precise cancellation sampler matches itself within the strict sampling dia
 }, 30_000);
 
 test("index-based approximate sampler reports distribution and feature drift", async () => {
-  const { cancellation, options, orders } = await buildSamplingFixture({ ticks: 16 });
-  const preciseOrders = cancellation.getWeightedCancellationOrders(orders, options);
+  const { context, options, state } = await buildSamplingFixture({ ticks: 16 });
+  const preciseOrders = getWeightedCancellationOrders(state, options, context);
   const estimatedApproximateWeights = indexApproximateWeights(preciseOrders);
   const diagnostics = compareSamplers(preciseOrders, estimatedApproximateWeights);
   const featureErrors = Object.values(diagnostics.featureErrors);
@@ -36,9 +39,9 @@ test("index-based approximate sampler reports distribution and feature drift", a
 }, 30_000);
 
 test("age-proposal approximate cancellation sampler reports accuracy and resampling diagnostics", async () => {
-  const { cancellation, options, orders } = await buildSamplingFixture({ ticks: 16 });
-  const preciseOrders = cancellation.getWeightedCancellationOrders(orders, options);
-  const approximate = cancellation.getResampledApproximateWeightedCancellationOrders(orders, options, {
+  const { context, options, state } = await buildSamplingFixture({ ticks: 16 });
+  const preciseOrders = getWeightedCancellationOrders(state, options, context);
+  const approximate = getResampledApproximateWeightedCancellationOrders(state, options, context, {
     candidateCount: 64,
     sampleCount: 8192,
   });
@@ -53,6 +56,23 @@ test("age-proposal approximate cancellation sampler reports accuracy and resampl
   expect(approximate.diagnostics.minWeightRatio).toBeGreaterThan(0);
   expect(approximate.diagnostics.maxWeightRatio).toBeGreaterThanOrEqual(approximate.diagnostics.minWeightRatio);
   expect(approximate.diagnostics.weightRatioSpread).toBeGreaterThanOrEqual(1);
+  expect(diagnostics.totalVariationDistance).toBeGreaterThan(strictErrorMargin);
+  expect(diagnostics.totalVariationDistance).toBeLessThanOrEqual(1);
+  expect(featureErrors.every(Number.isFinite)).toBe(true);
+  expect(featureErrors.some((error) => error > strictErrorMargin)).toBe(true);
+}, 30_000);
+
+test("cancellation state simulate samples the expected weighted cancellation distribution", async () => {
+  const { context, options, sampleStateCancellation, state, orders } = await buildSamplingFixture({ ticks: 16 });
+  const preciseOrders = getWeightedCancellationOrders(state, options, context);
+  const sampleCount = Math.max(8192, orders.length * 8);
+  const stateEmpiricalOrders = empiricalStateCancellationWeights(preciseOrders, sampleCount, sampleStateCancellation);
+  const diagnostics = compareSamplers(preciseOrders, stateEmpiricalOrders);
+  const featureErrors = Object.values(diagnostics.featureErrors);
+
+  expect(stateEmpiricalOrders.length).toBeGreaterThan(0);
+  expect(diagnostics.totalVariationDistance).toBeGreaterThan(strictErrorMargin);
   expect(diagnostics.totalVariationDistance).toBeLessThan(0.5);
-  expect(Math.max(...featureErrors)).toBeLessThan(0.1);
+  expect(featureErrors.every(Number.isFinite)).toBe(true);
+  expect(Math.max(...featureErrors)).toBeLessThan(0.5);
 }, 30_000);

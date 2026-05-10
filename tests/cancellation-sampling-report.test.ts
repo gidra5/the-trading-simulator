@@ -2,10 +2,14 @@ import { afterEach, test, vi } from "vitest";
 import {
   buildSamplingFixture,
   compareSamplers,
+  empiricalStateCancellationWeights,
   empiricalSampleWeights,
+  getResampledApproximateWeightedCancellationOrders,
+  getSideStratifiedResampledCancellationOrders,
+  getWeightedCancellationOrders,
   totalWeight,
+  type WeightedCancellationOrder,
 } from "./cancellation-sampling.helpers";
-import type { WeightedCancellationOrder } from "../src/simulation/cancellation";
 
 type ComparisonRow = {
   comparison: string;
@@ -384,9 +388,9 @@ afterEach(() => {
 
 test("print cancellation sampling comparison measurements", { timeout: 120_000 }, async () => {
   const iterations = 4;
-  const samplesPerOrder = 2;
+  const samplesPerOrder = 8;
   const candidateCount = 64;
-  const ticks = 128;
+  const ticks = 32;
   const rows: NumericComparisonRow[] = [];
   const orderCounts: number[] = [];
   const targetWeightSpreads: number[] = [];
@@ -394,8 +398,11 @@ test("print cancellation sampling comparison measurements", { timeout: 120_000 }
   const preciseOrderRuns: WeightedCancellationOrder[][] = [];
 
   for (let iteration = 0; iteration < iterations; iteration += 1) {
-    const { cancellation, options, orders } = await buildSamplingFixture({ seed: 0x5eed + iteration, ticks });
-    const preciseOrders = cancellation.getWeightedCancellationOrders(orders, options);
+    const { context, options, sampleStateCancellation, state, orders } = await buildSamplingFixture({
+      seed: 0x5eed + iteration,
+      ticks,
+    });
+    const preciseOrders = getWeightedCancellationOrders(state, options, context);
     firstPreciseOrders ??= preciseOrders;
     preciseOrderRuns.push(preciseOrders);
     const empiricalSampleCount = samplesPerOrder * orders.length;
@@ -416,7 +423,7 @@ test("print cancellation sampling comparison measurements", { timeout: 120_000 }
     );
 
     for (const proposal of ["exact", "age", "uniform"] as const) {
-      const approximate = cancellation.getResampledApproximateWeightedCancellationOrders(orders, options, {
+      const approximate = getResampledApproximateWeightedCancellationOrders(state, options, context, {
         candidateCount,
         proposal,
         sampleCount: empiricalSampleCount,
@@ -431,6 +438,35 @@ test("print cancellation sampling comparison measurements", { timeout: 120_000 }
         ),
       );
     }
+
+    const sideStratifiedOrders = getSideStratifiedResampledCancellationOrders(preciseOrders, {
+      candidateCount,
+      sampleCount: empiricalSampleCount,
+    });
+    rows.push(
+      makeComparisonRow("side-stratified uniform", preciseOrders, sideStratifiedOrders, baselineTvd, {
+        candidateCount,
+        uniqueCandidateCount: sideStratifiedOrders.length,
+        candidateCoverage: Number.NaN,
+        effectiveSampleSize: sideStratifiedOrders.length,
+        weightRatioSpread: getSpread(preciseOrders.map((order) => order.weight)),
+      }),
+    );
+
+    const stateEmpiricalOrders = empiricalStateCancellationWeights(
+      preciseOrders,
+      empiricalSampleCount,
+      sampleStateCancellation,
+    );
+    rows.push(
+      makeComparisonRow("state simulate", preciseOrders, stateEmpiricalOrders, baselineTvd, {
+        candidateCount,
+        uniqueCandidateCount: stateEmpiricalOrders.length,
+        candidateCoverage: Number.NaN,
+        effectiveSampleSize: stateEmpiricalOrders.length,
+        weightRatioSpread: getSpread(preciseOrders.map((order) => order.weight)),
+      }),
+    );
   }
 
   console.log(
