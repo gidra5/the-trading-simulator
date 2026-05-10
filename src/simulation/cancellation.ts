@@ -602,18 +602,10 @@ export const createCancellationState = (options: CancellationOptions) => {
   };
 
   const getRestingOrders = (side: OrderSide): RestingOrder[] => [...restingOrders()[side]];
-  const getAllRestingOrders = (): RestingOrders => ({
-    buy: getRestingOrders("buy"),
-    sell: getRestingOrders("sell"),
-  });
-  const getWeightedRestingOrders = (side: OrderSide): WeightedCancellationOrder[] =>
-    getWeightedCancellationOrders(restingOrders()[side], options);
 
   return {
     simulate,
     addOrder,
-    getAllRestingOrders,
     getRestingOrders,
-    getWeightedRestingOrders,
   };
 };

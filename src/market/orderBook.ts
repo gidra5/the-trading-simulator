@@ -1,32 +1,32 @@
 import { Accessor, createMemo, createSignal } from "solid-js";
 import { assert } from "../utils";
-import { cloneOrder, compareOrders, type OrderSide, type RegisteredOrder } from "./order";
+import { cloneOrder, compareOrders, type OrderSide, type RestingOrder } from "./order";
 import { time } from "../simulation/time";
 
 export type OrderBook = {
   // sorted by price and then id
   // since id is unique and sequential, it is also a queue order
-  buy: RegisteredOrder[];
-  sell: RegisteredOrder[];
+  buy: RestingOrder[];
+  sell: RestingOrder[];
 };
 
 export type OrderBookAddChange = {
   kind: "add";
   side: OrderSide;
-  order: RegisteredOrder;
+  order: RestingOrder;
 };
 
 export type OrderBookRemoveChange = {
   kind: "remove";
   side: OrderSide;
-  order: RegisteredOrder;
+  order: RestingOrder;
 };
 
 export type OrderBookPartialFillChange = {
   kind: "partial-fill";
   side: OrderSide;
   prevSize: number;
-  order: RegisteredOrder;
+  order: RestingOrder;
 };
 
 export type OrderBookChange = OrderBookAddChange | OrderBookRemoveChange | OrderBookPartialFillChange;
@@ -58,7 +58,7 @@ export type OrderBookDeltaSnapshotEntry = {
 };
 
 // todo: only deltas, move snapshots into acc structure
-type OrderBookHistoryEntry = OrderBookSnapshotEntry | OrderBookDeltaEntry;
+export type OrderBookHistoryEntry = OrderBookSnapshotEntry | OrderBookDeltaEntry;
 export type OrderBookMapEntry = OrderBookSnapshotEntry | OrderBookDeltaSnapshotEntry;
 type OrderBookHistory = OrderBookHistoryEntry[];
 type OrderBookMap = OrderBookMapEntry[];
@@ -117,7 +117,7 @@ export const cloneOrderBookFrom = (source: OrderBook): OrderBook => {
   };
 };
 
-const findOrderIndex = (orders: RegisteredOrder[], side: OrderSide, order: RegisteredOrder): number => {
+const findOrderIndex = (orders: RestingOrder[], side: OrderSide, order: RestingOrder): number => {
   let low = 0;
   let high = orders.length;
 

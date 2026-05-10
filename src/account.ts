@@ -1,5 +1,5 @@
 import { createEffect, createSignal, untrack, type Accessor } from "solid-js";
-import { cancelOrder, makeOrder, marketPriceSpread, orderBookHistory, takeOrder, type OrderSide } from "./market";
+import { cancelOrder, makeOrder, marketPriceSpread, subscribeToOrder, takeOrder, type OrderSide } from "./market";
 import { dt, time } from "./simulation/time";
 
 let nextAccountId = 0;
@@ -63,7 +63,6 @@ export const createAccountState = (options: AccountStateOptions) => {
     Stock: 0,
   });
   const [activeOrders, setActiveOrders] = createSignal<PendingOrder[]>([]);
-  const cancelledOrderIds = new Set<number>();
   let isLiquidating = false;
 
   const owned = () => ({
@@ -93,43 +92,11 @@ export const createAccountState = (options: AccountStateOptions) => {
   const applyFill = (side: OrderSide, fulfilled: number, cost: number): void => {
     if (fulfilled <= 0) return;
 
-    if (side === "buy") {
-      updatePortfolio(fulfilled * (1 - options.feeRate()), -cost);
-    } else {
-      updatePortfolio(-fulfilled, cost * (1 - options.feeRate()));
-    }
-  };
-
-  const onFulfilled = (pending: PendingOrder, cost: number): void => {
-    setActiveOrders((current) => current.filter((order) => order.id !== pending.id));
-    applyFill(pending.side, pending.size, cost);
-    orderHistory.filled({
-      orderId: pending.id,
-      side: pending.side,
-      size: pending.size,
-      price: cost / pending.size,
-      cost,
-    });
-  };
-
-  const onPartialFill = (pending: PendingOrder, nextSize: number, cost: number): void => {
-    const fulfilled = pending.size - nextSize;
-    applyFill(pending.side, fulfilled, cost);
-    orderHistory.partialFill({
-      orderId: pending.id,
-      side: pending.side,
-      size: fulfilled,
-      price: cost / fulfilled,
-      cost,
-    });
-
-    setActiveOrders((current) =>
-      current.map((order) => (order.id === pending.id ? { ...order, size: nextSize } : order)),
-    );
+    if (side === "buy") updatePortfolio(fulfilled * (1 - options.feeRate()), -cost);
+    else updatePortfolio(-fulfilled, cost * (1 - options.feeRate()));
   };
 
   const cancelActiveOrder = (order: PendingOrder): void => {
-    cancelledOrderIds.add(order.id);
     cancelOrder(order.id, order.side);
     setActiveOrders((current) => current.filter((pending) => pending.id !== order.id));
     orderHistory.canceled({
@@ -162,53 +129,67 @@ export const createAccountState = (options: AccountStateOptions) => {
     const result = makeOrder(side, { price, size });
 
     applyFill(side, result.fulfilled, result.cost);
-    orderHistory.submitted({
-      orderId: result.id,
-      side,
-      size,
-      price,
-    });
+    orderHistory.submitted({ orderId: result.order.id, side, size, price });
     if (result.fulfilled > 0) {
       const entry = {
-        orderId: result.id,
+        orderId: result.order.id,
         side,
         size: result.fulfilled,
         price: result.cost / result.fulfilled,
         cost: result.cost,
       };
-      if (result.restingSize > 0) orderHistory.partialFill(entry);
+      if (result.order.size > 0) orderHistory.partialFill(entry);
       else orderHistory.filled(entry);
     }
-    if (result.restingSize > 0) {
-      setActiveOrders((current) => [
-        ...current,
-        { id: result.id, side, price, initialSize: size, size: result.restingSize, createdAt: time() },
-      ]);
-    }
-  };
+    if (result.order.size === 0) return;
 
-  createEffect(() => {
-    const history = orderBookHistory();
-    const latest = history[history.length - 1];
-    if (!latest) return;
-    if (latest.kind !== "delta") return;
-
-    untrack(() => {
-      for (const change of latest.changes) {
-        if (change.kind === "add") continue;
-
-        const pending = activeOrders().find((order) => order.id === change.order.id);
-        if (!pending) continue;
-
-        if (cancelledOrderIds.delete(pending.id)) continue;
-
-        const filled = change.kind === "remove" ? change.order.size : pending.size - change.order.size;
-        const cost = filled * change.order.price;
-        if (change.kind === "remove") onFulfilled(pending, cost);
-        else onPartialFill(pending, change.order.size, cost);
+    subscribeToOrder(result.order.id, (change) => {
+      if (change.kind === "add") {
+        const order = {
+          id: result.order.id,
+          side,
+          price,
+          initialSize: size,
+          size: result.order.size,
+          createdAt: time(),
+        };
+        setActiveOrders((current) => [...current, order]);
+        return;
       }
+
+      const pending = activeOrders().find((order) => order.id === change.order.id);
+      if (!pending) return;
+      if (change.kind === "remove") {
+        const filled = change.order.size;
+        const cost = filled * change.order.price;
+        setActiveOrders((current) => current.filter((order) => order.id !== change.order.id));
+        applyFill(change.side, change.order.size, cost);
+        orderHistory.filled({
+          orderId: change.order.id,
+          side: change.side,
+          size: change.order.size,
+          price: change.order.price,
+          cost,
+        });
+        return;
+      }
+
+      const filled = change.prevSize - change.order.size;
+      const cost = filled * change.order.price;
+      applyFill(pending.side, filled, cost);
+      orderHistory.partialFill({
+        orderId: change.order.id,
+        side: change.side,
+        size: filled,
+        price: change.order.price,
+        cost,
+      });
+
+      setActiveOrders((current) =>
+        current.map((order) => (order.id === pending.id ? { ...order, size: change.order.size } : order)),
+      );
     });
-  });
+  };
 
   createEffect(() => {
     const capitalizeDebt = (): void => {

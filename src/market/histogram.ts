@@ -1,5 +1,5 @@
 import { Accessor, createMemo } from "solid-js";
-import { OrderSide, RegisteredOrder } from "./order";
+import { OrderSide, RestingOrder } from "./order";
 import { OrderBookChangeset } from "./orderBook";
 import { inRange } from "../utils";
 
@@ -32,7 +32,7 @@ type TreeState = {
     }
   | {
       kind: "leaf";
-      value: Array<RegisteredOrder>; // single price point inside the range
+      value: Array<RestingOrder>; // single price point inside the range
     }
 );
 
@@ -73,7 +73,7 @@ const canSplit = (state: TreeState, depth: number): boolean => {
   return true;
 };
 
-const insertOrder = (state: TreeState, order: RegisteredOrder, depth = 0): boolean => {
+const insertOrder = (state: TreeState, order: RestingOrder, depth = 0): boolean => {
   const logPrice = getLogPrice(order.price);
   if (!inRange(logPrice, state.minLogPrice, state.maxLogPrice)) return false;
 
@@ -148,7 +148,7 @@ const removeOrder = (state: TreeState, logPrice: number, id: number): boolean =>
   return removed;
 };
 
-const partialFillOrder = (state: TreeState, logPrice: number, id: number, order: RegisteredOrder): number => {
+const partialFillOrder = (state: TreeState, logPrice: number, id: number, order: RestingOrder): number => {
   if (logPrice < state.minLogPrice || logPrice >= state.maxLogPrice) {
     return 0;
   }

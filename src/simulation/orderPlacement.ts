@@ -51,10 +51,10 @@ export class SimulationOrderPlacement {
 
     // TODO: simulate initial interest
     const price = this.applyOrderPricePsychology(side, this.sampleMakerOrderPrice(side));
-    const order = makeOrder(side, { price, size });
+    const result = makeOrder(side, { price, size });
 
-    return order.restingSize > 0
-      ? { id: order.id, side, price, size: order.restingSize, createdAt: time() }
+    return result.order.size > 0
+      ? { id: result.order.id, side, price, size: result.order.size, createdAt: time() }
       : null;
   }
 

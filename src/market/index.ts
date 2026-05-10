@@ -1,21 +1,21 @@
 import { createRoot, createSignal } from "solid-js";
 import {
   cloneOrder,
+  createOrderSubscriptionState,
   oppositeSide,
   type MakeOrderResult,
   type Order,
   type OrderSide,
-  type RegisteredOrder,
+  type RestingOrder,
 } from "./order";
 import {
   createOrderBook,
-  type OrderBookChange,
   type OrderBookHeatmapEntry,
   type OrderBookHeatmapRegion,
   type PriceHistoryEntry,
+  type OrderBookChange,
 } from "./orderBook";
 import { createHistogramState } from "./histogram";
-import { time } from "../simulation/time";
 
 export type { MakeOrderResult, OrderSide } from "./order";
 export type {
@@ -50,6 +50,7 @@ const {
   appendChange,
   reconstructRegionStream,
   reconstruct,
+  subscribeToOrder,
 
   priceHistory,
   marketPriceSpread,
@@ -66,10 +67,21 @@ const {
     { kind: "add", side: "sell", order: { id: -3, price: 1.001, size: 1e4 } },
   ]);
 
-  return { ...orderBook, deltaSnapshotInterval, setDeltaSnapshotInterval, fanout, setFanout, levels, setLevels };
+  const { subscribeToOrder } = createOrderSubscriptionState(latestOrderBookChange);
+  return {
+    ...orderBook,
+    subscribeToOrder,
+    deltaSnapshotInterval,
+    setDeltaSnapshotInterval,
+    fanout,
+    setFanout,
+    levels,
+    setLevels,
+  };
 });
 
 export {
+  subscribeToOrder,
   priceHistory,
   latestOrderBookChange,
   orderBookHistory,
@@ -148,7 +160,7 @@ export const getOrderBookRegion = (region: OrderBookHeatmapRegion): OrderBookHea
   reconstructRegionStream(region.timestamp, (orderBook, timestamp) => {
     const x = Math.floor((timestamp - region.timestamp[0]) / cellSize[0]);
 
-    const h = (order: RegisteredOrder) => {
+    const h = (order: RestingOrder) => {
       if (order.price < region.price[0] || order.price > region.price[1]) return;
 
       const y = Math.floor((order.price - region.price[0]) / cellSize[1]);
@@ -175,7 +187,6 @@ export const { getOrderBookHistogram, getOrderBookHistogramSeries, querySideVolu
     priceReference: () => 1,
   }),
 );
-
 
 // todo: candle acceleration structure
 // create a hierarchy of candles in powers of two
@@ -242,19 +253,17 @@ export const hasOrder = (id: number, side?: OrderSide): boolean => findOrderLoca
 // todo: economic simulation
 export const makeOrder = (side: OrderSide, order: Order): MakeOrderResult => {
   const id = nextOrderId++;
-  const orderWithId = { ...order, id };
   const result = takeOrder(side, order.size, order.price);
-  const restingSize = order.size - result.fulfilled;
+  const resting: RestingOrder = { ...order, id, size: order.size - result.fulfilled };
 
-  if (restingSize === 0) {
-    return { id, fulfilled: result.fulfilled, cost: result.cost, restingSize };
+
+  if (resting.size === 0) {
+    return { fulfilled: result.fulfilled, cost: result.cost, order: resting };
   }
 
-  orderWithId.size = restingSize;
+  appendChange([{ kind: "add", side, order: resting }]);
 
-  appendChange([{ kind: "add", side, order: orderWithId }]);
-
-  return { id, fulfilled: result.fulfilled, cost: result.cost, restingSize };
+  return { fulfilled: result.fulfilled, cost: result.cost, order: resting };
 };
 
 export const takeOrder = (
@@ -319,7 +328,7 @@ export const takeOrder = (
   return { id, fulfilled, cost };
 };
 
-export const cancelOrder = (id: number, side?: OrderSide): RegisteredOrder | null => {
+export const cancelOrder = (id: number, side?: OrderSide): RestingOrder | null => {
   const location = findOrderLocation(id, side);
 
   if (!location) return null;
