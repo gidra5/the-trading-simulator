@@ -67,7 +67,7 @@ const {
     { kind: "add", side: "sell", order: { id: -3, price: 1.001, size: 1e4 } },
   ]);
 
-  const { subscribeToOrder } = createOrderSubscriptionState(latestOrderBookChange);
+  const { subscribeToOrder } = createOrderSubscriptionState(orderBook.latestOrderBookChange);
   return {
     ...orderBook,
     subscribeToOrder,

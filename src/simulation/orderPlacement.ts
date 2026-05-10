@@ -21,7 +21,6 @@ import { time } from "./time";
 
 export class SimulationOrderPlacement {
   private priceAnchorIntervals = [60_000, 600_000, 1_800_000, 3_600_000] as const;
-  private inSpreadReach = -0.1;
   private priceAnchorWindows: PriceAnchorWindow[] = this.priceAnchorIntervals.map((durationMs) => ({
     durationMs,
     highTimes: [],
@@ -124,29 +123,40 @@ export class SimulationOrderPlacement {
     }
   }
 
-  private sampleInSpreadOrderPrice(spread: PriceSpread, side: OrderSide): number | null {
+  private sampleInSpreadOrderPrice(spread: PriceSpread, side: OrderSide): number {
     const bestBid = spread.sell;
     const bestAsk = spread.buy;
 
-    if (!Number.isFinite(bestBid) || !Number.isFinite(bestAsk) || bestBid <= 0 || bestAsk <= bestBid) return null;
-
-    const padding = (bestAsk - bestBid) * this.inSpreadReach;
+    const settings = this.getSettings();
+    const padding = (bestAsk - bestBid) * settings.inSpreadReach;
     const minPrice = side === "buy" ? bestBid + padding : bestBid;
     const maxPrice = side === "buy" ? bestAsk : bestAsk - padding;
 
     return sampleUniform(minPrice, maxPrice);
   }
 
+  private sampleNearOrderPrice(spread: PriceSpread, side: OrderSide): number {
+    const bestBid = spread.sell;
+    const bestAsk = spread.buy;
+    const midPrice = (bestAsk + bestBid) / 2;
+
+    const settings = this.getSettings();
+    const padding = midPrice * settings.nearSpreadSize;
+    const minPrice = side === "buy" ? bestBid + padding : bestAsk;
+    const maxPrice = side === "buy" ? bestBid : bestAsk - padding;
+
+    return sampleUniform(minPrice, maxPrice);
+  }
+
   private sampleMakerOrderPrice(side: OrderSide): number {
     const settings = this.getSettings();
-    const spread = marketPriceSpread();
+    let spread = marketPriceSpread();
+    spread = { buy: spread.buy * (1 - settings.nearSpreadSize), sell: spread.sell * (1 + settings.nearSpreadSize) };
     const spreadSize = spread.buy - spread.sell;
     const rate = 10 ** settings.inSpreadOrderProbability;
     const inSpreadProb = 2 * sigmoid(spreadSize * rate) - 1;
-    const inSpreadPrice = sampleBernoulli(inSpreadProb) ? this.sampleInSpreadOrderPrice(spread, side) : null;
-
-    if (inSpreadPrice !== null) return inSpreadPrice;
-
+    if (sampleBernoulli(inSpreadProb)) return this.sampleInSpreadOrderPrice(spread, side);
+    if (sampleBernoulli(settings.nearSpreadProbability)) return this.sampleNearOrderPrice(spread, side);
     const bestPrice = spread[side];
     const jitter = this.sampleOrderDistance(
       this.getOrderPriceDistribution(),

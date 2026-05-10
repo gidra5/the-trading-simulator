@@ -1,21 +1,40 @@
-import { sampleUniform } from "./distributions";
+import { createEffect, type Accessor } from "solid-js";
 
-export type WeightedListItem = {
-  weight: number;
+type ResamplerOptions<T> = {
+  candidateCount: Accessor<number>;
+  proposalSample: () => { item: T; weight: number } | null;
+  weight: (item: T) => number;
 };
 
-export const sampleWeightedList = <Item extends WeightedListItem>(items: readonly Item[]): Item | null => {
-  const totalWeight = items.reduce((total, item) => total + item.weight, 0);
+export const createResampler = <T>(options: ResamplerOptions<T>) => {
+  const candidates: { item: T; weight: number; cumulativeWeight: number }[] = [];
+  let totalWeight = 0;
 
-  if (totalWeight <= 0) return null;
+  createEffect(() => {
+    while (candidates.length < options.candidateCount()) {
+      const proposal = options.proposalSample();
+      if (!proposal) break;
+      const weight = options.weight(proposal.item) / proposal.weight;
+      totalWeight += weight;
+      // todo: binary tree array with cumulative weight as sum of cumulative weights of children
+      candidates.push({ item: proposal.item, weight, cumulativeWeight: totalWeight });
+    }
+  });
 
-  let targetWeight = sampleUniform(0, totalWeight);
+  return {
+    sample: () => {
+      const targetWeight = Math.random() * totalWeight;
+      let left = 0;
+      let right = candidates.length;
 
-  for (const item of items) {
-    targetWeight -= item.weight;
+      while (left < right) {
+        const mid = Math.floor((left + right) / 2);
 
-    if (targetWeight <= 0) return item;
-  }
+        if (candidates[mid]!.cumulativeWeight <= targetWeight) left = mid + 1;
+        else right = mid;
+      }
 
-  return null;
+      return candidates[left];
+    },
+  };
 };

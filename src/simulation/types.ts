@@ -41,6 +41,9 @@ export type MarketBehaviorSettings = {
   orderSpread: number;
   orderPriceTail: number;
   inSpreadOrderProbability: number;
+  inSpreadReach: number;
+  nearSpreadProbability: number;
+  nearSpreadSize: number;
   orderSizeScale: number;
   orderSizeTail: number;
   anchorPreference: number;
@@ -102,7 +105,7 @@ export const normalizeExcitationMatrix = (
 export const defaultMarketBehaviorSettings: MarketBehaviorSettings = {
   publicInterestRate: 200, // total event rate per second before self-excitation
   patience: 0.9, // probability of placing an order instead of canceling
-  greed: 0.3, // market order prob
+  greed: 0.4, // market order prob
   fear: 0.5, // sell order prob
   excitementHalfLife: {
     "market-buy": 0.2,
@@ -133,7 +136,10 @@ export const defaultMarketBehaviorSettings: MarketBehaviorSettings = {
   cancelPanic: 0.05, // cancels can trigger opposite-side market pressure
   orderSpread: 0.15, // mean maker price distance percent
   orderPriceTail: 0.1, // distance dispersion: higher = more tiny and far orders
-  inSpreadOrderProbability: 2,
+  inSpreadOrderProbability: 1,
+  inSpreadReach: 0.01,
+  nearSpreadSize: 0.005,
+  nearSpreadProbability: 0.8,
   orderSizeScale: 100, // mean order size
   orderSizeTail: 0.8, // size dispersion: higher = more tiny and huge orders
   anchorPreference: 0.35,
