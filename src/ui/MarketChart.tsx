@@ -133,7 +133,6 @@ export const MarketChart: Component = () => {
             {formatNumber(priceSpread().buy, digits)} / {formatNumber(priceSpread().sell, digits)}
           </p>
         </div>
-        <Order />
         <div class="max-w-5xl rounded border border-slate-800 bg-slate-900/80 px-3 py-2 font-mono text-[11px] leading-5 text-slate-300">
           <div class="mb-2 flex items-center justify-between gap-3">
             <p class="text-[10px] uppercase tracking-[0.2em] text-slate-500">Controls</p>
@@ -208,6 +207,7 @@ export const MarketChart: Component = () => {
               </div>
             )}
           </Show>
+          <Order />
         </div>
       </div>
     </div>
