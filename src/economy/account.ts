@@ -1,6 +1,6 @@
 import { createEffect, createSignal, untrack, type Accessor } from "solid-js";
-import { cancelOrder, makeOrder, marketPriceSpread, subscribeToOrder, takeOrder, type OrderSide } from "./market";
-import { dt, time } from "./simulation/time";
+import { cancelOrder, makeOrder, marketPriceSpread, subscribeToOrder, takeOrder, type OrderSide } from "../market";
+import { dt, time } from "../simulation/time";
 
 let nextAccountId = 0;
 

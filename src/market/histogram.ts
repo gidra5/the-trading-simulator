@@ -25,7 +25,8 @@ type HistogramAccelerationStructureOptions = {
   fanout: Accessor<number>;
 };
 
-// todo: lazy update propagation
+// todo: lower gc runtime to avoid stutters
+// todo: lazy update propagation?
 const createHistogramAccelerationStructure = (options: HistogramAccelerationStructureOptions) => {
   type TreeState = {
     maxLogPrice: number;

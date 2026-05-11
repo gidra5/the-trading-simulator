@@ -1,5 +1,5 @@
 import { createSignal, For, Show, type Component } from "solid-js";
-import { assets, createAccountState } from "../account";
+import { assets, createAccountState } from "../economy/account";
 
 export const digits = 6;
 
