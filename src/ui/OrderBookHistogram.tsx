@@ -105,6 +105,10 @@ const averageSeriesOverWindow = (series: number[], windowSize: number, direction
   });
 };
 
+const getMaxSeriesValue = (series: number[]): number => {
+  return series.reduce((maxValue, value) => Math.max(maxValue, value), 0);
+};
+
 const buildCumulativeSeries = (data: OrderBookHistogramEntry[]) => {
   const rowCount = data.reduce((current, entry) => Math.max(current, entry.y), -1) + 1;
   const buySizes = new Array<number>(Math.max(rowCount, 0)).fill(0);
@@ -135,7 +139,6 @@ const buildSeries = (data: OrderBookHistogramEntry[], windowFraction: number) =>
   const rowCount = data.reduce((current, entry) => Math.max(current, entry.y), -1) + 1;
   const buySizes = new Array<number>(Math.max(rowCount, 0)).fill(0);
   const sellSizes = new Array<number>(Math.max(rowCount, 0)).fill(0);
-  let maxSize = 0;
 
   for (const entry of data) {
     if (entry.kind === "buy") {
@@ -143,11 +146,11 @@ const buildSeries = (data: OrderBookHistogramEntry[], windowFraction: number) =>
     } else {
       sellSizes[entry.y] = entry.size;
     }
-    maxSize = Math.max(maxSize, entry.size);
   }
   const windowSize = getAveragingWindowSize(rowCount, windowFraction);
   const averagedBuy = averageSeriesOverWindow(buySizes, windowSize, false);
   const averagedSell = averageSeriesOverWindow(sellSizes, windowSize, true);
+  const maxSize = Math.max(getMaxSeriesValue(averagedBuy), getMaxSeriesValue(averagedSell));
 
   return { buySizes: averagedBuy, sellSizes: averagedSell, maxSize, rowCount };
 };
@@ -253,7 +256,6 @@ const drawArea = (
   }
 };
 
-// TODO: proper heights for non cumulative
 // TODO: resize bug on first page load, after reload disappears
 export const OrderBookHistogram: Component<OrderBookHistogramProps> = (props) => {
   let canvas: HTMLCanvasElement | undefined;

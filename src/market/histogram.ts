@@ -44,6 +44,7 @@ const createHistogramAccelerationStructure = (options: HistogramAccelerationStru
   );
 
   const getLogPrice = (price: number) => Math.log2(price / options.priceReference()) / Math.log2(options.fanout());
+  const getPrice = (logPrice: number) => options.priceReference() * options.fanout() ** logPrice;
 
   const makeLeaf = (minLogPrice: number, maxLogPrice: number): TreeState => ({
     minLogPrice,
@@ -247,6 +248,7 @@ const createHistogramAccelerationStructure = (options: HistogramAccelerationStru
     minPrice: number,
     maxPrice: number,
     includeMax = false,
+    minPriceRange = 0,
   ): number => {
     if (maxPrice <= 0 || maxPrice < minPrice) return 0;
 
@@ -256,7 +258,7 @@ const createHistogramAccelerationStructure = (options: HistogramAccelerationStru
     const minLogPrice = getLogPrice(safeMinPrice);
     const maxLogPrice = getLogPrice(safeMaxPrice);
 
-    return queryVolumeInRange(state, minLogPrice, maxLogPrice, minPrice, maxPrice, includeMax);
+    return queryVolumeInRange(state, minLogPrice, maxLogPrice, minPrice, maxPrice, includeMax, minPriceRange);
   };
   const querySideVolumeInPriceRange = (
     side: OrderSide,
@@ -267,6 +269,16 @@ const createHistogramAccelerationStructure = (options: HistogramAccelerationStru
     const tree = side === "buy" ? buyTreeState() : sellTreeState();
     return queryVolumeInPriceRange(tree, minPrice, maxPrice, includeMax);
   };
+  const querySideVolumeInPriceRangeAtResolution = (
+    side: OrderSide,
+    minPrice: number,
+    maxPrice: number,
+    minPriceRange: number,
+    includeMax = false,
+  ): number => {
+    const tree = side === "buy" ? buyTreeState() : sellTreeState();
+    return queryVolumeInPriceRange(tree, minPrice, maxPrice, includeMax, minPriceRange);
+  };
   const queryVolumeInRange = (
     state: TreeState,
     minLogPrice: number,
@@ -274,16 +286,30 @@ const createHistogramAccelerationStructure = (options: HistogramAccelerationStru
     minPrice: number,
     maxPrice: number,
     includeMax: boolean,
+    minPriceRange: number,
   ): number => {
     if (maxLogPrice <= state.minLogPrice || state.maxLogPrice <= minLogPrice) return 0;
     if (minLogPrice <= state.minLogPrice && state.maxLogPrice <= maxLogPrice) return state.volume;
 
-    // todo: approximate as a fraction of node volume when reaching a certain depth?
+    if (minPriceRange > 0) {
+      const nodeMinPrice = getPrice(state.minLogPrice);
+      const nodeMaxPrice = getPrice(state.maxLogPrice);
+
+      if (nodeMaxPrice - nodeMinPrice <= minPriceRange) {
+        const nodeMidPrice = (nodeMinPrice + nodeMaxPrice) / 2;
+        const inside = includeMax
+          ? nodeMidPrice >= minPrice && nodeMidPrice <= maxPrice
+          : nodeMidPrice >= minPrice && nodeMidPrice < maxPrice;
+
+        return inside ? state.volume : 0;
+      }
+    }
+
     if (state.kind === "node") {
       let volume = 0;
 
       for (const child of state.children) {
-        volume += queryVolumeInRange(child, minLogPrice, maxLogPrice, minPrice, maxPrice, includeMax);
+        volume += queryVolumeInRange(child, minLogPrice, maxLogPrice, minPrice, maxPrice, includeMax, minPriceRange);
       }
 
       return volume;
@@ -301,7 +327,7 @@ const createHistogramAccelerationStructure = (options: HistogramAccelerationStru
     return volume;
   };
 
-  return { querySideVolumeInPriceRange };
+  return { querySideVolumeInPriceRange, querySideVolumeInPriceRangeAtResolution };
 };
 
 type Options = {
@@ -317,6 +343,7 @@ export const createHistogramState = (options: Options) => {
     fanout: options.fanout,
   });
   const querySideVolumeInPriceRange = accelerationStructure.querySideVolumeInPriceRange;
+  const querySideVolumeInPriceRangeAtResolution = accelerationStructure.querySideVolumeInPriceRangeAtResolution;
 
   const getOrderBookHistogram = (region: OrderBookHistogramRegion): OrderBookHistogramEntry[] => {
     const resolution = region.resolution;
@@ -334,13 +361,13 @@ export const createHistogramState = (options: Options) => {
       histogram.push({
         y,
         kind: "buy",
-        size: querySideVolumeInPriceRange("buy", cellMinPrice, cellMaxPrice),
+        size: querySideVolumeInPriceRangeAtResolution("buy", cellMinPrice, cellMaxPrice, cellHeight),
       });
 
       histogram.push({
         y,
         kind: "sell",
-        size: querySideVolumeInPriceRange("sell", cellMinPrice, cellMaxPrice),
+        size: querySideVolumeInPriceRangeAtResolution("sell", cellMinPrice, cellMaxPrice, cellHeight),
       });
     }
 
