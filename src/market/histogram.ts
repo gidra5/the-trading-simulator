@@ -123,49 +123,153 @@ const createHistogramAccelerationStructure = (options: HistogramAccelerationStru
     return true;
   };
 
-  const insertOrder = (state: TreeState, order: RestingOrder, depth = 0): boolean => {
+  type TreeNodeState = Extract<TreeState, { kind: "node" }>;
+  type InsertOrderTask = {
+    state: TreeState;
+    order: RestingOrder;
+    logPrice: number;
+    depth: number;
+    ancestorNodes: TreeNodeState[];
+    isRequestedOrder: boolean;
+  };
+
+  const updateInsertedOrderAncestors = (nodes: TreeNodeState[], volume: number): void => {
+    for (const node of nodes) {
+      node.volume += volume;
+      node.count += 1;
+    }
+  };
+
+  const insertOrderTasks = (tasks: InsertOrderTask[]): boolean => {
+    let insertedRequestedOrder = false;
+
+    while (tasks.length > 0) {
+      const task = tasks.pop()!;
+      let current = task.state;
+      let depth = task.depth;
+      const path: TreeNodeState[] = [];
+
+      while (inRange(task.logPrice, current.minLogPrice, current.maxLogPrice)) {
+        if (current.kind === "leaf") {
+          const volume = task.order.size;
+          const canStayLeaf = leafPriceMatches(current, task.logPrice) || !canSplit(current, depth);
+
+          if (canStayLeaf) {
+            insertOrderById(current.value, task.order);
+            current.volume += volume;
+            updateInsertedOrderAncestors(path, volume);
+            updateInsertedOrderAncestors(task.ancestorNodes, volume);
+
+            if (task.isRequestedOrder) insertedRequestedOrder = true;
+            break;
+          }
+
+          const existing = current.value;
+          const children = makeChildren(current);
+
+          Object.assign(current, {
+            kind: "node" as const,
+            count: 0,
+            children,
+            volume: 0,
+          });
+
+          const ancestorNodes = task.ancestorNodes.length === 0 ? path : [...task.ancestorNodes, ...path];
+          tasks.push({
+            state: current,
+            order: task.order,
+            logPrice: task.logPrice,
+            depth,
+            ancestorNodes,
+            isRequestedOrder: task.isRequestedOrder,
+          });
+
+          for (let index = existing.length - 1; index >= 0; index -= 1) {
+            const existingOrder = existing[index]!;
+            tasks.push({
+              state: current,
+              order: existingOrder,
+              logPrice: getLogPrice(existingOrder.price),
+              depth,
+              ancestorNodes: [],
+              isRequestedOrder: false,
+            });
+          }
+
+          break;
+        }
+
+        path.push(current);
+        current = current.children[getChildIndex(current, task.logPrice)]!;
+        depth += 1;
+      }
+    }
+
+    return insertedRequestedOrder;
+  };
+
+  const insertOrder = (state: TreeState, order: RestingOrder): boolean => {
     const logPrice = getLogPrice(order.price);
     if (!inRange(logPrice, state.minLogPrice, state.maxLogPrice)) return false;
 
-    const volume = order.size;
+    let current = state;
+    let depth = 0;
+    const path: TreeNodeState[] = [];
 
-    if (state.kind === "leaf") {
-      const canStayLeaf = leafPriceMatches(state, logPrice) || !canSplit(state, depth);
+    while (inRange(logPrice, current.minLogPrice, current.maxLogPrice)) {
+      if (current.kind === "leaf") {
+        const volume = order.size;
+        const canStayLeaf = leafPriceMatches(current, logPrice) || !canSplit(current, depth);
 
-      if (canStayLeaf) {
-        insertOrderById(state.value, order);
-        state.volume += volume;
-        return true;
+        if (canStayLeaf) {
+          insertOrderById(current.value, order);
+          current.volume += volume;
+          updateInsertedOrderAncestors(path, volume);
+          return true;
+        }
+
+        const existing = current.value;
+        const children = makeChildren(current);
+
+        Object.assign(current, {
+          kind: "node" as const,
+          count: 0,
+          children,
+          volume: 0,
+        });
+
+        const tasks: InsertOrderTask[] = [
+          {
+            state: current,
+            order,
+            logPrice,
+            depth,
+            ancestorNodes: path,
+            isRequestedOrder: true,
+          },
+        ];
+
+        for (let index = existing.length - 1; index >= 0; index -= 1) {
+          const existingOrder = existing[index]!;
+          tasks.push({
+            state: current,
+            order: existingOrder,
+            logPrice: getLogPrice(existingOrder.price),
+            depth,
+            ancestorNodes: [],
+            isRequestedOrder: false,
+          });
+        }
+
+        return insertOrderTasks(tasks);
       }
 
-      const existing = state.value;
-      const children = makeChildren(state);
-
-      Object.assign(state, {
-        kind: "node" as const,
-        count: 0,
-        children,
-        volume: 0,
-      });
-
-      for (const oldOrder of existing) {
-        insertOrder(state, oldOrder, depth);
-      }
-
-      return insertOrder(state, order, depth);
+      path.push(current);
+      current = current.children[getChildIndex(current, logPrice)]!;
+      depth += 1;
     }
 
-    const childIndex = getChildIndex(state, logPrice);
-    const child = state.children[childIndex];
-
-    const inserted = insertOrder(child, order, depth + 1);
-
-    if (inserted) {
-      state.volume += volume;
-      state.count += 1;
-    }
-
-    return inserted;
+    return false;
   };
 
   const removeOrder = (state: TreeState, logPrice: number, id: number): boolean => {
@@ -173,28 +277,33 @@ const createHistogramAccelerationStructure = (options: HistogramAccelerationStru
       return false;
     }
 
-    if (state.kind === "leaf") {
-      const index = findOrderIndexById(state.value, id);
-      const removedOrder = state.value[index];
-      if (!removedOrder || removedOrder.id !== id) return false;
+    const path: TreeNodeState[] = [];
+    let current = state;
 
-      state.value.splice(index, 1);
-      state.volume -= removedOrder.size;
-      return true;
+    while (current.kind === "node") {
+      path.push(current);
+      current = current.children[getChildIndex(current, logPrice)]!;
+
+      if (logPrice < current.minLogPrice || logPrice >= current.maxLogPrice) {
+        return false;
+      }
     }
 
-    const childIndex = getChildIndex(state, logPrice);
-    const child = state.children[childIndex];
+    const index = findOrderIndexById(current.value, id);
+    const removedOrder = current.value[index];
+    if (!removedOrder || removedOrder.id !== id) return false;
 
-    const removed = removeOrder(child, logPrice, id);
+    current.value.splice(index, 1);
+    current.volume -= removedOrder.size;
 
-    if (removed) {
-      state.volume = state.children.reduce((sum, child) => sum + child.volume, 0);
-      state.count -= 1;
-      truncateEmptyNode(state);
+    for (let index = path.length - 1; index >= 0; index -= 1) {
+      const node = path[index]!;
+      node.volume = node.children.reduce((sum, child) => sum + child.volume, 0);
+      node.count -= 1;
+      truncateEmptyNode(node);
     }
 
-    return removed;
+    return true;
   };
 
   const partialFillOrder = (state: TreeState, logPrice: number, id: number, order: RestingOrder): number => {
@@ -202,23 +311,30 @@ const createHistogramAccelerationStructure = (options: HistogramAccelerationStru
       return 0;
     }
 
-    if (state.kind === "leaf") {
-      const index = findOrderIndexById(state.value, id);
-      const previousOrder = state.value[index];
-      if (!previousOrder || previousOrder.id !== id) return 0;
+    const path: TreeNodeState[] = [];
+    let current = state;
 
-      state.value[index] = order;
-      const delta = previousOrder.size - order.size;
-      state.volume -= delta;
+    while (current.kind === "node") {
+      path.push(current);
+      current = current.children[getChildIndex(current, logPrice)]!;
 
-      return delta;
+      if (logPrice < current.minLogPrice || logPrice >= current.maxLogPrice) {
+        return 0;
+      }
     }
 
-    const childIndex = getChildIndex(state, logPrice);
-    const child = state.children[childIndex];
+    const index = findOrderIndexById(current.value, id);
+    const previousOrder = current.value[index];
+    if (!previousOrder || previousOrder.id !== id) return 0;
 
-    const delta = partialFillOrder(child, logPrice, id, order);
-    state.volume -= delta;
+    current.value[index] = order;
+    const delta = previousOrder.size - order.size;
+    current.volume -= delta;
+
+    for (let index = path.length - 1; index >= 0; index -= 1) {
+      path[index]!.volume -= delta;
+    }
+
     return delta;
   };
 
