@@ -185,6 +185,7 @@ export const { getOrderBookHistogram, getOrderBookHistogramSeries, querySideVolu
   createHistogramState({
     orderBookChangeset: () => latestOrderBookChange().changes,
     priceReference: () => 1,
+    fanout: () => 2,
   }),
 );
 
