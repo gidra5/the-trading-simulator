@@ -289,40 +289,47 @@ const createHistogramAccelerationStructure = (options: HistogramAccelerationStru
     includeMax: boolean,
     minPriceRange: number,
   ): number => {
-    if (maxLogPrice <= state.minLogPrice || state.maxLogPrice <= minLogPrice) return 0;
-    if (minLogPrice <= state.minLogPrice && state.maxLogPrice <= maxLogPrice) return state.volume;
-
-    if (minPriceRange > 0) {
-      const nodeMinPrice = getPrice(state.minLogPrice);
-      const nodeMaxPrice = getPrice(state.maxLogPrice);
-
-      if (nodeMaxPrice - nodeMinPrice <= minPriceRange) {
-        const nodeMidPrice = (nodeMinPrice + nodeMaxPrice) / 2;
-        const inside = includeMax
-          ? nodeMidPrice >= minPrice && nodeMidPrice <= maxPrice
-          : nodeMidPrice >= minPrice && nodeMidPrice < maxPrice;
-
-        return inside ? state.volume : 0;
-      }
-    }
-
-    if (state.kind === "node") {
-      let volume = 0;
-
-      for (const child of state.children) {
-        volume += queryVolumeInRange(child, minLogPrice, maxLogPrice, minPrice, maxPrice, includeMax, minPriceRange);
-      }
-
-      return volume;
-    }
-
     let volume = 0;
+    const stack: TreeState[] = [state];
 
-    for (const order of state.value) {
-      const price = order.price;
-      const inside = includeMax ? price >= minPrice && price <= maxPrice : price >= minPrice && price < maxPrice;
+    while (stack.length > 0) {
+      const current = stack.pop()!;
 
-      if (inside) volume += order.size;
+      if (maxLogPrice <= current.minLogPrice || current.maxLogPrice <= minLogPrice) continue;
+      if (minLogPrice <= current.minLogPrice && current.maxLogPrice <= maxLogPrice) {
+        volume += current.volume;
+        continue;
+      }
+
+      if (minPriceRange > 0) {
+        const nodeMinPrice = getPrice(current.minLogPrice);
+        const nodeMaxPrice = getPrice(current.maxLogPrice);
+
+        if (nodeMaxPrice - nodeMinPrice <= minPriceRange) {
+          const nodeMidPrice = (nodeMinPrice + nodeMaxPrice) / 2;
+          const inside = includeMax
+            ? nodeMidPrice >= minPrice && nodeMidPrice <= maxPrice
+            : nodeMidPrice >= minPrice && nodeMidPrice < maxPrice;
+
+          if (inside) volume += current.volume;
+          continue;
+        }
+      }
+
+      if (current.kind === "node") {
+        for (let index = current.children.length - 1; index >= 0; index -= 1) {
+          stack.push(current.children[index]!);
+        }
+
+        continue;
+      }
+
+      for (const order of current.value) {
+        const price = order.price;
+        const inside = includeMax ? price >= minPrice && price <= maxPrice : price >= minPrice && price < maxPrice;
+
+        if (inside) volume += order.size;
+      }
     }
 
     return volume;
