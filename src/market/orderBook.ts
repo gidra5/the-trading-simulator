@@ -33,22 +33,21 @@ export type OrderBookChange = OrderBookAddChange | OrderBookRemoveChange | Order
 export type OrderBookChangeset = OrderBookChange[];
 type OrderBookChangesetMap = Map<number, OrderBookChange>;
 
-export type OrderBookSnapshotEntry = {
+type OrderBookSnapshotEntry = {
   kind: "snapshot";
   revision: number;
   timestamp: number;
   orderBook: OrderBook;
-  changes: OrderBookChangeset;
 };
 
-export type OrderBookDeltaEntry = {
+type OrderBookDeltaEntry = {
   kind: "delta";
   revision: number;
   timestamp: number;
   changes: OrderBookChangeset;
 };
 
-export type OrderBookDeltaSnapshotEntry = {
+type OrderBookDeltaSnapshotEntry = {
   kind: "delta-snapshot";
   level: number;
   revision: number;
@@ -57,14 +56,14 @@ export type OrderBookDeltaSnapshotEntry = {
   compactedChanges: OrderBookChangesetMap;
 };
 
-// todo: only deltas, move snapshots into acc structure
-export type OrderBookHistoryEntry = OrderBookSnapshotEntry | OrderBookDeltaEntry;
-export type OrderBookMapEntry = OrderBookSnapshotEntry | OrderBookDeltaSnapshotEntry;
+export type OrderBookHistoryEntry = OrderBookDeltaEntry;
+type OrderBookMapEntry = OrderBookSnapshotEntry | OrderBookDeltaSnapshotEntry;
 type OrderBookHistory = OrderBookHistoryEntry[];
 type OrderBookMap = OrderBookMapEntry[];
 
 type AcceleratedOrderBookMapState = {
   entries: OrderBookMap;
+  orderBook: OrderBook;
   pendingChangesByLevel: Array<OrderBookChangesetMap>;
   processedEntries: number;
   deltaSnapshotInterval: number;
@@ -196,25 +195,18 @@ export const createOrderBook = ({ deltaSnapshotInterval, fanout, levels }: Order
   const snapshotInterval = () => deltaSnapshotInterval() * fanout() ** levels();
 
   const initialOrderBook: OrderBook = { buy: [], sell: [] };
-  const [orderBookHistory, setOrderBookHistory] = createSignal<OrderBookHistory>(
-    [
-      {
-        kind: "snapshot",
-        revision: 0,
-        timestamp: time(),
-        orderBook: initialOrderBook,
-        changes: [],
-      },
-    ],
-    { equals: false },
-  );
-  const latestOrderBookChange = () => orderBookHistory()[orderBookHistory().length - 1];
-  const revision = () => orderBookHistory()[orderBookHistory().length - 1].revision;
-  const createOrderBookSnapshot = (timestamp: number, orderBook: OrderBook, changes: OrderBookChangeset) =>
-    setOrderBookHistory((entries) => {
-      entries.push({ kind: "snapshot", revision: revision() + 1, timestamp, orderBook, changes });
-      return entries;
-    });
+  const emptyOrderBookChange: OrderBookHistoryEntry = {
+    kind: "delta",
+    revision: 0,
+    timestamp: time(),
+    changes: [],
+  };
+  const [orderBookHistory, setOrderBookHistory] = createSignal<OrderBookHistory>([], { equals: false });
+  const latestOrderBookChange = () => {
+    const entries = orderBookHistory();
+    return entries[entries.length - 1] ?? emptyOrderBookChange;
+  };
+  const revision = () => latestOrderBookChange().revision;
   const createOrderBookDelta = (timestamp: number, changes: OrderBookChangeset) =>
     setOrderBookHistory((entries) => {
       entries.push({ kind: "delta", revision: revision() + 1, timestamp, changes });
@@ -226,9 +218,7 @@ export const createOrderBook = ({ deltaSnapshotInterval, fanout, levels }: Order
       const entries = orderBookHistory();
       const latest = entries[entries.length - 1];
 
-      if (latest.kind === "snapshot") {
-        return cloneOrderBookFrom(latest.orderBook);
-      }
+      if (!latest) return previousOrderBook;
 
       const nextOrderBook = previousOrderBook;
       applyChangeset(nextOrderBook, latest.changes);
@@ -312,6 +302,7 @@ export const createOrderBook = ({ deltaSnapshotInterval, fanout, levels }: Order
         ? previousState
         : {
             entries: [],
+            orderBook: cloneOrderBookFrom(initialOrderBook),
             pendingChangesByLevel: [],
             processedEntries: 0,
             deltaSnapshotInterval: interval,
@@ -321,9 +312,15 @@ export const createOrderBook = ({ deltaSnapshotInterval, fanout, levels }: Order
 
       for (let index = nextState.processedEntries; index < sourceEntries.length; index += 1) {
         const entry = sourceEntries[index]!;
+        applyChangeset(nextState.orderBook, entry.changes);
 
-        if (entry.kind === "snapshot") {
-          nextState.entries.push(entry);
+        if (entry.revision % snapshotInterval() === 0) {
+          nextState.entries.push({
+            kind: "snapshot",
+            revision: entry.revision,
+            timestamp: entry.timestamp,
+            orderBook: cloneOrderBookFrom(nextState.orderBook),
+          });
           nextState.pendingChangesByLevel = [];
           continue;
         }
@@ -355,6 +352,7 @@ export const createOrderBook = ({ deltaSnapshotInterval, fanout, levels }: Order
     },
     {
       entries: [],
+      orderBook: cloneOrderBookFrom(initialOrderBook),
       pendingChangesByLevel: [],
       processedEntries: 0,
       deltaSnapshotInterval: Number.NaN,
@@ -369,49 +367,43 @@ export const createOrderBook = ({ deltaSnapshotInterval, fanout, levels }: Order
   const appendChange = (changes: OrderBookChangeset): void => {
     if (changes.length === 0) return;
 
-    const orderBookRevision = revision() + 1;
-
-    if (orderBookRevision % snapshotInterval() === 0) {
-      const nextOrderBook = cloneOrderBookFrom(orderBook());
-      applyChangeset(nextOrderBook, changes);
-      createOrderBookSnapshot(time(), nextOrderBook, changes);
-      return;
-    }
-
     createOrderBookDelta(time(), changes);
+  };
+
+  const applyPendingChanges = (target: OrderBook, entries: OrderBookMap, pendingChanges: number[]): void => {
+    for (let pendingIndex = pendingChanges.length - 1; pendingIndex >= 0; pendingIndex -= 1) {
+      const changeset = entries[pendingChanges[pendingIndex]!];
+      assert(changeset?.kind === "delta-snapshot");
+
+      if (changeset.level > 0) {
+        applyChangesetMap(target, changeset.compactedChanges);
+      } else applyChangeset(target, changeset.changes);
+    }
   };
 
   const reconstructAt = (targetIndex: number): OrderBook | null => {
     const entries = orderBookMap();
     const pendingChanges: Array<number> = [];
     let coveredUntilCheckpointLevel = 0;
+    const startIndex = Math.min(targetIndex, entries.length - 1);
 
-    for (let index = targetIndex; index >= 0; index -= 1) {
+    for (let index = startIndex; index >= 0; index -= 1) {
       const entry = entries[index];
 
       if (!entry) continue;
 
       if (entry.kind === "snapshot") {
         const reconstructedOrderBook = cloneOrderBookFrom(entry.orderBook);
-
-        for (let pendingIndex = pendingChanges.length - 1; pendingIndex >= 0; pendingIndex -= 1) {
-          const changeset = entries[pendingChanges[pendingIndex]!];
-          assert(changeset.kind !== "snapshot");
-
-          if (changeset.level > 0) {
-            applyChangesetMap(reconstructedOrderBook, changeset.compactedChanges);
-          } else applyChangeset(reconstructedOrderBook, changeset.changes);
-        }
-
+        applyPendingChanges(reconstructedOrderBook, entries, pendingChanges);
         return reconstructedOrderBook;
       }
 
       if (coveredUntilCheckpointLevel > 0) {
-        if (entry.kind === "delta-snapshot" && entry.level >= coveredUntilCheckpointLevel) {
+        if (entry.level >= coveredUntilCheckpointLevel) {
           pendingChanges.push(index);
           coveredUntilCheckpointLevel = entry.level;
         }
-      } else if (entry.kind === "delta-snapshot" && entry.level === 0) {
+      } else if (entry.level === 0) {
         pendingChanges.push(index);
       } else {
         pendingChanges.push(index);
@@ -419,25 +411,29 @@ export const createOrderBook = ({ deltaSnapshotInterval, fanout, levels }: Order
       }
     }
 
-    return null;
+    const reconstructedOrderBook = cloneOrderBookFrom(initialOrderBook);
+    applyPendingChanges(reconstructedOrderBook, entries, pendingChanges);
+    return reconstructedOrderBook;
   };
 
   const reconstruct = (revision: number): OrderBook | null => {
+    if (revision === 0) return cloneOrderBookFrom(initialOrderBook);
+
     const entries = orderBookMap();
     const targetIndex = findRevisionIndex(entries, revision);
 
-    if (targetIndex === -1) return null;
+    if (targetIndex >= entries.length) return null;
     return reconstructAt(targetIndex);
   };
 
-  const findOrderBookIndex = (orderBookMap: OrderBookHistory, timestamp: number): number => {
+  const findOrderBookIndex = (entries: OrderBookHistory, timestamp: number): number => {
     let low = 0;
-    let high = orderBookMap.length;
+    let high = entries.length;
 
     while (low < high) {
       const mid = Math.floor((low + high) / 2);
 
-      if (orderBookMap[mid]!.timestamp < timestamp) low = mid + 1;
+      if (entries[mid]!.timestamp < timestamp) low = mid + 1;
       else high = mid;
     }
 
@@ -451,16 +447,22 @@ export const createOrderBook = ({ deltaSnapshotInterval, fanout, levels }: Order
     stream: (slice: OrderBook, timestamp: number) => void,
   ): void => {
     assert(interval[0] < interval[1]);
-    const orderBookIndex = findOrderBookIndex(orderBookHistory(), interval[0]);
-    let orderBook = reconstructAt(orderBookIndex);
+    const entries = orderBookHistory();
+    if (entries.length === 0) {
+      stream(cloneOrderBookFrom(initialOrderBook), emptyOrderBookChange.timestamp);
+      return;
+    }
+
+    const orderBookIndex = findOrderBookIndex(entries, interval[0]);
+    const startsBeforeHistory = entries[orderBookIndex]!.timestamp > interval[0];
+    let orderBook = startsBeforeHistory ? cloneOrderBookFrom(initialOrderBook) : reconstructAt(orderBookIndex);
     if (!orderBook) return;
-    stream(orderBook, orderBookHistory()[orderBookIndex]!.timestamp);
+    stream(orderBook, startsBeforeHistory ? emptyOrderBookChange.timestamp : entries[orderBookIndex]!.timestamp);
 
-    for (let index = orderBookIndex + 1; index < orderBookHistory().length; index += 1) {
-      const entry = orderBookHistory()[index]!;
+    for (let index = startsBeforeHistory ? orderBookIndex : orderBookIndex + 1; index < entries.length; index += 1) {
+      const entry = entries[index]!;
 
-      if (entry.kind === "snapshot") orderBook = cloneOrderBookFrom(entry.orderBook);
-      else applyChangeset(orderBook, entry.changes);
+      applyChangeset(orderBook, entry.changes);
       stream(orderBook, entry.timestamp);
 
       if (entry.timestamp > interval[1]) return;
