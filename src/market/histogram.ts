@@ -77,6 +77,46 @@ const createHistogramAccelerationStructure = (options: HistogramAccelerationStru
     return getLogPrice(leaf.value[0].price) === logPrice;
   };
 
+  const findOrderIndexById = (orders: Array<RestingOrder>, id: number): number => {
+    let low = 0;
+    let high = orders.length;
+
+    while (low < high) {
+      const mid = Math.floor((low + high) / 2);
+
+      if (orders[mid]!.id < id) low = mid + 1;
+      else high = mid;
+    }
+
+    return low;
+  };
+
+  const insertOrderById = (orders: Array<RestingOrder>, order: RestingOrder): void => {
+    const lastOrder = orders[orders.length - 1];
+    if (!lastOrder || lastOrder.id < order.id) {
+      orders.push(order);
+      return;
+    }
+
+    const index = findOrderIndexById(orders, order.id);
+    orders.splice(index, 0, order);
+  };
+
+  const truncateEmptyNode = (state: Extract<TreeState, { kind: "node" }>): void => {
+    if (state.count !== 0) return;
+
+    const leaf = state as unknown as Extract<TreeState, { kind: "leaf" }> & {
+      count?: number;
+      children?: Array<TreeState>;
+    };
+
+    leaf.kind = "leaf";
+    leaf.volume = 0;
+    leaf.value = [];
+    leaf.count = undefined;
+    leaf.children = undefined;
+  };
+
   const canSplit = (state: TreeState, depth: number): boolean => {
     return true;
   };
@@ -91,8 +131,7 @@ const createHistogramAccelerationStructure = (options: HistogramAccelerationStru
       const canStayLeaf = leafPriceMatches(state, logPrice) || !canSplit(state, depth);
 
       if (canStayLeaf) {
-        //todo: sort/binary insert
-        state.value.push(order);
+        insertOrderById(state.value, order);
         state.volume += volume;
         return true;
       }
@@ -127,19 +166,18 @@ const createHistogramAccelerationStructure = (options: HistogramAccelerationStru
     return inserted;
   };
 
-  // todo: truncate empty nodes
   const removeOrder = (state: TreeState, logPrice: number, id: number): boolean => {
     if (logPrice < state.minLogPrice || logPrice >= state.maxLogPrice) {
       return false;
     }
 
     if (state.kind === "leaf") {
-      //todo: binary search, should be sorted by id
-      const index = state.value.findIndex((order) => order.id === id);
-      if (index === -1) return false;
+      const index = findOrderIndexById(state.value, id);
+      const removedOrder = state.value[index];
+      if (!removedOrder || removedOrder.id !== id) return false;
 
       state.value.splice(index, 1);
-      state.volume = state.value.reduce((sum, order) => sum + order.size, 0);
+      state.volume -= removedOrder.size;
       return true;
     }
 
@@ -151,6 +189,7 @@ const createHistogramAccelerationStructure = (options: HistogramAccelerationStru
     if (removed) {
       state.volume = state.children.reduce((sum, child) => sum + child.volume, 0);
       state.count -= 1;
+      truncateEmptyNode(state);
     }
 
     return removed;
@@ -162,12 +201,12 @@ const createHistogramAccelerationStructure = (options: HistogramAccelerationStru
     }
 
     if (state.kind === "leaf") {
-      //todo: binary search, should be sorted by id
-      const index = state.value.findIndex((order) => order.id === id);
-      if (index === -1) return 0;
+      const index = findOrderIndexById(state.value, id);
+      const previousOrder = state.value[index];
+      if (!previousOrder || previousOrder.id !== id) return 0;
 
-      const [removed] = state.value.splice(index, 1, order);
-      const delta = removed.size - order.size;
+      state.value[index] = order;
+      const delta = previousOrder.size - order.size;
       state.volume -= delta;
 
       return delta;
@@ -263,7 +302,7 @@ const createHistogramAccelerationStructure = (options: HistogramAccelerationStru
   };
 
   return { querySideVolumeInPriceRange };
-};;
+};
 
 type Options = {
   orderBookChangeset: Accessor<OrderBookChangeset>;
