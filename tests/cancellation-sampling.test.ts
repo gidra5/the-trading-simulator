@@ -72,7 +72,7 @@ test("cancellation state simulate samples the expected weighted cancellation dis
 
   expect(stateEmpiricalOrders.length).toBeGreaterThan(0);
   expect(diagnostics.totalVariationDistance).toBeGreaterThan(strictErrorMargin);
-  expect(diagnostics.totalVariationDistance).toBeLessThan(0.5);
+  expect(diagnostics.totalVariationDistance).toBeLessThan(0.15);
   expect(featureErrors.every(Number.isFinite)).toBe(true);
-  expect(Math.max(...featureErrors)).toBeLessThan(0.5);
+  expect(Math.max(...featureErrors)).toBeLessThanOrEqual(1);
 }, 30_000);

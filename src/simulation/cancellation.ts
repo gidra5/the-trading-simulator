@@ -1,14 +1,13 @@
 import {
-  cancelOrder,
-  latestOrderBookChange,
   marketPriceSpread,
   priceHistory,
   querySideVolumeInPriceRange,
+  subscribeToOrder,
   type OrderSide,
 } from "../market/index";
 
 import type { RestingOrder } from "./types";
-import { createEffect, createSignal, type Accessor } from "solid-js";
+import type { Accessor } from "solid-js";
 import { oppositeSide } from "../market/order";
 import { time } from "./time";
 import { createResampler } from "../sampling";
@@ -36,7 +35,20 @@ import { createResampler } from "../sampling";
 //   maxBuy: number;
 // };
 // const priceAnchors = createMemo<number>(() => {
+const bs = (orders: RestingOrder[], price: number): number => {
+  let left = 0;
+  let right = orders.length;
 
+  while (left < right) {
+    const mid = Math.floor((left + right) / 2);
+
+    if (orders[mid]!.price < price) left = mid + 1;
+    else right = mid;
+  }
+
+  if (left >= orders.length) return -1;
+  return left;
+};
 export type CancellationOptions = {
   candidatesCount: Accessor<number>;
   onCancel: (order: RestingOrder) => boolean;
@@ -60,7 +72,7 @@ export type CancellationOptions = {
 
 type RestingOrders = { buy: RestingOrder[]; sell: RestingOrder[] };
 export const createCancellationState = (options: CancellationOptions) => {
-  const [restingOrders, setRestingOrders] = createSignal<RestingOrders>({ buy: [], sell: [] });
+  let restingOrders: RestingOrders = { buy: [], sell: [] };
 
   const orderFeatures = (order: RestingOrder) => {
     const spread = marketPriceSpread();
@@ -127,7 +139,7 @@ export const createCancellationState = (options: CancellationOptions) => {
   };
 
   const proposalSampler = (side: OrderSide) => {
-    const items = restingOrders()[side];
+    const items = restingOrders[side];
     if (items.length === 0) return null;
     const index = Math.floor(Math.random() * items.length);
     return { item: items[index], weight: 1 / items.length };
@@ -146,71 +158,43 @@ export const createCancellationState = (options: CancellationOptions) => {
     }),
   };
 
-  createEffect(() => {
-    const latest = latestOrderBookChange();
-    const removed = latest.changes.filter((change) => change.kind === "remove");
-    const partialFilled = latest.changes.filter((change) => change.kind === "partial-fill");
-
-    setRestingOrders((orders) => {
-      let didChange = false;
-      const updatedOrders = (orders: RestingOrder[]) => {
-        return orders
-          .filter((order) => {
-            const shouldRemove = removed.some((change) => change.order.id === order.id);
-            didChange = didChange || shouldRemove;
-            // if (shouldRemove) removeOrderFromAgeMemo(order);
-            return !shouldRemove;
-          })
-          .map((order) => {
-            const change = partialFilled.find((change) => change.order.id === order.id);
-            const changed = !!change;
-            didChange = didChange || changed;
-            return changed ? { ...order, size: change.order.size } : order;
-          });
-      };
-      const updated = {
-        buy: updatedOrders(orders.buy),
-        sell: updatedOrders(orders.sell),
-      };
-      return didChange ? updated : orders;
-    });
-  });
-
   const randomRestingOrder = (side: OrderSide): RestingOrder | null => {
     return ordersSampler[side].sample();
   };
 
-  const removeRestingOrder = (id: number) => {
-    setRestingOrders((orders) => ({
-      buy: orders.buy.filter((order) => order.id !== id),
-      sell: orders.sell.filter((order) => order.id !== id),
-    }));
+  const removeRestingOrder = (side: OrderSide, order: { id: number; price: number }): boolean => {
+    const orders = restingOrders[side];
+    let idx = bs(orders, order.price);
+    if (idx < 0) return false;
+
+    while (idx < orders.length && orders[idx]!.id !== order.id) idx += 1;
+    if (idx >= orders.length) return false;
+
+    restingOrders[side].splice(idx, 1);
+    return true;
   };
 
   const simulate = (side: OrderSide) => {
     const order = randomRestingOrder(side);
     if (!order) return false;
 
-    removeRestingOrder(order.id);
+    removeRestingOrder(order.side, order);
     return options.onCancel(order);
   };
 
   const addOrder = (order: RestingOrder): void => {
-    // todo: binary search insert?
-    setRestingOrders((orders) =>
-      order.side === "buy"
-        ? {
-            buy: [...orders.buy, order].sort((left, right) => left.price - right.price),
-            sell: orders.sell,
-          }
-        : {
-            buy: orders.buy,
-            sell: [...orders.sell, order].sort((left, right) => left.price - right.price),
-          },
-    );
+    const _orders = restingOrders[order.side];
+    const idx = bs(_orders, order.price);
+    if (idx >= 0) _orders.splice(idx, 0, order);
+    else _orders.push(order);
+
+    subscribeToOrder(order.id, (change) => {
+      if (change.kind !== "remove") return;
+      removeRestingOrder(change.side, change.order);
+    });
   };
 
-  const getRestingOrders = (side: OrderSide): RestingOrder[] => [...restingOrders()[side]];
+  const getRestingOrders = (side: OrderSide): RestingOrder[] => [...restingOrders[side]];
 
   return {
     simulate,

@@ -1,6 +1,7 @@
 import { expect, vi } from "vitest";
 import type { CancellationOptions, createCancellationState } from "../src/simulation/cancellation";
 import type { OrderSide } from "../src/market";
+import type { OrderBookChange } from "../src/market/orderBook";
 import type { MarketBehaviorSettings, RestingOrder, SimulationEventType } from "../src/simulation/types";
 
 type CancellationState = ReturnType<typeof createCancellationState>;
@@ -112,6 +113,45 @@ export const buildSamplingFixture = async (fixtureOptions: {
   vi.resetModules();
   vi.spyOn(Math, "random").mockImplementation(seededRandom(fixtureOptions.seed ?? 0x5eed));
   let latestCanceledOrder: RestingOrder | null = null;
+  const testOrderSubscriptions = new Map<number, Set<(change: OrderBookChange) => void>>();
+  const emitTestOrderRemove = (order: RestingOrder): void => {
+    const subscribers = testOrderSubscriptions.get(order.id);
+    if (!subscribers) return;
+
+    for (const subscriber of [...subscribers]) {
+      subscriber({ kind: "remove", side: order.side, order });
+    }
+  };
+
+  const mockMarketModule = async (importOriginal: () => Promise<typeof import("../src/market/index")>) => {
+    const actual = await importOriginal();
+
+    return {
+      ...actual,
+      subscribeToOrder: (id: number, cb: (change: OrderBookChange) => void) => {
+        if (!testOrderSubscriptions.has(id)) {
+          testOrderSubscriptions.set(id, new Set());
+        }
+
+        const subscribers = testOrderSubscriptions.get(id)!;
+        const callback = (change: OrderBookChange): void => {
+          cb(change);
+          if (change.kind === "remove") subscribers.delete(callback);
+          if (subscribers.size === 0) testOrderSubscriptions.delete(id);
+        };
+        subscribers.add(callback);
+        const unsubscribeActual = actual.subscribeToOrder(id, callback);
+
+        return () => {
+          unsubscribeActual();
+          subscribers.delete(callback);
+          if (subscribers.size === 0) testOrderSubscriptions.delete(id);
+        };
+      },
+    };
+  };
+  vi.doMock("../src/market", mockMarketModule);
+  vi.doMock("../src/market/index", mockMarketModule);
 
   const [{ TradingSimulation }, cancellation, market, order, timeModule] = await Promise.all([
     import("../src/simulation/index"),
@@ -128,7 +168,7 @@ export const buildSamplingFixture = async (fixtureOptions: {
     simulation.tick(250);
   }
 
-  while (tick < fixtureOptions.ticks * 20) {
+  while (tick < fixtureOptions.ticks * 100) {
     orders = sides.flatMap((side) => simulation.getCancellationRestingOrders(side));
     if (
       orders.length > 20 &&
@@ -152,6 +192,7 @@ export const buildSamplingFixture = async (fixtureOptions: {
 
   const options = createCancellationOptions(settings, (order) => {
     latestCanceledOrder = order;
+    emitTestOrderRemove(order);
     return true;
   });
   const state = cancellation.createCancellationState(options);

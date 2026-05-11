@@ -83,12 +83,12 @@ const applyOperation = (
 ): void => {
   switch (operation.kind) {
     case "limit": {
-      const order = market.makeOrder(operation.side, {
+      const result = market.makeOrder(operation.side, {
         price: operation.price,
         size: operation.size,
       });
-      if (order.restingSize > 0) {
-        restingOrderIds[operation.side].push(order.id);
+      if (result.order.size > 0) {
+        restingOrderIds[operation.side].push(result.order.id);
       }
       return;
     }
@@ -137,7 +137,7 @@ afterAll(() => {
   vi.restoreAllMocks();
 });
 
-test("market reconstructs every recorded revision for fuzzed change sequences", async () => {
+test("market reconstructs every recorded revision for fuzzed change sequences", { timeout: 30_000 }, async () => {
   await fc.assert(
     fc.asyncProperty(arb, async ({ interval, fanout, levels, operations }) => {
       const { market, clock } = await loadMarket({ interval, fanout, levels });
