@@ -2,7 +2,7 @@ import "uno.css";
 import { render } from "solid-js/web";
 import "solid-devtools";
 
-import App from "./ui/App";
+import Router from "./routes/Router";
 import { assert } from "./utils";
 
 const root = document.getElementById("root");
@@ -14,4 +14,4 @@ if (import.meta.env.DEV) {
   );
 }
 
-render(() => <App />, root!);
+render(() => <Router />, root!);

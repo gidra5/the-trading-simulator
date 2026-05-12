@@ -1,5 +1,5 @@
 1. Implement a game page
-   1. Separate current simulation UI into a separate page
+   1. + Separate current simulation UI into a separate page
    2. Tidy up the PoC
       1. Create a UI kit, implemented on-demand
          1. buttons - primary, secondary, ghost, danger, disabled
@@ -13,6 +13,7 @@
          9. intl
          10. svg icons set
          11. Assets - images, fonts, music, sounds, etc
+         12. animations
       2. Create a new page with a proper game ui with 4 tabs:
          1. market - the price graph and order placement controls
          2. account profile - balance, portfolio, orders, liquidations, stats, etc
