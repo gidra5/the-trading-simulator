@@ -6,10 +6,14 @@
     <meta name="theme-color" content="#000000" />
     <title>Solid App</title>
     <style>
-      * {
+      *,
+      *::before,
+      *::after {
         box-sizing: border-box;
+        transition-duration: 200ms;
       }
 
+      html,
       body {
         height: 100dvh;
         width: 100dvw;
@@ -20,6 +24,43 @@
       #root {
         height: 100%;
         width: 100%;
+      }
+
+      button,
+      input,
+      select,
+      textarea {
+        font: inherit;
+        color: inherit;
+        background: transparent;
+        border: 0;
+        border-radius: 0;
+        box-shadow: none;
+        outline: none;
+        appearance: none;
+        -webkit-appearance: none;
+        margin: 0;
+        padding: 0;
+      }
+
+      button {
+        cursor: pointer;
+      }
+
+      button:disabled {
+        cursor: not-allowed;
+      }
+
+      button::-moz-focus-inner {
+        border: 0;
+      }
+
+      img,
+      svg,
+      video,
+      canvas {
+        display: block;
+        max-width: 100%;
       }
     </style>
   </head>

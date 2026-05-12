@@ -89,6 +89,10 @@ export const createAccountState = (options: AccountStateOptions) => {
     }));
   };
 
+  const addMoney = (amount: number): void => {
+    updatePortfolio(0, amount);
+  };
+
   const applyFill = (side: OrderSide, fulfilled: number, cost: number): void => {
     if (fulfilled <= 0) return;
 
@@ -277,6 +281,7 @@ export const createAccountState = (options: AccountStateOptions) => {
     netWorth,
     leverage,
     liquidationPrice,
+    addMoney,
     placeMarketOrder,
     placeLimitOrder,
     cancelActiveOrder,
