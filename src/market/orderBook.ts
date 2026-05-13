@@ -1,5 +1,5 @@
 import { Accessor, createMemo, createSignal } from "solid-js";
-import { assert } from "../utils";
+import { assert, binarySearchIndex } from "../utils";
 import { cloneOrder, compareOrders, type OrderSide, type RestingOrder } from "./order";
 
 export type OrderBook = {
@@ -115,37 +115,9 @@ export const cloneOrderBookFrom = (source: OrderBook): OrderBook => {
   };
 };
 
-const findOrderIndex = (orders: RestingOrder[], side: OrderSide, order: RestingOrder): number => {
-  let low = 0;
-  let high = orders.length;
-
-  while (low < high) {
-    const mid = Math.floor((low + high) / 2);
-
-    if (compareOrders(orders[mid]!, side, order) < 0) low = mid + 1;
-    else high = mid;
-  }
-
-  return low;
-};
-
-const findRevisionIndex = (orderMap: OrderBookMapEntry[], revision: number): number => {
-  let low = 0;
-  let high = orderMap.length;
-
-  while (low < high) {
-    const mid = Math.floor((low + high) / 2);
-
-    if (orderMap[mid]!.revision < revision) low = mid + 1;
-    else high = mid;
-  }
-
-  return low;
-};
-
 const applyChange = (target: OrderBook, change: OrderBookChange): void => {
   const orders = target[change.side];
-  const index = findOrderIndex(orders, change.side, change.order);
+  const index = binarySearchIndex(orders, (candidate) => compareOrders(candidate, change.side, change.order));
   if (change.kind === "add") orders.splice(index, 0, change.order);
 
   assert(
@@ -420,25 +392,12 @@ export const createOrderBook = ({ deltaSnapshotInterval, fanout, levels, time }:
     if (revision === 0) return cloneOrderBookFrom(initialOrderBook);
 
     const entries = orderBookMap();
-    const targetIndex = findRevisionIndex(entries, revision);
+    const targetIndex = binarySearchIndex(entries, (entry) => entry.revision - revision);
 
     if (targetIndex >= entries.length) return null;
     return reconstructAt(targetIndex);
   };
 
-  const findOrderBookIndex = (entries: OrderBookHistory, timestamp: number): number => {
-    let low = 0;
-    let high = entries.length;
-
-    while (low < high) {
-      const mid = Math.floor((low + high) / 2);
-
-      if (entries[mid]!.timestamp < timestamp) low = mid + 1;
-      else high = mid;
-    }
-
-    return Math.max(low - 1, 0);
-  };
 
   // todo: maybe use generator instead?
   // todo: pass down price range as well? So we don't compute anything outside it.
@@ -453,7 +412,10 @@ export const createOrderBook = ({ deltaSnapshotInterval, fanout, levels, time }:
       return;
     }
 
-    const orderBookIndex = findOrderBookIndex(entries, interval[0]);
+    const orderBookIndex = (() => {
+      const index = binarySearchIndex(entries, (entry) => entry.timestamp - interval[0]);
+      return Math.max(index - 1, 0);
+    })();
     const startsBeforeHistory = entries[orderBookIndex]!.timestamp > interval[0];
     let orderBook = startsBeforeHistory ? cloneOrderBookFrom(initialOrderBook) : reconstructAt(orderBookIndex);
     if (!orderBook) return;

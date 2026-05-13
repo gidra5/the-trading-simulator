@@ -16,6 +16,7 @@ import {
   type OrderBookHeatmapRegion,
   type PriceHistoryEntry,
 } from "./orderBook";
+import { binarySearchIndex } from "../utils";
 
 export type { MakeOrderResult, OrderSide } from "./order";
 export type {
@@ -153,8 +154,8 @@ export const createMarketState = (options: MarketStateOptions) => {
   // and combine the candles at the corresponding levels
   const priceHistoryCandle = (start: number, end: number, side: OrderSide): PriceCandle => {
     const history = orderBookState.priceHistory();
-    const firstIndex = upperBoundPriceHistory(history, start);
-    const endIndex = upperBoundPriceHistory(history, end);
+    const firstIndex = binarySearchIndex(history, (entry) => (entry.timestamp <= start ? -1 : 1));
+    const endIndex = binarySearchIndex(history, (entry) => (entry.timestamp <= end ? -1 : 1));
     const openEntry = history[Math.max(0, firstIndex - 1)];
     const open = openEntry.spread[side];
     let close = open;
@@ -303,20 +304,3 @@ export const createMarketState = (options: MarketStateOptions) => {
 };
 
 export type MarketState = ReturnType<typeof createMarketState>;
-
-const upperBoundPriceHistory = (history: PriceHistoryEntry[], timestamp: number): number => {
-  let low = 0;
-  let high = history.length;
-
-  while (low < high) {
-    const mid = Math.floor((low + high) / 2);
-
-    if (history[mid]!.timestamp <= timestamp) {
-      low = mid + 1;
-    } else {
-      high = mid;
-    }
-  }
-
-  return low;
-};

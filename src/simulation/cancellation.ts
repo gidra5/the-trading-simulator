@@ -5,6 +5,7 @@ import type { Accessor } from "solid-js";
 import { oppositeSide } from "../market/order";
 import { type SimulationTimeState } from "./time";
 import { createResampler } from "../sampling";
+import { binarySearchIndex } from "../utils";
 
 // const recentPriceHistory = createMemo<PricePoint[]>((recentHistory) => {
 //   const history = priceHistory();
@@ -29,20 +30,6 @@ import { createResampler } from "../sampling";
 //   maxBuy: number;
 // };
 // const priceAnchors = createMemo<number>(() => {
-const bs = (orders: RestingOrder[], price: number): number => {
-  let left = 0;
-  let right = orders.length;
-
-  while (left < right) {
-    const mid = Math.floor((left + right) / 2);
-
-    if (orders[mid]!.price < price) left = mid + 1;
-    else right = mid;
-  }
-
-  if (left >= orders.length) return -1;
-  return left;
-};
 export type CancellationOptions = {
   market: MarketState;
   time: SimulationTimeState;
@@ -162,8 +149,8 @@ export const createCancellationState = (options: CancellationOptions) => {
 
   const removeRestingOrder = (side: OrderSide, order: { id: number; price: number }): boolean => {
     const orders = restingOrders[side];
-    let idx = bs(orders, order.price);
-    if (idx < 0) return false;
+    let idx = binarySearchIndex(orders, (candidate) => candidate.price - order.price);
+    if (idx >= orders.length) return false;
 
     while (idx < orders.length && orders[idx]!.id !== order.id) idx += 1;
     if (idx >= orders.length) return false;
@@ -182,9 +169,8 @@ export const createCancellationState = (options: CancellationOptions) => {
 
   const addOrder = (order: RestingOrder): void => {
     const _orders = restingOrders[order.side];
-    const idx = bs(_orders, order.price);
-    if (idx >= 0) _orders.splice(idx, 0, order);
-    else _orders.push(order);
+    const idx = binarySearchIndex(_orders, (candidate) => candidate.price - order.price);
+    _orders.splice(idx, 0, order);
 
     market.subscribeToOrder(order.id, (change) => {
       if (change.kind !== "remove") return;

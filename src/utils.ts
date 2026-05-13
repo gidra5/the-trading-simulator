@@ -21,6 +21,23 @@ export const formatNumber = (value: number, digits: number): string => {
 
 export const clamp = (value: number, min: number, max: number): number => Math.min(Math.max(value, min), max);
 
+export const binarySearchIndex = <T>(
+  items: readonly T[],
+  compare: (item: T, index: number, items: readonly T[]) => number,
+): number => {
+  let low = 0;
+  let high = items.length;
+
+  while (low < high) {
+    const mid = Math.floor((low + high) / 2);
+
+    if (compare(items[mid]!, mid, items) < 0) low = mid + 1;
+    else high = mid;
+  }
+
+  return low;
+};
+
 export const positiveFiniteOrZero = (value: number): number => (Number.isFinite(value) && value > 0 ? value : 0);
 
 export const halfLifeToDecay = (halfLifeSeconds: number): number => {

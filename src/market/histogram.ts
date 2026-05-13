@@ -1,7 +1,7 @@
 import { Accessor, createMemo } from "solid-js";
 import { OrderSide, RestingOrder } from "./order";
 import { OrderBookChangeset } from "./orderBook";
-import { inRange } from "../utils";
+import { binarySearchIndex, inRange } from "../utils";
 
 export type OrderBookHistogramEntry = {
   kind: OrderSide;
@@ -79,19 +79,6 @@ const createHistogramAccelerationStructure = (options: HistogramAccelerationStru
     return getLogPrice(leaf.value[0].price) === logPrice;
   };
 
-  const findOrderIndexById = (orders: Array<RestingOrder>, id: number): number => {
-    let low = 0;
-    let high = orders.length;
-
-    while (low < high) {
-      const mid = Math.floor((low + high) / 2);
-
-      if (orders[mid]!.id < id) low = mid + 1;
-      else high = mid;
-    }
-
-    return low;
-  };
 
   const insertOrderById = (orders: Array<RestingOrder>, order: RestingOrder): void => {
     const lastOrder = orders[orders.length - 1];
@@ -100,7 +87,7 @@ const createHistogramAccelerationStructure = (options: HistogramAccelerationStru
       return;
     }
 
-    const index = findOrderIndexById(orders, order.id);
+    const index = binarySearchIndex(orders, (_order) => _order.id - order.id);
     orders.splice(index, 0, order);
   };
 
@@ -174,7 +161,7 @@ const createHistogramAccelerationStructure = (options: HistogramAccelerationStru
     }
 
     if (state.kind === "leaf") {
-      const index = findOrderIndexById(state.value, id);
+      const index = binarySearchIndex(state.value, (order) => order.id - id);
       const removedOrder = state.value[index];
       if (!removedOrder || removedOrder.id !== id) return false;
 
@@ -203,7 +190,7 @@ const createHistogramAccelerationStructure = (options: HistogramAccelerationStru
     }
 
     if (state.kind === "leaf") {
-      const index = findOrderIndexById(state.value, id);
+      const index = binarySearchIndex(state.value, (order) => order.id - id);
       const previousOrder = state.value[index];
       if (!previousOrder || previousOrder.id !== id) return 0;
 

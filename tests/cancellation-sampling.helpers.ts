@@ -4,6 +4,7 @@ import type { CancellationOptions, createCancellationState } from "../src/simula
 import type { MarketState, OrderSide } from "../src/market";
 import type { OrderBookChange } from "../src/market/orderBook";
 import type { MarketBehaviorSettings, RestingOrder, SimulationEventType } from "../src/simulation/types";
+import { binarySearchIndex } from "../src/utils";
 
 type CancellationState = ReturnType<typeof createCancellationState>;
 type PriceSpread = { buy: number; sell: number };
@@ -686,17 +687,9 @@ const createWeightedSampler = <T extends { weight: number }>(orders: T[]): (() =
     if (!Number.isFinite(total) || total <= 0) return null;
 
     const target = Math.random() * total;
-    let left = 0;
-    let right = cumulativeWeights.length;
+    const index = binarySearchIndex(cumulativeWeights, (weight) => (weight <= target ? -1 : 1));
 
-    while (left < right) {
-      const mid = Math.floor((left + right) / 2);
-
-      if (cumulativeWeights[mid]! <= target) left = mid + 1;
-      else right = mid;
-    }
-
-    return orders[left] ?? null;
+    return orders[index] ?? null;
   };
 };
 

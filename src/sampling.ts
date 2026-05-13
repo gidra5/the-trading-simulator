@@ -1,4 +1,5 @@
 import type { Accessor } from "solid-js";
+import { binarySearchIndex } from "./utils";
 
 type ResamplerOptions<T> = {
   candidateCount: Accessor<number>;
@@ -22,16 +23,8 @@ export const createResampler = <T>(options: ResamplerOptions<T>) => {
 
       if (candidates.length === 0) return null;
       const targetWeight = Math.random() * totalWeight;
-      let left = 0;
-      let right = candidates.length;
-
-      while (left < right) {
-        const mid = Math.floor((left + right) / 2);
-
-        if (candidates[mid]!.cumulativeWeight <= targetWeight) left = mid + 1;
-        else right = mid;
-      }
-      const chosen = candidates[left];
+      const index = binarySearchIndex(candidates, (candidate) => (candidate.cumulativeWeight <= targetWeight ? -1 : 1));
+      const chosen = candidates[index];
       if (!chosen) return null;
       return chosen.item;
     },
