@@ -11,24 +11,25 @@
     "profile:page": "node scripts/profile-page-heatmap.mjs",
     "test": "vitest run --exclude tests/cancellation-sampling-report.test.ts",
     "serve": "vite preview",
-    "check": "tsc --noEmit",
+    "check": "tsc --noEmit --stableTypeOrdering",
     "fmt": "prettier --write ./src ./tests"
   },
   "license": "MIT",
   "devDependencies": {
+    "@unocss/core": "^66.6.8",
     "@unocss/preset-mini": "^66.5.0",
     "@unocss/vite": "^66.5.0",
-    "@webgpu/types": "^0.1.61",
     "fast-check": "^4.7.0",
     "playwright": "^1.59.1",
     "prettier": "^3.8.3",
     "solid-devtools": "^0.34.5",
-    "typescript": "^5.9.2",
-    "vite": "^7.1.4",
+    "typescript": "^6.0.3",
+    "vite": "^8.0.12",
     "vite-plugin-solid": "^2.11.8",
     "vitest": "^4.1.5"
   },
   "dependencies": {
+    "@solid-primitives/i18n": "^2.2.1",
     "clsx": "^2.1.1",
     "lucide-solid": "^1.14.0",
     "solid-js": "^1.9.9"

@@ -13,7 +13,10 @@
     "noEmit": true,
     // Type Checking & Safety
     "strict": true,
-    "types": ["vite/client", "@webgpu/types"]
+    "skipLibCheck": true,
+    "types": [
+      "vite/client"
+    ]
   },
   "include": ["src"]
 }
