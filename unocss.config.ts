@@ -58,9 +58,8 @@ export default defineConfig({
       ...themeColors,
     },
     fontFamily: {
-      crimson: '"Crimson Text", serif',
+      serif: '"Source Serif 4", serif',
       fira: '"Fira Code", monospace',
-      tektur: '"Tektur", system-ui, sans-serif',
     },
   },
 });

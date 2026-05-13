@@ -15,7 +15,7 @@ type TypographyWeight = (typeof typographyWeights)[number];
 const roleTypeFontClasses: Record<TypographyRole, Record<TypographyType, string>> = {
   title: {
     primary: "font-serif",
-    secondary: "font-crimson",
+    secondary: "font-serif",
   },
   body: {
     primary: "font-sans",

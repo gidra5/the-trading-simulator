@@ -15,10 +15,8 @@ export const Header: Component<HeaderProps> = (props) => {
   const tabs = createMemo(() => tabValues.map((value) => ({ value, label: t(`tabs.${value}`) })));
 
   return (
-    <header class="flex h-12 shrink-0 items-center justify-between gap-4 px-3">
-      <a class="font-title-primary-xs-semi text-text-primary no-underline hover:text-accent-primary" href="/">
-        {t("app.title")}
-      </a>
+    <header class="flex h-16 shrink-0 items-center justify-between gap-4 px-3">
+      <span class="font-body-primary-xl-semi text-text-primary">{t("app.title")}</span>
       <TabBar tabs={tabs()} value={props.activeTab} onChange={props.onTabChange} />
       <div class="font-mono-primary-xs-rg flex items-center gap-3 text-text-secondary">
         <span>{t("market.header.buy", { price: formatNumber(props.priceSpread().buy, digits) })}</span>

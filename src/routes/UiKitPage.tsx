@@ -30,12 +30,12 @@ const kitTabs = [
 ] as const;
 const typographyGuidelines = [
   {
-    className: "font-title-primary-xl-semi",
+    className: "font-title-primary-xl-rg",
     label: "For headings",
     text: "Trading simulator",
   },
   {
-    className: "font-title-secondary-base-semi",
+    className: "font-title-secondary-base-rg",
     label: "For titles inside larger text blocks",
     text: "The beginning of your journey",
   },
@@ -121,15 +121,6 @@ const typographyClassName = (
   size: TypographySize,
   weight: TypographyWeight,
 ): string => `font-${role}-${type}-${size}-${weight}`;
-const typographyColumnDividerClass = (column: TypographyColumn): string =>
-  clsx(
-    "border-b border-r border-border",
-    column.typeIndex === 0 && column.weightIndex === 0
-      ? "border-l-2 border-border"
-      : column.weightIndex === 0
-        ? "border-l border-border"
-        : null,
-  );
 
 const iconSamples: readonly { Icon: LucideIcon; label: string; toneClass: string }[] = [
   { Icon: Activity, label: "Activity", toneClass: "text-accent-primary" },
@@ -293,12 +284,21 @@ export default function UiKitPage() {
                 <span>Divider</span>
               </div>
 
-              <div class="flex flex-wrap gap-2">
+              <div class="flex flex-wrap gap-2 items-center">
                 <Button variant="primary">Primary</Button>
+                <Button variant="primary" size="sm">
+                  Primary
+                </Button>
                 <Button variant="secondary">Secondary</Button>
                 <Button variant="ghost">Ghost</Button>
                 <Button variant="danger">Danger</Button>
                 <Button disabled>Disabled</Button>
+                <Button aria-label="Settings" variant="icon">
+                  <Settings aria-hidden="true" class="h-5 w-5" strokeWidth={1.8} />
+                </Button>
+                <Button aria-label="Small settings" size="sm" variant="icon">
+                  <Settings aria-hidden="true" class="h-4 w-4" strokeWidth={1.8} />
+                </Button>
               </div>
 
               <div class="grid grid-cols-2 gap-3">

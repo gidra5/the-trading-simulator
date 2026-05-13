@@ -1,6 +1,6 @@
 import clsx from "clsx";
 import { For } from "solid-js";
-import { buttonVariants } from "./Button";
+import { buttonSizes, buttonVariants } from "./Button";
 
 export type TabOption<Value extends string> = {
   label: string;
@@ -16,13 +16,7 @@ type TabBarProps<Value extends string> = {
 
 export function TabBar<Value extends string>(props: TabBarProps<Value>) {
   return (
-    <div
-      class={clsx(
-        "inline-flex h-9 items-center gap-1 rounded border border-border bg-surface-primary p-1",
-        props.class,
-      )}
-      role="tablist"
-    >
+    <div class={clsx("inline-flex items-center gap-1", props.class)} role="tablist">
       <For each={props.tabs}>
         {(tab) => {
           const isActive = () => props.value === tab.value;
@@ -31,7 +25,8 @@ export function TabBar<Value extends string>(props: TabBarProps<Value>) {
             <button
               aria-selected={isActive()}
               class={clsx(
-                "font-body-primary-sm-semi h-7 appearance-none rounded border-0 px-3 transition",
+                "inline-flex appearance-none items-center justify-center gap-2 rounded border transition disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2",
+                buttonSizes.md,
                 isActive() && buttonVariants.primary,
                 !isActive() && buttonVariants.ghost,
               )}
