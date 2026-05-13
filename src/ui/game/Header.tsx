@@ -15,7 +15,7 @@ export const Header: Component<HeaderProps> = (props) => {
   const tabs = createMemo(() => tabValues.map((value) => ({ value, label: t(`tabs.${value}`) })));
 
   return (
-    <header class="flex h-12 shrink-0 items-center justify-between gap-4 border-b border-border bg-surface-secondary px-3">
+    <header class="flex h-12 shrink-0 items-center justify-between gap-4 px-3">
       <a class="font-title-primary-xs-semi text-text-primary no-underline hover:text-accent-primary" href="/">
         {t("app.title")}
       </a>

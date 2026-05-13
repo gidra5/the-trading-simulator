@@ -1,49 +1,82 @@
-import { createMemo, type Component } from "solid-js";
+import { createMemo, createSignal, type Component } from "solid-js";
 import { locales, locale, setLocale, t, type Locale } from "../../i18n/game";
+import { deltaSnapshotInterval, fanout, levels, setDeltaSnapshotInterval, setFanout, setLevels } from "../../market";
 import { Field } from "../../ui-kit/Field";
 import { Panel } from "../../ui-kit/Panel";
 import { SelectField } from "../../ui-kit/SelectField";
 import { TextInput } from "../../ui-kit/TextInput";
 import { ToggleField } from "../../ui-kit/ToggleField";
 import { HistogramNormalization } from "../OrderBookHistogram";
+import { gameSettings } from "./settings";
 
 const isLocale = (value: string): value is Locale => locales.includes(value as Locale);
 
-type SettingsBodyProps = {
-  advancedOrdersEnabled: boolean;
-  autosaveEnabled: boolean;
-  candleIntervalInput: string;
-  deltaSnapshotInput: string;
-  fanoutInput: string;
-  histogramNormalization: HistogramNormalization;
-  histogramWindowInput: string;
-  isHeatmapEnabled: boolean;
-  isHistogramCumulative: boolean;
-  isHistogramEnabled: boolean;
-  levelsInput: string;
-  newsEventsEnabled: boolean;
-  onAdvancedOrdersEnabledChange: (enabled: boolean) => void;
-  onAutosaveEnabledChange: (enabled: boolean) => void;
-  onCandleIntervalInputChange: (value: string) => void;
-  onDeltaSnapshotInputChange: (value: string) => void;
-  onFanoutInputChange: (value: string) => void;
-  onHeatmapEnabledChange: (enabled: boolean) => void;
-  onHistogramCumulativeChange: (enabled: boolean) => void;
-  onHistogramEnabledChange: (enabled: boolean) => void;
-  onHistogramNormalizationChange: (value: HistogramNormalization) => void;
-  onHistogramWindowInputChange: (value: string) => void;
-  onLevelsInputChange: (value: string) => void;
-  onNewsEventsEnabledChange: (enabled: boolean) => void;
-  onShowFrameRateChange: (enabled: boolean) => void;
-  showFrameRate: boolean;
-};
-
-export const SettingsBody: Component<SettingsBodyProps> = (props) => {
+export const SettingsBody: Component = () => {
+  const [candleIntervalInput, setCandleIntervalInput] = createSignal(String(gameSettings.candleInterval() / 1_000));
+  const [histogramWindowInput, setHistogramWindowInput] = createSignal(String(gameSettings.histogramWindowFraction()));
+  const [deltaSnapshotInput, setDeltaSnapshotInput] = createSignal(String(deltaSnapshotInterval()));
+  const [fanoutInput, setFanoutInput] = createSignal(String(fanout()));
+  const [levelsInput, setLevelsInput] = createSignal(String(levels()));
   const languageOptions = createMemo(() => locales.map((value) => ({ value, label: t(`settings.language.${value}`) })));
   const normalizationOptions = createMemo(() => [
     { value: HistogramNormalization.Linear, label: t("settings.normalization.linear") },
     { value: HistogramNormalization.Logarithmic, label: t("settings.normalization.logarithmic") },
   ]);
+
+  const updatePositiveNumberInput = (
+    value: string,
+    setInput: (value: string) => void,
+    onValid: (value: number) => void,
+  ): void => {
+    setInput(value);
+    const next = Number(value);
+    if (!Number.isFinite(next) || next <= 0) return;
+    onValid(next);
+  };
+
+  const updateNonNegativeNumberInput = (
+    value: string,
+    setInput: (value: string) => void,
+    onValid: (value: number) => void,
+  ): void => {
+    setInput(value);
+    const next = Number(value);
+    if (!Number.isFinite(next) || next < 0) return;
+    onValid(next);
+  };
+
+  const updatePositiveIntegerInput = (
+    value: string,
+    setInput: (value: string) => void,
+    onValid: (value: number) => void,
+  ): void => {
+    setInput(value);
+    const next = Number(value);
+    if (!Number.isInteger(next) || next <= 0) return;
+    onValid(next);
+  };
+
+  const updateCandleIntervalInput = (value: string): void => {
+    updatePositiveNumberInput(value, setCandleIntervalInput, (next) =>
+      gameSettings.setCandleInterval(Math.round(next * 1_000)),
+    );
+  };
+
+  const updateDeltaSnapshotInput = (value: string): void => {
+    updatePositiveIntegerInput(value, setDeltaSnapshotInput, setDeltaSnapshotInterval);
+  };
+
+  const updateFanoutInput = (value: string): void => {
+    updatePositiveIntegerInput(value, setFanoutInput, setFanout);
+  };
+
+  const updateHistogramWindowInput = (value: string): void => {
+    updateNonNegativeNumberInput(value, setHistogramWindowInput, gameSettings.setHistogramWindowFraction);
+  };
+
+  const updateLevelsInput = (value: string): void => {
+    updatePositiveIntegerInput(value, setLevelsInput, setLevels);
+  };
 
   return (
     <div class="h-full overflow-auto p-4">
@@ -51,39 +84,39 @@ export const SettingsBody: Component<SettingsBodyProps> = (props) => {
         <Panel title={t("settings.panels.marketDisplay")}>
           <div class="grid gap-3">
             <ToggleField
-              checked={props.isHeatmapEnabled}
+              checked={gameSettings.isHeatmapEnabled()}
               label={t("settings.display.heatmap")}
-              onChange={props.onHeatmapEnabledChange}
+              onChange={gameSettings.setIsHeatmapEnabled}
             />
             <ToggleField
-              checked={props.isHistogramEnabled}
+              checked={gameSettings.isHistogramEnabled()}
               label={t("settings.display.histogram")}
-              onChange={props.onHistogramEnabledChange}
+              onChange={gameSettings.setIsHistogramEnabled}
             />
             <ToggleField
-              checked={props.isHistogramCumulative}
+              checked={gameSettings.isHistogramCumulative()}
               label={t("settings.display.cumulativeHistogram")}
-              onChange={props.onHistogramCumulativeChange}
+              onChange={gameSettings.setIsHistogramCumulative}
             />
             <SelectField
               label={t("settings.display.histogramNormalization")}
               options={normalizationOptions()}
-              value={props.histogramNormalization}
-              onChange={(value) => props.onHistogramNormalizationChange(value as HistogramNormalization)}
+              value={gameSettings.histogramNormalization()}
+              onChange={(value) => gameSettings.setHistogramNormalization(value as HistogramNormalization)}
             />
             <Field label={t("settings.display.candleInterval")}>
               <TextInput
                 inputMode="decimal"
-                value={props.candleIntervalInput}
-                onInput={(event) => props.onCandleIntervalInputChange(event.currentTarget.value)}
+                value={candleIntervalInput()}
+                onInput={(event) => updateCandleIntervalInput(event.currentTarget.value)}
               />
             </Field>
             <Field label={t("settings.display.histogramWindowFraction")}>
               <TextInput
-                disabled={props.isHistogramCumulative}
+                disabled={gameSettings.isHistogramCumulative()}
                 inputMode="decimal"
-                value={props.histogramWindowInput}
-                onInput={(event) => props.onHistogramWindowInputChange(event.currentTarget.value)}
+                value={histogramWindowInput()}
+                onInput={(event) => updateHistogramWindowInput(event.currentTarget.value)}
               />
             </Field>
           </div>
@@ -92,29 +125,29 @@ export const SettingsBody: Component<SettingsBodyProps> = (props) => {
         <Panel title={t("settings.panels.performance")}>
           <div class="grid gap-3">
             <ToggleField
-              checked={props.showFrameRate}
+              checked={gameSettings.showFrameRate()}
               label={t("settings.performance.fpsCounter")}
-              onChange={props.onShowFrameRateChange}
+              onChange={gameSettings.setShowFrameRate}
             />
             <Field label={t("settings.performance.deltaSnapshotInterval")}>
               <TextInput
                 inputMode="numeric"
-                value={props.deltaSnapshotInput}
-                onInput={(event) => props.onDeltaSnapshotInputChange(event.currentTarget.value)}
+                value={deltaSnapshotInput()}
+                onInput={(event) => updateDeltaSnapshotInput(event.currentTarget.value)}
               />
             </Field>
             <Field label={t("settings.performance.deltaSnapshotFanout")}>
               <TextInput
                 inputMode="numeric"
-                value={props.fanoutInput}
-                onInput={(event) => props.onFanoutInputChange(event.currentTarget.value)}
+                value={fanoutInput()}
+                onInput={(event) => updateFanoutInput(event.currentTarget.value)}
               />
             </Field>
             <Field label={t("settings.performance.deltaSnapshotLevels")}>
               <TextInput
                 inputMode="numeric"
-                value={props.levelsInput}
-                onInput={(event) => props.onLevelsInputChange(event.currentTarget.value)}
+                value={levelsInput()}
+                onInput={(event) => updateLevelsInput(event.currentTarget.value)}
               />
             </Field>
           </div>
@@ -123,19 +156,19 @@ export const SettingsBody: Component<SettingsBodyProps> = (props) => {
         <Panel title={t("settings.panels.featureFlags")}>
           <div class="grid gap-3">
             <ToggleField
-              checked={props.advancedOrdersEnabled}
+              checked={gameSettings.advancedOrdersEnabled()}
               label={t("settings.features.advancedOrders")}
-              onChange={props.onAdvancedOrdersEnabledChange}
+              onChange={gameSettings.setAdvancedOrdersEnabled}
             />
             <ToggleField
-              checked={props.newsEventsEnabled}
+              checked={gameSettings.newsEventsEnabled()}
               label={t("settings.features.newsEvents")}
-              onChange={props.onNewsEventsEnabledChange}
+              onChange={gameSettings.setNewsEventsEnabled}
             />
             <ToggleField
-              checked={props.autosaveEnabled}
+              checked={gameSettings.autosaveEnabled()}
               label={t("settings.features.autosave")}
-              onChange={props.onAutosaveEnabledChange}
+              onChange={gameSettings.setAutosaveEnabled}
             />
           </div>
         </Panel>

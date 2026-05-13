@@ -3,18 +3,14 @@ import { t } from "../../i18n/game";
 import type { OrderBookHeatmapEntry, OrderBookHistogramEntry, PriceCandle } from "../../market";
 import { Panel } from "../../ui-kit/Panel";
 import { Chart, type ChartViewport } from "../Chart";
-import { HistogramNormalization, OrderBookHistogram } from "../OrderBookHistogram";
+import { OrderBookHistogram } from "../OrderBookHistogram";
+import { gameSettings } from "./settings";
 
 type MarketBodyProps = {
-  candleInterval: number;
   histogram: OrderBookHistogramEntry[] | null;
-  histogramNormalization: HistogramNormalization;
-  histogramWindowFraction: number;
-  isHistogramCumulative: boolean;
   onViewportChange: (viewport: ChartViewport) => void;
   orderBookHeatmap: OrderBookHeatmapEntry[] | null;
   priceCandles: PriceCandle[];
-  showFrameRate: boolean;
   viewport: ChartViewport;
 };
 
@@ -24,11 +20,11 @@ export const MarketBody: Component<MarketBodyProps> = (props) => {
       <div class="flex h-full min-h-0 gap-3">
         <Panel bodyClass="min-h-0 flex-1 p-0" class="min-w-0 flex-1">
           <Chart
-            candleInterval={props.candleInterval}
+            candleInterval={gameSettings.candleInterval()}
             class="h-full w-full bg-surface-primary"
             orderBookHeatmap={props.orderBookHeatmap}
             priceCandles={props.priceCandles}
-            showFrameRate={props.showFrameRate}
+            showFrameRate={gameSettings.showFrameRate()}
             viewport={props.viewport}
             onViewportChange={props.onViewportChange}
           />
@@ -38,10 +34,10 @@ export const MarketBody: Component<MarketBodyProps> = (props) => {
             <Panel bodyClass="min-h-0 flex-1 p-0" class="w-48 shrink-0" title={t("market.depth.title")}>
               <OrderBookHistogram
                 class="block h-full w-full"
-                cumulative={props.isHistogramCumulative}
+                cumulative={gameSettings.isHistogramCumulative()}
                 data={histogramData()}
-                normalization={props.histogramNormalization}
-                windowFraction={props.histogramWindowFraction}
+                normalization={gameSettings.histogramNormalization()}
+                windowFraction={gameSettings.histogramWindowFraction()}
               />
             </Panel>
           )}

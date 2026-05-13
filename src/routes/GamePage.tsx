@@ -1,16 +1,10 @@
 import { createMemo, createSignal, Match, onCleanup, onMount, Switch } from "solid-js";
 import { createAccountState } from "../economy/account";
 import {
-  deltaSnapshotInterval,
-  fanout,
   getOrderBookHistogram,
   getOrderBookRegion,
-  levels,
   marketPriceSpread,
   priceHistoryCandle,
-  setDeltaSnapshotInterval,
-  setFanout,
-  setLevels,
   type OrderSide,
   type PriceCandle,
 } from "../market/index";
@@ -25,67 +19,54 @@ import { Footer } from "../ui/game/Footer";
 import { Header } from "../ui/game/Header";
 import { MarketBody } from "../ui/game/MarketBody";
 import { MarketSidebar } from "../ui/game/MarketSidebar";
+import { gameSettings } from "../ui/game/settings";
 import { SettingsBody } from "../ui/game/SettingsBody";
 import { SettingsSidebar } from "../ui/game/SettingsSidebar";
 import type { Tab, OrderKind } from "../ui/game/types";
-import { HistogramNormalization } from "../ui/OrderBookHistogram";
 import { createThrottledMemo } from "../utils";
 
 const pollingInterval = 200;
 
-export default function GamePage() {
-  const simulation = new TradingSimulation();
-  const startTime = time();
-  const priceSpread = createThrottledMemo(marketPriceSpread, pollingInterval);
-
-  const [activeTab, setActiveTab] = createSignal<Tab>("market");
+const createAccountGameState = () => {
   const [feeRate] = createSignal(0.0001);
   const [debtCapitalizationRate] = createSignal(0.00001);
-  const [maintenanceMargin] = createSignal(0);
+  const [maintenanceMargin] = createSignal(0.05);
   const account = createAccountState({
     feeRate,
     debtCapitalizationRate,
     maintenanceMargin,
   });
 
+  const orderHistory = createMemo(() => account.orderHistory().filter((entry) => entry.kind !== "liquidation"));
+  const liquidations = createMemo(() => account.orderHistory().filter((entry) => entry.kind === "liquidation"));
+
+  return {
+    account,
+    orderHistory,
+    liquidations,
+  };
+};
+
+const createMarketGameState = (options: {
+  account: ReturnType<typeof createAccountGameState>["account"];
+  startTime: number;
+}) => {
+  const priceSpread = createThrottledMemo(marketPriceSpread, pollingInterval);
+
   const [orderSide, setOrderSide] = createSignal<OrderSide>("buy");
   const [orderKind, setOrderKind] = createSignal<OrderKind>("market");
   const [orderPrice, setOrderPrice] = createSignal("1.001000");
   const [orderSize, setOrderSize] = createSignal("100");
 
-  const [candleInterval, setCandleInterval] = createSignal(1_000);
-  const [candleIntervalInput, setCandleIntervalInput] = createSignal("1");
-  const [isHeatmapEnabled, setIsHeatmapEnabled] = createSignal(false);
-  const [isHistogramEnabled, setIsHistogramEnabled] = createSignal(true);
-  const [isHistogramCumulative, setIsHistogramCumulative] = createSignal(true);
-  const [histogramNormalization, setHistogramNormalization] = createSignal<HistogramNormalization>(
-    HistogramNormalization.Linear,
-  );
-  const [histogramWindowFraction, setHistogramWindowFraction] = createSignal(0.01);
-  const [histogramWindowInput, setHistogramWindowInput] = createSignal("0.01");
-  const [showFrameRate, setShowFrameRate] = createSignal(true);
-  const [deltaSnapshotInput, setDeltaSnapshotInput] = createSignal(String(deltaSnapshotInterval()));
-  const [fanoutInput, setFanoutInput] = createSignal(String(fanout()));
-  const [levelsInput, setLevelsInput] = createSignal(String(levels()));
-  const [advancedOrdersEnabled, setAdvancedOrdersEnabled] = createSignal(false);
-  const [newsEventsEnabled, setNewsEventsEnabled] = createSignal(false);
-  const [autosaveEnabled, setAutosaveEnabled] = createSignal(true);
-
-  const [clickValue, setClickValue] = createSignal(25);
-  const [upgradeLevel, setUpgradeLevel] = createSignal(0);
-  const upgradeCost = createMemo(() => Math.round(500 * 1.72 ** upgradeLevel()));
-  const nextClickValue = createMemo(() => clickValue() + 25 + upgradeLevel() * 5);
-  const canBuyUpgrade = createMemo(() => account.portfolio().Money >= upgradeCost());
-
   const [viewport, setViewport] = createSignal<ChartViewport>({
-    time: [startTime, startTime + 1 * 60 * 1000],
+    time: [options.startTime, options.startTime + 1 * 60 * 1000],
     price: [0.7, 1.3],
     resolution: [1, 1],
   });
-  let previousCandleInterval = candleInterval();
+  let previousCandleInterval = gameSettings.candleInterval();
 
   const rebuildCandles = (interval: number): PriceCandle[] => {
-    const alignedStart = Math.floor(startTime / interval) * interval;
+    const alignedStart = Math.floor(options.startTime / interval) * interval;
     const rebuiltCandles: PriceCandle[] = [];
 
     for (let candleStart = alignedStart; candleStart <= time(); candleStart += interval) {
@@ -97,7 +78,7 @@ export default function GamePage() {
   };
 
   const candles = createThrottledMemo<PriceCandle[]>((currentCandles = []) => {
-    const interval = candleInterval();
+    const interval = gameSettings.candleInterval();
 
     if (interval !== previousCandleInterval) {
       previousCandleInterval = interval;
@@ -123,7 +104,7 @@ export default function GamePage() {
   }, pollingInterval);
 
   const heatmap = createThrottledMemo(() => {
-    if (!isHeatmapEnabled()) return null;
+    if (!gameSettings.isHeatmapEnabled()) return null;
 
     return getOrderBookRegion({
       timestamp: viewport().time,
@@ -133,16 +114,13 @@ export default function GamePage() {
   }, pollingInterval);
 
   const histogram = createThrottledMemo(() => {
-    if (!isHistogramEnabled()) return null;
+    if (!gameSettings.isHistogramEnabled()) return null;
 
     return getOrderBookHistogram({
       price: viewport().price,
       resolution: viewport().resolution[1],
     });
   }, pollingInterval);
-
-  const orderHistory = createMemo(() => account.orderHistory().filter((entry) => entry.kind !== "liquidation"));
-  const liquidations = createMemo(() => account.orderHistory().filter((entry) => entry.kind === "liquidation"));
 
   const updateViewport = (nextViewport: ChartViewport): void => {
     setViewport((current) => {
@@ -161,52 +139,45 @@ export default function GamePage() {
     });
   };
 
-  const updatePositiveNumberInput = (
-    value: string,
-    setInput: (value: string) => void,
-    onValid: (value: number) => void,
-  ): void => {
-    setInput(value);
-    const next = Number(value);
-    if (!Number.isFinite(next) || next <= 0) return;
-    onValid(next);
-  };
-
-  const updateNonNegativeNumberInput = (
-    value: string,
-    setInput: (value: string) => void,
-    onValid: (value: number) => void,
-  ): void => {
-    setInput(value);
-    const next = Number(value);
-    if (!Number.isFinite(next) || next < 0) return;
-    onValid(next);
-  };
-
-  const updatePositiveIntegerInput = (
-    value: string,
-    setInput: (value: string) => void,
-    onValid: (value: number) => void,
-  ): void => {
-    setInput(value);
-    const next = Number(value);
-    if (!Number.isInteger(next) || next <= 0) return;
-    onValid(next);
-  };
-
   const placeOrder = (): void => {
     const size = Number(orderSize());
     if (!Number.isFinite(size) || size <= 0) return;
 
     if (orderKind() === "market") {
-      account.placeMarketOrder(orderSide(), size);
+      options.account.placeMarketOrder(orderSide(), size);
       return;
     }
 
     const price = Number(orderPrice());
     if (!Number.isFinite(price) || price <= 0) return;
-    account.placeLimitOrder(orderSide(), price, size);
+    options.account.placeLimitOrder(orderSide(), price, size);
   };
+
+  return {
+    candles,
+    heatmap,
+    histogram,
+    orderKind,
+    orderPrice,
+    orderSide,
+    orderSize,
+    placeOrder,
+    priceSpread,
+    setOrderKind,
+    setOrderPrice,
+    setOrderSide,
+    setOrderSize,
+    updateViewport,
+    viewport,
+  };
+};
+
+const createEconomyGameState = (account: ReturnType<typeof createAccountGameState>["account"]) => {
+  const [clickValue, setClickValue] = createSignal(25);
+  const [upgradeLevel, setUpgradeLevel] = createSignal(0);
+  const upgradeCost = createMemo(() => Math.round(500 * 1.2 ** upgradeLevel()));
+  const nextClickValue = createMemo(() => clickValue() + 25 + upgradeLevel() * 5);
+  const canBuyUpgrade = createMemo(() => account.portfolio().Money >= upgradeCost());
 
   const earnMoney = (): void => {
     account.addMoney(clickValue());
@@ -220,6 +191,24 @@ export default function GamePage() {
     setUpgradeLevel((current) => current + 1);
   };
 
+  return {
+    buyClickUpgrade,
+    canBuyUpgrade,
+    clickValue,
+    earnMoney,
+    nextClickValue,
+    upgradeCost,
+  };
+};
+
+export default function GamePage() {
+  const simulation = new TradingSimulation();
+  const startTime = time();
+  const [activeTab, setActiveTab] = createSignal<Tab>("market");
+  const accountState = createAccountGameState();
+  const market = createMarketGameState({ account: accountState.account, startTime });
+  const economy = createEconomyGameState(accountState.account);
+
   onMount(() => {
     const simulationIntervalId = setInterval(() => simulation.tick(simulationTickTime), simulationTickTime);
 
@@ -229,114 +218,68 @@ export default function GamePage() {
   });
 
   return (
-    <div class="font-body-primary-base-rg flex h-screen min-h-[680px] w-full flex-col overflow-hidden bg-surface-primary text-text-primary">
-      <Header activeTab={activeTab()} priceSpread={priceSpread} onTabChange={setActiveTab} />
+    <div class="font-body-primary-base-rg flex h-screen min-h-[680px] w-full flex-col overflow-hidden bg-surface-body text-text-primary">
+      <Header activeTab={activeTab()} priceSpread={market.priceSpread} onTabChange={setActiveTab} />
 
       <div class="flex min-h-0 flex-1">
         <main class="min-w-0 flex-1">
           <Switch>
             <Match when={activeTab() === "market"}>
               <MarketBody
-                candleInterval={candleInterval()}
-                histogram={histogram()}
-                histogramNormalization={histogramNormalization()}
-                histogramWindowFraction={histogramWindowFraction()}
-                isHistogramCumulative={isHistogramCumulative()}
-                orderBookHeatmap={heatmap()}
-                priceCandles={candles()}
-                showFrameRate={showFrameRate()}
-                viewport={viewport()}
-                onViewportChange={updateViewport}
+                histogram={market.histogram()}
+                orderBookHeatmap={market.heatmap()}
+                priceCandles={market.candles()}
+                viewport={market.viewport()}
+                onViewportChange={market.updateViewport}
               />
             </Match>
             <Match when={activeTab() === "account"}>
-              <AccountBody account={account} />
+              <AccountBody account={accountState.account} />
             </Match>
             <Match when={activeTab() === "economy"}>
-              <EconomyBody clickValue={clickValue()} onEarnMoney={earnMoney} />
+              <EconomyBody clickValue={economy.clickValue()} onEarnMoney={economy.earnMoney} />
             </Match>
             <Match when={activeTab() === "settings"}>
-              <SettingsBody
-                advancedOrdersEnabled={advancedOrdersEnabled()}
-                autosaveEnabled={autosaveEnabled()}
-                candleIntervalInput={candleIntervalInput()}
-                deltaSnapshotInput={deltaSnapshotInput()}
-                fanoutInput={fanoutInput()}
-                histogramNormalization={histogramNormalization()}
-                histogramWindowInput={histogramWindowInput()}
-                isHeatmapEnabled={isHeatmapEnabled()}
-                isHistogramCumulative={isHistogramCumulative()}
-                isHistogramEnabled={isHistogramEnabled()}
-                levelsInput={levelsInput()}
-                newsEventsEnabled={newsEventsEnabled()}
-                showFrameRate={showFrameRate()}
-                onAdvancedOrdersEnabledChange={setAdvancedOrdersEnabled}
-                onAutosaveEnabledChange={setAutosaveEnabled}
-                onCandleIntervalInputChange={(value) =>
-                  updatePositiveNumberInput(value, setCandleIntervalInput, (next) =>
-                    setCandleInterval(Math.round(next * 1_000)),
-                  )
-                }
-                onDeltaSnapshotInputChange={(value) =>
-                  updatePositiveIntegerInput(value, setDeltaSnapshotInput, setDeltaSnapshotInterval)
-                }
-                onFanoutInputChange={(value) => updatePositiveIntegerInput(value, setFanoutInput, setFanout)}
-                onHeatmapEnabledChange={setIsHeatmapEnabled}
-                onHistogramCumulativeChange={setIsHistogramCumulative}
-                onHistogramEnabledChange={setIsHistogramEnabled}
-                onHistogramNormalizationChange={setHistogramNormalization}
-                onHistogramWindowInputChange={(value) =>
-                  updateNonNegativeNumberInput(value, setHistogramWindowInput, setHistogramWindowFraction)
-                }
-                onLevelsInputChange={(value) => updatePositiveIntegerInput(value, setLevelsInput, setLevels)}
-                onNewsEventsEnabledChange={setNewsEventsEnabled}
-                onShowFrameRateChange={setShowFrameRate}
-              />
+              <SettingsBody />
             </Match>
           </Switch>
         </main>
-        <aside class="w-[360px] shrink-0 overflow-auto border-l border-border bg-surface-secondary">
+        <aside class="w-[360px] shrink-0 overflow-auto bg-surface-primary">
           <Switch>
             <Match when={activeTab() === "market"}>
               <MarketSidebar
-                account={account}
-                orderKind={orderKind()}
-                orderPrice={orderPrice()}
-                orderSide={orderSide()}
-                orderSize={orderSize()}
-                onOrderKindChange={setOrderKind}
-                onOrderPriceChange={setOrderPrice}
-                onOrderSideChange={setOrderSide}
-                onOrderSizeChange={setOrderSize}
-                onPlaceOrder={placeOrder}
+                account={accountState.account}
+                orderKind={market.orderKind()}
+                orderPrice={market.orderPrice()}
+                orderSide={market.orderSide()}
+                orderSize={market.orderSize()}
+                onOrderKindChange={market.setOrderKind}
+                onOrderPriceChange={market.setOrderPrice}
+                onOrderSideChange={market.setOrderSide}
+                onOrderSizeChange={market.setOrderSize}
+                onPlaceOrder={market.placeOrder}
               />
             </Match>
             <Match when={activeTab() === "account"}>
-              <AccountSidebar liquidations={liquidations()} orderHistory={orderHistory()} />
+              <AccountSidebar liquidations={accountState.liquidations()} orderHistory={accountState.orderHistory()} />
             </Match>
             <Match when={activeTab() === "economy"}>
               <EconomySidebar
-                canBuyUpgrade={canBuyUpgrade()}
-                clickValue={clickValue()}
-                nextClickValue={nextClickValue()}
-                upgradeCost={upgradeCost()}
-                onBuyUpgrade={buyClickUpgrade}
+                canBuyUpgrade={economy.canBuyUpgrade()}
+                clickValue={economy.clickValue()}
+                nextClickValue={economy.nextClickValue()}
+                upgradeCost={economy.upgradeCost()}
+                onBuyUpgrade={economy.buyClickUpgrade}
               />
             </Match>
             <Match when={activeTab() === "settings"}>
-              <SettingsSidebar
-                advancedOrdersEnabled={advancedOrdersEnabled()}
-                isHeatmapEnabled={isHeatmapEnabled()}
-                isHistogramEnabled={isHistogramEnabled()}
-                newsEventsEnabled={newsEventsEnabled()}
-                showFrameRate={showFrameRate()}
-              />
+              <SettingsSidebar />
             </Match>
           </Switch>
         </aside>
       </div>
 
-      <Footer account={account} activeTab={activeTab()} />
+      <Footer account={accountState.account} activeTab={activeTab()} />
     </div>
   );
 }
