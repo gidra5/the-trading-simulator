@@ -1,7 +1,6 @@
 import { Accessor, createMemo, createSignal } from "solid-js";
 import { assert } from "../utils";
 import { cloneOrder, compareOrders, type OrderSide, type RestingOrder } from "./order";
-import { time } from "../simulation/time";
 
 export type OrderBook = {
   // sorted by price and then id
@@ -189,9 +188,10 @@ type OrderBookOptions = {
   deltaSnapshotInterval: Accessor<number>;
   fanout: Accessor<number>;
   levels: Accessor<number>;
+  time: Accessor<number>;
 };
 
-export const createOrderBook = ({ deltaSnapshotInterval, fanout, levels }: OrderBookOptions) => {
+export const createOrderBook = ({ deltaSnapshotInterval, fanout, levels, time }: OrderBookOptions) => {
   const snapshotInterval = () => deltaSnapshotInterval() * fanout() ** levels();
 
   const initialOrderBook: OrderBook = { buy: [], sell: [] };

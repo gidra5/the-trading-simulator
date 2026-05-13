@@ -1,6 +1,6 @@
 import { createMemo, createSignal, type Component } from "solid-js";
 import { locales, locale, setLocale, t, type Locale } from "../../i18n/game";
-import { deltaSnapshotInterval, fanout, levels, setDeltaSnapshotInterval, setFanout, setLevels } from "../../market";
+import { market } from "../../routes/game/state";
 import { Field } from "../../ui-kit/Field";
 import { Panel } from "../../ui-kit/Panel";
 import { SelectField } from "../../ui-kit/SelectField";
@@ -14,9 +14,9 @@ const isLocale = (value: string): value is Locale => locales.includes(value as L
 export const SettingsBody: Component = () => {
   const [candleIntervalInput, setCandleIntervalInput] = createSignal(String(gameSettings.candleInterval() / 1_000));
   const [histogramWindowInput, setHistogramWindowInput] = createSignal(String(gameSettings.histogramWindowFraction()));
-  const [deltaSnapshotInput, setDeltaSnapshotInput] = createSignal(String(deltaSnapshotInterval()));
-  const [fanoutInput, setFanoutInput] = createSignal(String(fanout()));
-  const [levelsInput, setLevelsInput] = createSignal(String(levels()));
+  const [deltaSnapshotInput, setDeltaSnapshotInput] = createSignal(String(market.deltaSnapshotInterval()));
+  const [fanoutInput, setFanoutInput] = createSignal(String(market.fanout()));
+  const [levelsInput, setLevelsInput] = createSignal(String(market.levels()));
   const languageOptions = createMemo(() => locales.map((value) => ({ value, label: t(`settings.language.${value}`) })));
   const normalizationOptions = createMemo(() => [
     { value: HistogramNormalization.Linear, label: t("settings.normalization.linear") },
@@ -63,11 +63,11 @@ export const SettingsBody: Component = () => {
   };
 
   const updateDeltaSnapshotInput = (value: string): void => {
-    updatePositiveIntegerInput(value, setDeltaSnapshotInput, setDeltaSnapshotInterval);
+    updatePositiveIntegerInput(value, setDeltaSnapshotInput, market.setDeltaSnapshotInterval);
   };
 
   const updateFanoutInput = (value: string): void => {
-    updatePositiveIntegerInput(value, setFanoutInput, setFanout);
+    updatePositiveIntegerInput(value, setFanoutInput, market.setFanout);
   };
 
   const updateHistogramWindowInput = (value: string): void => {
@@ -75,7 +75,7 @@ export const SettingsBody: Component = () => {
   };
 
   const updateLevelsInput = (value: string): void => {
-    updatePositiveIntegerInput(value, setLevelsInput, setLevels);
+    updatePositiveIntegerInput(value, setLevelsInput, market.setLevels);
   };
 
   return (

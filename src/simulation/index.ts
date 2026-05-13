@@ -1,13 +1,9 @@
 import { createSignal } from "solid-js";
-import {
-  cancelOrder,
-  takeOrder,
-  type OrderSide,
-} from "../market/index";
+import { type MarketState, type OrderSide } from "../market/index";
 import { createCancellationState } from "./cancellation";
-import { SimulationExcitation } from "./excitation";
-import { SimulationOrderPlacement } from "./orderPlacement";
-import { advance } from "./time";
+import { createSimulationExcitationState } from "./excitation";
+import { createSimulationOrderPlacementState } from "./orderPlacement";
+import { type SimulationTimeState } from "./time";
 import {
   cloneMarketBehaviorSettings,
   defaultMarketBehaviorSettings,
@@ -29,102 +25,151 @@ export {
   type SimulationEventSettingGroup,
 } from "./types";
 
+type TradingSimulationOptions = {
+  market: MarketState;
+  time: SimulationTimeState;
+};
+
 // TODO: Preference to place orders in the direction of the movement
 // todo: Preference to place orders closer to spread?
-export class TradingSimulation {
-  private marketBehaviorSettings = cloneMarketBehaviorSettings(defaultMarketBehaviorSettings);
-  private orderPriceDistribution: OrderPriceDistribution = "power-law";
-  private orderSizeDistribution: OrderSizeDistribution = "power-law";
-  private excitation = new SimulationExcitation(() => this.marketBehaviorSettings);
-  private cancellationProbabilities = {
+export const createTradingSimulationState = (options: TradingSimulationOptions) => {
+  let marketBehaviorSettings = cloneMarketBehaviorSettings(defaultMarketBehaviorSettings);
+  let orderPriceDistribution: OrderPriceDistribution = "power-law";
+  let orderSizeDistribution: OrderSizeDistribution = "power-law";
+  const cancellationProbabilities = {
     time: createSignal(0.5),
     priceMovement: createSignal(0.5),
     localVolume: createSignal(0.5),
     farOrder: createSignal(0.5),
   };
-  private cancellation = createCancellationState({
-    candidatesCount: () => 64,
-    onCancel: (order) => cancelOrder(order.id, order.side) !== null,
 
-    ageWeight: this.cancellationProbabilities.time[0],
-    priceMovement: {
-      weight: this.cancellationProbabilities.priceMovement[0],
-      recencyDecay: () => this.marketBehaviorSettings.cancellationPriceMovementOrderDecay,
-    },
-    localVolume: {
-      weight: this.cancellationProbabilities.localVolume[0],
-      ramp: () => this.marketBehaviorSettings.cancellationLocalVolumeRamp,
-    },
-    farOrder: {
-      weight: this.cancellationProbabilities.farOrder[0],
-      minAge: () => this.marketBehaviorSettings.cancellationFarOrderMinAge,
-      window: () => this.marketBehaviorSettings.cancellationFarOrderWindow,
-      ramp: () => this.marketBehaviorSettings.cancellationFarOrderRamp,
-    },
-  });
-  private orderPlacement = new SimulationOrderPlacement(
-    () => this.marketBehaviorSettings,
-    () => this.orderPriceDistribution,
-    () => this.orderSizeDistribution,
-  );
+  const getMarketBehaviorSettings = (): MarketBehaviorSettings => {
+    return cloneMarketBehaviorSettings(marketBehaviorSettings);
+  };
 
-  getMarketBehaviorSettings(): MarketBehaviorSettings {
-    return cloneMarketBehaviorSettings(this.marketBehaviorSettings);
-  }
-
-  setMarketBehaviorSetting<Key extends keyof MarketBehaviorSettings>(
+  const setMarketBehaviorSetting = <Key extends keyof MarketBehaviorSettings>(
     key: Key,
     value: MarketBehaviorSettings[Key],
-  ): void {
-    this.marketBehaviorSettings = { ...this.marketBehaviorSettings, [key]: value };
-  }
+  ): void => {
+    marketBehaviorSettings = { ...marketBehaviorSettings, [key]: value };
+  };
 
-  setMarketBehaviorEventSetting(
+  const setMarketBehaviorEventSetting = (
     group: SimulationEventSettingGroup,
     eventType: SimulationEventType,
     value: number,
-  ): void {
-    this.marketBehaviorSettings = {
-      ...this.marketBehaviorSettings,
-      [group]: { ...this.marketBehaviorSettings[group], [eventType]: value },
+  ): void => {
+    marketBehaviorSettings = {
+      ...marketBehaviorSettings,
+      [group]: { ...marketBehaviorSettings[group], [eventType]: value },
     };
-  }
+  };
 
-  setOrderPriceDistribution(distribution: OrderPriceDistribution): void {
-    this.orderPriceDistribution = distribution;
-  }
+  const setOrderPriceDistribution = (distribution: OrderPriceDistribution): void => {
+    orderPriceDistribution = distribution;
+  };
 
-  getOrderPriceDistribution(): OrderPriceDistribution {
-    return this.orderPriceDistribution;
-  }
+  const getOrderPriceDistribution = (): OrderPriceDistribution => {
+    return orderPriceDistribution;
+  };
 
-  setOrderSizeDistribution(distribution: OrderSizeDistribution): void {
-    this.orderSizeDistribution = distribution;
-  }
+  const setOrderSizeDistribution = (distribution: OrderSizeDistribution): void => {
+    orderSizeDistribution = distribution;
+  };
 
-  getOrderSizeDistribution(): OrderSizeDistribution {
-    return this.orderSizeDistribution;
-  }
+  const getOrderSizeDistribution = (): OrderSizeDistribution => {
+    return orderSizeDistribution;
+  };
 
-  getCancellationRestingOrders(side: OrderSide): RestingOrder[] {
-    return this.cancellation.getRestingOrders(side);
-  }
+  const excitation = createSimulationExcitationState({
+    getSettings: () => marketBehaviorSettings,
+  });
+  const cancellation = createCancellationState({
+    market: options.market,
+    time: options.time,
+    candidatesCount: () => 64,
+    onCancel: (order) => options.market.cancelOrder(order.id, order.side) !== null,
 
-  setCancellationTimeWeighting(weighting: number): void {
-    this.cancellationProbabilities.time[1](weighting);
-  }
+    ageWeight: cancellationProbabilities.time[0],
+    priceMovement: {
+      weight: cancellationProbabilities.priceMovement[0],
+      recencyDecay: () => marketBehaviorSettings.cancellationPriceMovementOrderDecay,
+    },
+    localVolume: {
+      weight: cancellationProbabilities.localVolume[0],
+      ramp: () => marketBehaviorSettings.cancellationLocalVolumeRamp,
+    },
+    farOrder: {
+      weight: cancellationProbabilities.farOrder[0],
+      minAge: () => marketBehaviorSettings.cancellationFarOrderMinAge,
+      window: () => marketBehaviorSettings.cancellationFarOrderWindow,
+      ramp: () => marketBehaviorSettings.cancellationFarOrderRamp,
+    },
+  });
+  const orderPlacement = createSimulationOrderPlacementState({
+    getSettings: () => marketBehaviorSettings,
+    getOrderPriceDistribution: () => orderPriceDistribution,
+    getOrderSizeDistribution: () => orderSizeDistribution,
+    market: options.market,
+    time: options.time,
+  });
 
-  setCancellationPriceMovementWeighting(weighting: number): void {
-    this.cancellationProbabilities.priceMovement[1](weighting);
-  }
+  const getCancellationRestingOrders = (side: OrderSide): RestingOrder[] => {
+    return cancellation.getRestingOrders(side);
+  };
 
-  setCancellationLocalVolumeWeighting(weighting: number): void {
-    this.cancellationProbabilities.localVolume[1](weighting);
-  }
+  const setCancellationTimeWeighting = (weighting: number): void => {
+    cancellationProbabilities.time[1](weighting);
+  };
 
-  setCancellationFarOrderWeighting(weighting: number): void {
-    this.cancellationProbabilities.farOrder[1](weighting);
-  }
+  const setCancellationPriceMovementWeighting = (weighting: number): void => {
+    cancellationProbabilities.priceMovement[1](weighting);
+  };
+
+  const setCancellationLocalVolumeWeighting = (weighting: number): void => {
+    cancellationProbabilities.localVolume[1](weighting);
+  };
+
+  const setCancellationFarOrderWeighting = (weighting: number): void => {
+    cancellationProbabilities.farOrder[1](weighting);
+  };
+
+  const simulateLimitOrderEvent = (side: OrderSide): void => {
+    const restingOrder = orderPlacement.simulateLimitOrderEvent(side);
+
+    if (restingOrder !== null) {
+      cancellation.addOrder(restingOrder);
+    }
+  };
+
+  const simulateMarketOrderEvent = (side: OrderSide): void => {
+    options.market.takeOrder(side, orderPlacement.sampleOrderSize());
+  };
+
+  const simulateEvent = (eventType: SimulationEventType): void => {
+    switch (eventType) {
+      case "market-buy":
+        simulateMarketOrderEvent("buy");
+        break;
+      case "market-sell":
+        simulateMarketOrderEvent("sell");
+        break;
+      case "order-buy":
+        simulateLimitOrderEvent("buy");
+        break;
+      case "order-sell":
+        simulateLimitOrderEvent("sell");
+        break;
+      case "cancel-buy":
+        cancellation.simulate("buy");
+        break;
+      case "cancel-sell":
+        cancellation.simulate("sell");
+        break;
+    }
+
+    orderPlacement.updateRecentPriceAnchors();
+  };
 
   // TODO: separate economy simulation model to allow for news impacts
   // TODO: separate trading platform model for complex market behavior
@@ -135,45 +180,26 @@ export class TradingSimulation {
   // TODO: add saturation of order book, so that once we hit that only cancels or market orders happen
   // TODO: macro laws?
   // https://chatgpt.com/c/69e01063-a9c8-8390-a2db-4f314b4d59f1
-  tick(dt: number): void {
-    advance(dt);
-    this.excitation.forEachEvent(dt, (eventType) => this.simulateEvent(eventType));
-  }
+  const tick = (dt: number): void => {
+    options.time.advance(dt);
+    excitation.forEachEvent(dt, simulateEvent);
+  };
 
-  private simulateEvent(eventType: SimulationEventType): void {
-    switch (eventType) {
-      case "market-buy":
-        this.simulateMarketOrderEvent("buy");
-        break;
-      case "market-sell":
-        this.simulateMarketOrderEvent("sell");
-        break;
-      case "order-buy":
-        this.simulateLimitOrderEvent("buy");
-        break;
-      case "order-sell":
-        this.simulateLimitOrderEvent("sell");
-        break;
-      case "cancel-buy":
-        this.cancellation.simulate("buy");
-        break;
-      case "cancel-sell":
-        this.cancellation.simulate("sell");
-        break;
-    }
+  return {
+    getCancellationRestingOrders,
+    getMarketBehaviorSettings,
+    getOrderPriceDistribution,
+    getOrderSizeDistribution,
+    setCancellationFarOrderWeighting,
+    setCancellationLocalVolumeWeighting,
+    setCancellationPriceMovementWeighting,
+    setCancellationTimeWeighting,
+    setMarketBehaviorEventSetting,
+    setMarketBehaviorSetting,
+    setOrderPriceDistribution,
+    setOrderSizeDistribution,
+    tick,
+  };
+};
 
-    this.orderPlacement.updateRecentPriceAnchors();
-  }
-
-  private simulateLimitOrderEvent(side: OrderSide): void {
-    const restingOrder = this.orderPlacement.simulateLimitOrderEvent(side);
-
-    if (restingOrder !== null) {
-      this.cancellation.addOrder(restingOrder);
-    }
-  }
-
-  private simulateMarketOrderEvent(side: OrderSide): void {
-    takeOrder(side, this.orderPlacement.sampleOrderSize());
-  }
-}
+export type TradingSimulation = ReturnType<typeof createTradingSimulationState>;

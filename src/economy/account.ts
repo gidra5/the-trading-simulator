@@ -1,6 +1,6 @@
 import { createEffect, createSignal, untrack, type Accessor } from "solid-js";
-import { cancelOrder, makeOrder, marketPriceSpread, subscribeToOrder, takeOrder, type OrderSide } from "../market";
-import { dt, time } from "../simulation/time";
+import { type MarketState, type OrderSide } from "../market";
+import { type SimulationTimeState } from "../simulation/time";
 
 let nextAccountId = 0;
 
@@ -27,12 +27,14 @@ type OrderHistoryEntry = {
 };
 
 type AccountStateOptions = {
+  market: MarketState;
+  time: SimulationTimeState;
   feeRate: Accessor<number>;
   debtCapitalizationRate: Accessor<number>;
   maintenanceMargin: Accessor<number>;
 };
 
-export const createOrderHistory = () => {
+export const createOrderHistory = (time: Accessor<number>) => {
   let nextEntryId = 0;
   const [entries, setEntries] = createSignal<OrderHistoryEntry[]>([]);
 
@@ -56,8 +58,10 @@ export const createOrderHistory = () => {
 };
 
 export const createAccountState = (options: AccountStateOptions) => {
+  const market = options.market;
+  const timeState = options.time;
   const id = nextAccountId++;
-  const orderHistory = createOrderHistory();
+  const orderHistory = createOrderHistory(timeState.time);
   const [portfolio, setPortfolio] = createSignal<Portfolio>({
     Money: 100_000,
     Stock: 0,
@@ -73,8 +77,8 @@ export const createAccountState = (options: AccountStateOptions) => {
     Money: Math.max(0, -portfolio().Money),
     Stock: Math.max(0, -portfolio().Stock),
   });
-  const borrowed = () => debt().Money + debt().Stock * marketPriceSpread().buy;
-  const capital = () => owned().Money + owned().Stock * marketPriceSpread().sell;
+  const borrowed = () => debt().Money + debt().Stock * market.marketPriceSpread().buy;
+  const capital = () => owned().Money + owned().Stock * market.marketPriceSpread().sell;
   const netWorth = () => capital() - borrowed();
   const leverage = () => capital() / (netWorth() + Number.EPSILON);
   const liquidationPrice = () => {
@@ -101,7 +105,7 @@ export const createAccountState = (options: AccountStateOptions) => {
   };
 
   const cancelActiveOrder = (order: PendingOrder): void => {
-    cancelOrder(order.id, order.side);
+    market.cancelOrder(order.id, order.side);
     setActiveOrders((current) => current.filter((pending) => pending.id !== order.id));
     orderHistory.canceled({
       orderId: order.id,
@@ -114,7 +118,7 @@ export const createAccountState = (options: AccountStateOptions) => {
   const placeMarketOrder = (side: OrderSide, size: number): void => {
     if (size <= 0) return;
 
-    const result = takeOrder(side, size);
+    const result = market.takeOrder(side, size);
     applyFill(side, result.fulfilled, result.cost);
     if (result.fulfilled > 0) {
       orderHistory.filled({
@@ -130,7 +134,7 @@ export const createAccountState = (options: AccountStateOptions) => {
   const placeLimitOrder = (side: OrderSide, price: number, size: number): void => {
     if (price <= 0 || size <= 0) return;
 
-    const result = makeOrder(side, { price, size });
+    const result = market.makeOrder(side, { price, size });
 
     applyFill(side, result.fulfilled, result.cost);
     orderHistory.submitted({ orderId: result.order.id, side, size, price });
@@ -147,7 +151,7 @@ export const createAccountState = (options: AccountStateOptions) => {
     }
     if (result.order.size === 0) return;
 
-    subscribeToOrder(result.order.id, (change) => {
+    market.subscribeToOrder(result.order.id, (change) => {
       if (change.kind === "add") {
         const order = {
           id: result.order.id,
@@ -155,7 +159,7 @@ export const createAccountState = (options: AccountStateOptions) => {
           price,
           initialSize: size,
           size: result.order.size,
-          createdAt: time(),
+          createdAt: timeState.time(),
         };
         setActiveOrders((current) => [...current, order]);
         return;
@@ -197,7 +201,7 @@ export const createAccountState = (options: AccountStateOptions) => {
 
   createEffect(() => {
     const capitalizeDebt = (): void => {
-      const elapsedMinutes = dt() / 60_000;
+      const elapsedMinutes = timeState.dt() / 60_000;
 
       if (elapsedMinutes > 0) {
         const ratePerMinute = untrack(options.debtCapitalizationRate);
@@ -217,7 +221,7 @@ export const createAccountState = (options: AccountStateOptions) => {
       const current = portfolio();
 
       if (current.Money < 0 && current.Stock > 0) {
-        const result = takeOrder("sell", current.Stock);
+        const result = market.takeOrder("sell", current.Stock);
         applyFill("sell", result.fulfilled, result.cost);
         if (result.fulfilled > 0) {
           orderHistory.liquidation({
@@ -234,7 +238,7 @@ export const createAccountState = (options: AccountStateOptions) => {
       if (current.Stock < 0 && current.Money > 0) {
         const feeMultiplier = 1 - options.feeRate();
         const buySize = -current.Stock / feeMultiplier;
-        const result = takeOrder("buy", buySize);
+        const result = market.takeOrder("buy", buySize);
         applyFill("buy", result.fulfilled, result.cost);
         if (result.fulfilled > 0) {
           orderHistory.liquidation({
@@ -263,7 +267,7 @@ export const createAccountState = (options: AccountStateOptions) => {
       const liquidation = liquidationPrice();
       if (liquidation === null) return false;
 
-      const spread = marketPriceSpread();
+      const spread = market.marketPriceSpread();
       const sign = Math.sign(portfolio().Stock);
       const exit = ((sign + 1) / 2) * spread.buy + ((sign - 1) / 2) * spread.sell;
       return exit < sign * liquidation;

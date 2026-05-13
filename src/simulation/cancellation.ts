@@ -1,15 +1,9 @@
-import {
-  marketPriceSpread,
-  priceHistory,
-  querySideVolumeInPriceRange,
-  subscribeToOrder,
-  type OrderSide,
-} from "../market/index";
+import { type MarketState, type OrderSide } from "../market/index";
 
 import type { RestingOrder } from "./types";
 import type { Accessor } from "solid-js";
 import { oppositeSide } from "../market/order";
-import { time } from "./time";
+import { type SimulationTimeState } from "./time";
 import { createResampler } from "../sampling";
 
 // const recentPriceHistory = createMemo<PricePoint[]>((recentHistory) => {
@@ -50,6 +44,8 @@ const bs = (orders: RestingOrder[], price: number): number => {
   return left;
 };
 export type CancellationOptions = {
+  market: MarketState;
+  time: SimulationTimeState;
   candidatesCount: Accessor<number>;
   onCancel: (order: RestingOrder) => boolean;
 
@@ -72,21 +68,23 @@ export type CancellationOptions = {
 
 type RestingOrders = { buy: RestingOrder[]; sell: RestingOrder[] };
 export const createCancellationState = (options: CancellationOptions) => {
+  const market = options.market;
+  const timeState = options.time;
   let restingOrders: RestingOrders = { buy: [], sell: [] };
 
   const orderFeatures = (order: RestingOrder) => {
-    const spread = marketPriceSpread();
+    const spread = market.marketPriceSpread();
     const volumePriceMin = order.side === "buy" ? order.price : spread.sell;
     const volumePriceMax = order.side === "buy" ? spread.buy : order.price;
-    const localVolumeValue = querySideVolumeInPriceRange(order.side, volumePriceMin, volumePriceMax);
+    const localVolumeValue = market.querySideVolumeInPriceRange(order.side, volumePriceMin, volumePriceMax);
     // const localVolumeWeight = 1 - Math.exp(-localVolumeValue / options.localVolume.ramp());
     const localVolumeWeight = localVolumeValue;
 
-    const age = time() - order.createdAt;
+    const age = timeState.time() - order.createdAt;
     const opposite = oppositeSide(order.side);
 
     const priceMovementValue = (() => {
-      const history = priceHistory();
+      const history = market.priceHistory();
       const latest = history[history.length - 1];
       const prev = history[history.length - 2];
       if (!prev || !latest) return 0;
@@ -188,7 +186,7 @@ export const createCancellationState = (options: CancellationOptions) => {
     if (idx >= 0) _orders.splice(idx, 0, order);
     else _orders.push(order);
 
-    subscribeToOrder(order.id, (change) => {
+    market.subscribeToOrder(order.id, (change) => {
       if (change.kind !== "remove") return;
       removeRestingOrder(change.side, change.order);
     });

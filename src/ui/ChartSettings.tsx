@@ -1,11 +1,12 @@
 import { createSignal, type Accessor, type Component, type Setter } from "solid-js";
-import { deltaSnapshotInterval, fanout, levels, setDeltaSnapshotInterval, setFanout, setLevels } from "../market/index";
+import type { MarketState } from "../market/index";
 import { HistogramNormalization } from "./OrderBookHistogram";
 
 const formatCandleIntervalSeconds = (interval: number): string => String(interval / 1_000);
 const formatHistogramWindowFraction = (windowFraction: number): string => String(windowFraction);
 
 type ChartSettingsProps = {
+  market: MarketState;
   candleInterval: Accessor<number>;
   onCandleIntervalChange: (interval: number) => void;
   isHeatmapEnabled: Accessor<boolean>;
@@ -50,7 +51,7 @@ export const ChartSettings: Component<ChartSettingsProps> = (props) => {
     const next = Number(value);
     if (!Number.isInteger(next)) return;
     if (next < 0) return;
-    setLevels(next);
+    props.market.setLevels(next);
   };
 
   const handleDeltaSnapshotIntervalInput = (value: string): void => {
@@ -58,7 +59,7 @@ export const ChartSettings: Component<ChartSettingsProps> = (props) => {
     if (!Number.isInteger(next)) return;
     if (next <= 0) return;
 
-    setDeltaSnapshotInterval(next);
+    props.market.setDeltaSnapshotInterval(next);
   };
 
   const handleFanoutInput = (value: string): void => {
@@ -66,7 +67,7 @@ export const ChartSettings: Component<ChartSettingsProps> = (props) => {
     if (!Number.isInteger(next)) return;
     if (next < 1) return;
 
-    setFanout(next);
+    props.market.setFanout(next);
   };
 
   return (
@@ -143,7 +144,7 @@ export const ChartSettings: Component<ChartSettingsProps> = (props) => {
             type="number"
             min="1"
             step="1"
-            value={levels()}
+            value={props.market.levels()}
             onChange={(event) => handleLevelsInput(event.currentTarget.value)}
           />
           <span>Interval:</span>
@@ -152,7 +153,7 @@ export const ChartSettings: Component<ChartSettingsProps> = (props) => {
             type="number"
             min="1"
             step="1"
-            value={deltaSnapshotInterval()}
+            value={props.market.deltaSnapshotInterval()}
             onChange={(event) => handleDeltaSnapshotIntervalInput(event.currentTarget.value)}
           />
           <span>Fanout:</span>
@@ -161,7 +162,7 @@ export const ChartSettings: Component<ChartSettingsProps> = (props) => {
             type="number"
             min="2"
             step="1"
-            value={fanout()}
+            value={props.market.fanout()}
             onChange={(event) => handleFanoutInput(event.currentTarget.value)}
           />
         </label>

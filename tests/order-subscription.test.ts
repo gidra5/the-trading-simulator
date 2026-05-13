@@ -1,12 +1,17 @@
 import { afterAll, expect, test, vi } from "vitest";
+import { createRoot } from "solid-js";
+import type { MarketState } from "../src/market/index";
 
-type MarketModule = typeof import("../src/market/index");
-
-const loadMarket = async (): Promise<MarketModule> => {
+const loadMarket = async (): Promise<MarketState> => {
   vi.restoreAllMocks();
   vi.resetModules();
 
-  return import("../src/market/index");
+  const [{ createMarketState }, { createSimulationTimeState }] = await Promise.all([
+    import("../src/market/index"),
+    import("../src/simulation/time"),
+  ]);
+  const clock = createSimulationTimeState();
+  return createRoot(() => createMarketState({ time: clock.time }));
 };
 
 afterAll(() => {

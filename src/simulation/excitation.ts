@@ -9,8 +9,12 @@ import {
   type SimulationEventType,
 } from "./types";
 
-export class SimulationExcitation {
-  private excitedInterest = eventVector({
+type SimulationExcitationOptions = {
+  getSettings: () => MarketBehaviorSettings;
+};
+
+export const createSimulationExcitationState = (options: SimulationExcitationOptions) => {
+  let excitedInterest = eventVector({
     "market-buy": 0,
     "market-sell": 0,
     "order-buy": 0,
@@ -19,36 +23,8 @@ export class SimulationExcitation {
     "cancel-sell": 0,
   });
 
-  constructor(private getSettings: () => MarketBehaviorSettings) {}
-
-  tick(dt: number): SimulationEventType[] {
-    const events: SimulationEventType[] = [];
-
-    this.forEachEvent(dt, (eventType) => events.push(eventType));
-    return events;
-  }
-
-  forEachEvent(dt: number, handleEvent: (eventType: SimulationEventType) => void): void {
-    const excitementDecay = this.excitementDecayVector();
-
-    this.excitedInterest = sampleMultivariateHawkesProcessEventTypes(
-      this.publicInterestVector(),
-      this.interestExcitationMatrix(excitementDecay),
-      excitementDecay,
-      dt,
-      this.excitedInterest,
-      (eventTypeIndex) => {
-        const eventType = simulationEventTypes[eventTypeIndex];
-
-        if (eventType !== undefined) {
-          handleEvent(eventType);
-        }
-      },
-    );
-  }
-
-  private publicInterestVector(): number[] {
-    const { publicInterestRate, patience, greed, fear } = this.getSettings();
+  const publicInterestVector = (): number[] => {
+    const { publicInterestRate, patience, greed, fear } = options.getSettings();
     const marketPressure = patience * greed;
     const orderPressure = patience * (1 - greed);
     const cancelPressure = 1 - patience;
@@ -61,13 +37,13 @@ export class SimulationExcitation {
       "cancel-buy": cancelPressure * (1 - fear),
       "cancel-sell": cancelPressure * fear,
     }).map((v) => publicInterestRate * v); // event rates per second before self-excitation
-  }
+  };
 
-  private excitementDecayVector(): number[] {
-    return eventVector(this.getSettings().excitementHalfLife).map(halfLifeToDecay);
-  }
+  const excitementDecayVector = (): number[] => {
+    return eventVector(options.getSettings().excitementHalfLife).map(halfLifeToDecay);
+  };
 
-  private excitationMatrix(): number[][] {
+  const excitationMatrix = (): number[][] => {
     const {
       fear,
       reflexivity,
@@ -81,7 +57,7 @@ export class SimulationExcitation {
       cancelCrowding,
       bookRebalancing,
       cancelPanic,
-    } = this.getSettings();
+    } = options.getSettings();
 
     return eventExcitationMatrix({
       "market-buy": {
@@ -133,9 +109,42 @@ export class SimulationExcitation {
         "cancel-sell": cancelCrowding * fear,
       },
     }); // row event adds rates to column events before branching-ratio scaling
-  }
+  };
 
-  private interestExcitationMatrix(decay: number[]): number[][] {
-    return normalizeExcitationMatrix(this.excitationMatrix(), decay, eventVector(this.getSettings().branchingRatio));
-  }
-}
+  const interestExcitationMatrix = (decay: number[]): number[][] => {
+    return normalizeExcitationMatrix(excitationMatrix(), decay, eventVector(options.getSettings().branchingRatio));
+  };
+
+  const forEachEvent = (dt: number, handleEvent: (eventType: SimulationEventType) => void): void => {
+    const excitementDecay = excitementDecayVector();
+
+    excitedInterest = sampleMultivariateHawkesProcessEventTypes(
+      publicInterestVector(),
+      interestExcitationMatrix(excitementDecay),
+      excitementDecay,
+      dt,
+      excitedInterest,
+      (eventTypeIndex) => {
+        const eventType = simulationEventTypes[eventTypeIndex];
+
+        if (eventType !== undefined) {
+          handleEvent(eventType);
+        }
+      },
+    );
+  };
+
+  const tick = (dt: number): SimulationEventType[] => {
+    const events: SimulationEventType[] = [];
+
+    forEachEvent(dt, (eventType) => events.push(eventType));
+    return events;
+  };
+
+  return {
+    forEachEvent,
+    tick,
+  };
+};
+
+export type SimulationExcitationState = ReturnType<typeof createSimulationExcitationState>;

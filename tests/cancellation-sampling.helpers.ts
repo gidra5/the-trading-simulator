@@ -1,6 +1,7 @@
 import { expect, vi } from "vitest";
+import { createRoot } from "solid-js";
 import type { CancellationOptions, createCancellationState } from "../src/simulation/cancellation";
-import type { OrderSide } from "../src/market";
+import type { MarketState, OrderSide } from "../src/market";
 import type { OrderBookChange } from "../src/market/orderBook";
 import type { MarketBehaviorSettings, RestingOrder, SimulationEventType } from "../src/simulation/types";
 
@@ -71,6 +72,7 @@ export const seededRandom = (seed: number): (() => number) => {
 };
 
 const createCancellationOptions = (
+  dependencies: Pick<CancellationOptions, "market" | "time">,
   settings: MarketBehaviorSettings,
   onCancel: (order: RestingOrder) => boolean,
   weights = {
@@ -80,6 +82,7 @@ const createCancellationOptions = (
     farOrder: 0.5,
   },
 ): CancellationOptions => ({
+  ...dependencies,
   candidatesCount: () => 64,
   onCancel,
   ageWeight: () => weights.age,
@@ -123,44 +126,40 @@ export const buildSamplingFixture = async (fixtureOptions: {
     }
   };
 
-  const mockMarketModule = async (importOriginal: () => Promise<typeof import("../src/market/index")>) => {
-    const actual = await importOriginal();
+  const [{ createTradingSimulationState }, cancellation, { createMarketState }, order, { createSimulationTimeState }] =
+    await Promise.all([
+      import("../src/simulation/index"),
+      import("../src/simulation/cancellation"),
+      import("../src/market"),
+      import("../src/market/order"),
+      import("../src/simulation/time"),
+    ]);
+  const timeModule = createSimulationTimeState();
+  const actualMarket = createRoot(() => createMarketState({ time: timeModule.time }));
+  const market: MarketState = {
+    ...actualMarket,
+    subscribeToOrder: (id: number, cb: (change: OrderBookChange) => void) => {
+      if (!testOrderSubscriptions.has(id)) {
+        testOrderSubscriptions.set(id, new Set());
+      }
 
-    return {
-      ...actual,
-      subscribeToOrder: (id: number, cb: (change: OrderBookChange) => void) => {
-        if (!testOrderSubscriptions.has(id)) {
-          testOrderSubscriptions.set(id, new Set());
-        }
+      const subscribers = testOrderSubscriptions.get(id)!;
+      const callback = (change: OrderBookChange): void => {
+        cb(change);
+        if (change.kind === "remove") subscribers.delete(callback);
+        if (subscribers.size === 0) testOrderSubscriptions.delete(id);
+      };
+      subscribers.add(callback);
+      const unsubscribeActual = actualMarket.subscribeToOrder(id, callback);
 
-        const subscribers = testOrderSubscriptions.get(id)!;
-        const callback = (change: OrderBookChange): void => {
-          cb(change);
-          if (change.kind === "remove") subscribers.delete(callback);
-          if (subscribers.size === 0) testOrderSubscriptions.delete(id);
-        };
-        subscribers.add(callback);
-        const unsubscribeActual = actual.subscribeToOrder(id, callback);
-
-        return () => {
-          unsubscribeActual();
-          subscribers.delete(callback);
-          if (subscribers.size === 0) testOrderSubscriptions.delete(id);
-        };
-      },
-    };
+      return () => {
+        unsubscribeActual();
+        subscribers.delete(callback);
+        if (subscribers.size === 0) testOrderSubscriptions.delete(id);
+      };
+    },
   };
-  vi.doMock("../src/market", mockMarketModule);
-  vi.doMock("../src/market/index", mockMarketModule);
-
-  const [{ TradingSimulation }, cancellation, market, order, timeModule] = await Promise.all([
-    import("../src/simulation/index"),
-    import("../src/simulation/cancellation"),
-    import("../src/market"),
-    import("../src/market/order"),
-    import("../src/simulation/time"),
-  ]);
-  const simulation = new TradingSimulation();
+  const simulation = createTradingSimulationState({ market, time: timeModule });
 
   let orders: RestingOrder[] = [];
   let tick = 0;
@@ -190,7 +189,7 @@ export const buildSamplingFixture = async (fixtureOptions: {
   expect(orders.some((order) => order.side === "buy")).toBe(true);
   expect(orders.some((order) => order.side === "sell")).toBe(true);
 
-  const options = createCancellationOptions(settings, (order) => {
+  const options = createCancellationOptions({ market, time: timeModule }, settings, (order) => {
     latestCanceledOrder = order;
     emitTestOrderRemove(order);
     return true;
@@ -274,8 +273,7 @@ const getOrderFeatures = (
   })();
 
   const midPrice = (spread.buy + spread.sell) / 2;
-  const distanceFromMid =
-    Number.isFinite(midPrice) && midPrice > 0 ? Math.abs(order.price - midPrice) / midPrice : 0;
+  const distanceFromMid = Number.isFinite(midPrice) && midPrice > 0 ? Math.abs(order.price - midPrice) / midPrice : 0;
 
   return {
     age,
@@ -525,7 +523,12 @@ const totalVariationDistance = (
 ): number => {
   const preciseTotal = totalWeight(preciseOrders);
   const approximateTotal = totalWeight(approximateOrders);
-  if (!Number.isFinite(preciseTotal) || !Number.isFinite(approximateTotal) || preciseTotal <= 0 || approximateTotal <= 0) {
+  if (
+    !Number.isFinite(preciseTotal) ||
+    !Number.isFinite(approximateTotal) ||
+    preciseTotal <= 0 ||
+    approximateTotal <= 0
+  ) {
     return 1;
   }
 

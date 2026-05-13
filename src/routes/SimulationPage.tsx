@@ -1,5 +1,6 @@
-import App from "../ui/App";
+import { MarketChart } from "../ui/MarketChart";
+import { simulation, market, time } from "./simulation/state";
 
 export default function SimulationPage() {
-  return <App />;
+  return <MarketChart market={market} simulation={simulation} time={time} />;
 }

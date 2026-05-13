@@ -1,15 +1,8 @@
 import { createMemo, createSignal, Match, onCleanup, onMount, Switch } from "solid-js";
 import { createAccountState } from "../economy/account";
-import {
-  getOrderBookHistogram,
-  getOrderBookRegion,
-  marketPriceSpread,
-  priceHistoryCandle,
-  type OrderSide,
-  type PriceCandle,
-} from "../market/index";
-import { simulationTickTime, TradingSimulation } from "../simulation/index";
-import { time } from "../simulation/time";
+import type { MarketState, OrderSide, PriceCandle } from "../market/index";
+import { simulationTickTime } from "../simulation/index";
+import { market, simulation, time } from "./game/state";
 import type { ChartViewport } from "../ui/Chart";
 import { AccountBody } from "../ui/game/AccountBody";
 import { AccountSidebar } from "../ui/game/AccountSidebar";
@@ -27,11 +20,13 @@ import { createThrottledMemo } from "../utils";
 
 const pollingInterval = 200;
 
-const createAccountGameState = () => {
+const createAccountGameState = (market: MarketState) => {
   const [feeRate] = createSignal(0.0001);
   const [debtCapitalizationRate] = createSignal(0.00001);
   const [maintenanceMargin] = createSignal(0.05);
   const account = createAccountState({
+    market,
+    time: time,
     feeRate,
     debtCapitalizationRate,
     maintenanceMargin,
@@ -49,9 +44,10 @@ const createAccountGameState = () => {
 
 const createMarketGameState = (options: {
   account: ReturnType<typeof createAccountGameState>["account"];
+  market: MarketState;
   startTime: number;
 }) => {
-  const priceSpread = createThrottledMemo(marketPriceSpread, pollingInterval);
+  const priceSpread = createThrottledMemo(options.market.marketPriceSpread, pollingInterval);
 
   const [orderSide, setOrderSide] = createSignal<OrderSide>("buy");
   const [orderKind, setOrderKind] = createSignal<OrderKind>("market");
@@ -69,8 +65,12 @@ const createMarketGameState = (options: {
     const alignedStart = Math.floor(options.startTime / interval) * interval;
     const rebuiltCandles: PriceCandle[] = [];
 
-    for (let candleStart = alignedStart; candleStart <= time(); candleStart += interval) {
-      const candle = priceHistoryCandle(candleStart, Math.min(candleStart + interval, time()), "buy");
+    for (let candleStart = alignedStart; candleStart <= time.time(); candleStart += interval) {
+      const candle = options.market.priceHistoryCandle(
+        candleStart,
+        Math.min(candleStart + interval, time.time()),
+        "buy",
+      );
       rebuiltCandles.push(candle);
     }
 
@@ -85,18 +85,22 @@ const createMarketGameState = (options: {
       return rebuildCandles(interval);
     }
 
-    const candleStart = Math.floor(time() / interval) * interval;
-    const candle = priceHistoryCandle(candleStart, time(), "buy");
+    const candleStart = Math.floor(time.time() / interval) * interval;
+    const candle = options.market.priceHistoryCandle(candleStart, time.time(), "buy");
     const latestCandle = currentCandles[currentCandles.length - 1];
 
     if (!latestCandle) return [candle];
     if (latestCandle.time === candle.time) return [...currentCandles.slice(0, -1), candle];
     if (latestCandle.time > candle.time) return currentCandles;
 
-    const finalizedLatestCandle = priceHistoryCandle(latestCandle.time, latestCandle.time + interval, "buy");
+    const finalizedLatestCandle = options.market.priceHistoryCandle(
+      latestCandle.time,
+      latestCandle.time + interval,
+      "buy",
+    );
     const missingCandles: PriceCandle[] = [];
     for (let missingStart = latestCandle.time + interval; missingStart < candle.time; missingStart += interval) {
-      const missingCandle = priceHistoryCandle(missingStart, missingStart + interval, "buy");
+      const missingCandle = options.market.priceHistoryCandle(missingStart, missingStart + interval, "buy");
       missingCandles.push(missingCandle);
     }
 
@@ -106,7 +110,7 @@ const createMarketGameState = (options: {
   const heatmap = createThrottledMemo(() => {
     if (!gameSettings.isHeatmapEnabled()) return null;
 
-    return getOrderBookRegion({
+    return options.market.getOrderBookRegion({
       timestamp: viewport().time,
       price: viewport().price,
       resolution: viewport().resolution,
@@ -116,7 +120,7 @@ const createMarketGameState = (options: {
   const histogram = createThrottledMemo(() => {
     if (!gameSettings.isHistogramEnabled()) return null;
 
-    return getOrderBookHistogram({
+    return options.market.getOrderBookHistogram({
       price: viewport().price,
       resolution: viewport().resolution[1],
     });
@@ -202,11 +206,10 @@ const createEconomyGameState = (account: ReturnType<typeof createAccountGameStat
 };
 
 export default function GamePage() {
-  const simulation = new TradingSimulation();
-  const startTime = time();
+  const startTime = time.time();
   const [activeTab, setActiveTab] = createSignal<Tab>("market");
-  const accountState = createAccountGameState();
-  const market = createMarketGameState({ account: accountState.account, startTime });
+  const accountState = createAccountGameState(market);
+  const marketState = createMarketGameState({ account: accountState.account, market, startTime });
   const economy = createEconomyGameState(accountState.account);
 
   onMount(() => {
@@ -219,18 +222,18 @@ export default function GamePage() {
 
   return (
     <div class="font-body-primary-base-rg flex h-screen min-h-[680px] w-full flex-col overflow-hidden bg-surface-body text-text-primary">
-      <Header activeTab={activeTab()} priceSpread={market.priceSpread} onTabChange={setActiveTab} />
+      <Header activeTab={activeTab()} priceSpread={marketState.priceSpread} onTabChange={setActiveTab} />
 
       <div class="flex min-h-0 flex-1">
         <main class="min-w-0 flex-1">
           <Switch>
             <Match when={activeTab() === "market"}>
               <MarketBody
-                histogram={market.histogram()}
-                orderBookHeatmap={market.heatmap()}
-                priceCandles={market.candles()}
-                viewport={market.viewport()}
-                onViewportChange={market.updateViewport}
+                histogram={marketState.histogram()}
+                orderBookHeatmap={marketState.heatmap()}
+                priceCandles={marketState.candles()}
+                viewport={marketState.viewport()}
+                onViewportChange={marketState.updateViewport}
               />
             </Match>
             <Match when={activeTab() === "account"}>
@@ -249,15 +252,15 @@ export default function GamePage() {
             <Match when={activeTab() === "market"}>
               <MarketSidebar
                 account={accountState.account}
-                orderKind={market.orderKind()}
-                orderPrice={market.orderPrice()}
-                orderSide={market.orderSide()}
-                orderSize={market.orderSize()}
-                onOrderKindChange={market.setOrderKind}
-                onOrderPriceChange={market.setOrderPrice}
-                onOrderSideChange={market.setOrderSide}
-                onOrderSizeChange={market.setOrderSize}
-                onPlaceOrder={market.placeOrder}
+                orderKind={marketState.orderKind()}
+                orderPrice={marketState.orderPrice()}
+                orderSide={marketState.orderSide()}
+                orderSize={marketState.orderSize()}
+                onOrderKindChange={marketState.setOrderKind}
+                onOrderPriceChange={marketState.setOrderPrice}
+                onOrderSideChange={marketState.setOrderSide}
+                onOrderSizeChange={marketState.setOrderSize}
+                onPlaceOrder={marketState.placeOrder}
               />
             </Match>
             <Match when={activeTab() === "account"}>

@@ -1,8 +1,9 @@
 import { afterAll, expect, test, vi } from "vitest";
 import fc from "fast-check";
+import { createRoot } from "solid-js";
+import type { MarketState } from "../src/market/index";
+import type { SimulationTimeState } from "../src/simulation/time";
 
-type MarketModule = typeof import("../src/market/index");
-type SimulationTimeModule = typeof import("../src/simulation/time");
 type Operation =
   | {
       kind: "limit";
@@ -26,11 +27,16 @@ const loadMarket = async (settings: {
   interval?: number;
   fanout?: number;
   levels: number;
-}): Promise<{ market: MarketModule; clock: SimulationTimeModule }> => {
+}): Promise<{ market: MarketState; clock: SimulationTimeState }> => {
   vi.restoreAllMocks();
   vi.resetModules();
 
-  const [market, clock] = await Promise.all([import("../src/market/index"), import("../src/simulation/time")]);
+  const [{ createMarketState }, { createSimulationTimeState }] = await Promise.all([
+    import("../src/market/index"),
+    import("../src/simulation/time"),
+  ]);
+  const clock = createSimulationTimeState();
+  const market = createRoot(() => createMarketState({ time: clock.time }));
   market.setDeltaSnapshotInterval(settings.interval ?? 2);
   market.setFanout(settings.fanout ?? 2);
   market.setLevels(settings.levels);
@@ -77,7 +83,7 @@ const arb = fc
   );
 
 const applyOperation = (
-  market: MarketModule,
+  market: MarketState,
   operation: Operation,
   restingOrderIds: Record<"buy" | "sell", number[]>,
 ): void => {
@@ -110,8 +116,8 @@ const applyOperation = (
 };
 
 const replayMarket = (
-  market: MarketModule,
-  clock: SimulationTimeModule,
+  market: MarketState,
+  clock: SimulationTimeState,
   operations: Operation[],
   onRevision?: (revision: number) => void,
 ): void => {

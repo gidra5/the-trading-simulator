@@ -1,5 +1,7 @@
 import { createSignal, For, Show, type Component } from "solid-js";
 import { assets, createAccountState } from "../economy/account";
+import type { MarketState } from "../market";
+import type { SimulationTimeState } from "../simulation/time";
 
 export const digits = 6;
 
@@ -16,11 +18,18 @@ type OrderKind = (typeof orderKinds)[number];
 // todo: copy trading
 // todo: staking/deposit
 // todo: p2p
-export const Order: Component = () => {
+type OrderProps = {
+  market: MarketState;
+  time: SimulationTimeState;
+};
+
+export const Order: Component<OrderProps> = (props) => {
   const [feeRate, setFeeRate] = createSignal(0.0001);
   const [debtCapitalizationRate, setDebtCapitalizationRate] = createSignal(0.00001);
   const [maintenanceMargin, setMaintenanceMargin] = createSignal(0);
   const account = createAccountState({
+    market: props.market,
+    time: props.time,
     feeRate,
     debtCapitalizationRate,
     maintenanceMargin,
