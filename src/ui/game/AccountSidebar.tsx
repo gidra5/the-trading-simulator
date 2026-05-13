@@ -21,11 +21,11 @@ export const AccountSidebar: Component<AccountSidebarProps> = (props) => (
 );
 
 const HistoryList: Component<{ entries: OrderHistoryEntry[] }> = (props) => (
-  <Show fallback={<p class="body-secondary-sm-rg p-3">None</p>} when={props.entries.length > 0}>
+  <Show fallback={<p class="font-body-secondary-sm-rg p-3 text-text-secondary">None</p>} when={props.entries.length > 0}>
     <div class="grid">
       <For each={props.entries}>
         {(entry) => (
-          <div class="mono-xs-rg grid gap-1 border-b border-border px-3 py-2 last:border-b-0">
+          <div class="font-mono-primary-xs-rg grid gap-1 border-b border-border px-3 py-2 last:border-b-0">
             <div class="flex items-center justify-between gap-2">
               <span class="text-text-primary">#{entry.orderId}</span>
               <span class={entry.side === "buy" ? "text-accent-primary" : "text-danger"}>{entry.side}</span>

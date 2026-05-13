@@ -27,7 +27,7 @@ export const SettingsSidebar: Component<SettingsSidebarProps> = (props) => (
 
 const SideValue: Component<{ label: string; value: string }> = (props) => (
   <div class="flex items-center justify-between border-b border-border py-2 last:border-b-0">
-    <span class="body-secondary-sm-rg">{props.label}</span>
-    <span class="mono-sm-rg text-text-primary">{props.value}</span>
+    <span class="font-body-secondary-sm-rg text-text-secondary">{props.label}</span>
+    <span class="font-mono-primary-sm-rg text-text-primary">{props.value}</span>
   </div>
 );

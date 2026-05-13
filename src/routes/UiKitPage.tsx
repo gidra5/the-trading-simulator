@@ -1,3 +1,12 @@
+import {
+  Activity,
+  ChartCandlestick,
+  ChartLine,
+  CircleDollarSign,
+  Settings,
+  Wallet,
+  type LucideIcon,
+} from "lucide-solid";
 import { createSignal, For } from "solid-js";
 import { Button } from "../ui-kit/Button";
 import { Field } from "../ui-kit/Field";
@@ -8,6 +17,10 @@ import { TabBar } from "../ui-kit/TabBar";
 import { TextInput } from "../ui-kit/TextInput";
 import { ToggleField } from "../ui-kit/ToggleField";
 import { paletteSwatches } from "../ui-kit/theme";
+import { Link } from "../ui-kit/Link";
+import { typographyRoles, typographySizes, typographyTypes, typographyWeights } from "../ui-kit/typography";
+import clsx from "clsx";
+import { Divider } from "../ui-kit/Divider";
 
 const kitTabs = [
   { value: "market", label: "Market" },
@@ -15,21 +28,116 @@ const kitTabs = [
   { value: "economy", label: "Economy" },
   { value: "settings", label: "Settings" },
 ] as const;
-const typographySamples = [
-  { className: "title-primary-xl-bold", label: "title-primary-xl-bold", text: "Trading Simulator" },
-  { className: "title-secondary-lg-semi", label: "title-secondary-lg-semi", text: "Market Session" },
+const typographyGuidelines = [
   {
-    className: "body-primary-base-rg",
-    label: "body-primary-base-rg",
-    text: "Open positions and net worth update live.",
+    className: "font-title-primary-xl-semi",
+    label: "For headings",
+    text: "Trading simulator",
   },
-  { className: "body-secondary-sm-light", label: "body-secondary-sm-light", text: "Secondary details stay quiet." },
   {
-    className: "body-secondary-xxs-rg",
-    label: "body-secondary-xxs-rg",
-    text: "Dense labels, timestamps, and metadata.",
+    className: "font-title-secondary-base-semi",
+    label: "For titles inside larger text blocks",
+    text: "The beginning of your journey",
   },
-  { className: "mono-sm-rg text-accent-primary", label: "mono-sm-rg", text: "$104,820.25" },
+  {
+    className: "font-body-primary-base-rg",
+    label: "For regular text bodies",
+    text: "The first thing you do is buy, then sell later",
+  },
+  {
+    className: "font-body-secondary-sm-light",
+    label: "For secondary text and subtitles",
+    text: "The best game ever btw",
+  },
+  {
+    className: "font-body-secondary-xxs-rg",
+    label: "Dense labels, timestamps, and other metadata.",
+    text: "1987-01-14 17:21:00, sale, 100 shares",
+  },
+  {
+    className: "font-mono-primary-sm-rg",
+    label: "For numeric and tabular data",
+    text: "$104,820.25",
+  },
+  {
+    className: "font-mono-secondary-base-rg",
+    label: "For code-like text and labels",
+    text: "const foo = 123",
+  },
+] as const;
+
+type TypographyRole = (typeof typographyRoles)[number];
+type TypographyType = (typeof typographyTypes)[number];
+type TypographySize = (typeof typographySizes)[number];
+type TypographyWeight = (typeof typographyWeights)[number];
+type TypographyColumn = {
+  role: TypographyRole;
+  roleIndex: number;
+  type: TypographyType;
+  typeIndex: number;
+  weight: TypographyWeight;
+  weightIndex: number;
+};
+
+const typographyColumns = typographyRoles.flatMap((role, roleIndex) =>
+  typographyTypes.flatMap((type, typeIndex) =>
+    typographyWeights.map((weight, weightIndex) => ({
+      role,
+      roleIndex,
+      type,
+      typeIndex,
+      weight,
+      weightIndex,
+    })),
+  ),
+);
+const typographyGridTemplateColumns = `5rem repeat(${typographyColumns.length}, 10rem)`;
+const typographyRoleSpan = typographyTypes.length * typographyWeights.length;
+const typographyTypeSpan = typographyWeights.length;
+
+const typographyWeightLabels: Record<TypographyWeight, string> = {
+  bold: "Bold",
+  semi: "Semi",
+  rg: "Regular",
+  light: "Light",
+};
+const typographySizeLabels: Record<TypographySize, string> = {
+  xxl: "XXL",
+  xl: "XL",
+  lg: "LG",
+  base: "Base",
+  sm: "SM",
+  xs: "XS",
+  xxs: "XXS",
+};
+const typographySampleText: Record<TypographyRole, string> = {
+  title: "Aa",
+  body: "Trade",
+  mono: "123.45",
+};
+const typographyClassName = (
+  role: TypographyRole,
+  type: TypographyType,
+  size: TypographySize,
+  weight: TypographyWeight,
+): string => `font-${role}-${type}-${size}-${weight}`;
+const typographyColumnDividerClass = (column: TypographyColumn): string =>
+  clsx(
+    "border-b border-r border-border",
+    column.typeIndex === 0 && column.weightIndex === 0
+      ? "border-l-2 border-border"
+      : column.weightIndex === 0
+        ? "border-l border-border"
+        : null,
+  );
+
+const iconSamples: readonly { Icon: LucideIcon; label: string; toneClass: string }[] = [
+  { Icon: Activity, label: "Activity", toneClass: "text-accent-primary" },
+  { Icon: ChartCandlestick, label: "Candlestick", toneClass: "text-success" },
+  { Icon: ChartLine, label: "Trend", toneClass: "text-warning" },
+  { Icon: Wallet, label: "Wallet", toneClass: "text-text-primary" },
+  { Icon: CircleDollarSign, label: "Capital", toneClass: "text-accent-secondary" },
+  { Icon: Settings, label: "Settings", toneClass: "text-text-secondary" },
 ] as const;
 
 export default function UiKitPage() {
@@ -39,19 +147,14 @@ export default function UiKitPage() {
   const [language, setLanguage] = createSignal("en");
 
   return (
-    <main class="body-primary-base-rg min-h-screen bg-surface-primary p-6">
-      <div class="mx-auto grid max-w-6xl gap-5">
+    <main class="font-body-primary-base-rg min-h-screen bg-surface-body p-6 text-text-primary">
+      <div class="mx-auto grid min-w-0 max-w-6xl gap-5">
         <header class="flex items-center justify-between gap-4">
           <div>
-            <p class="body-secondary-xs-semi uppercase">UI Kit</p>
-            <h1 class="title-primary-xl-bold">Trading Simulator Components</h1>
+            <p class="font-body-primary-xs-semi text-text-secondary uppercase">UI Kit</p>
+            <h1 class="font-title-primary-xl-bold text-text-primary">Trading Simulator Components</h1>
           </div>
-          <a
-            class="body-secondary-sm-semi inline-flex h-9 items-center rounded border border-transparent px-3 no-underline transition hover:bg-surface-secondary hover:text-text-primary"
-            href="/game"
-          >
-            Game
-          </a>
+          <Link href="/game">Game</Link>
         </header>
 
         <Panel title="Palette">
@@ -61,10 +164,10 @@ export default function UiKitPage() {
                 <div class="overflow-hidden rounded border border-border bg-surface-secondary">
                   <div style={{ background: swatch.value, height: "3.5rem" }} />
                   <div class="grid gap-1 p-3">
-                    <span class="body-primary-sm-semi">{swatch.name}</span>
-                    <span class="mono-xs-rg text-text-secondary">{swatch.token}</span>
-                    <span class="mono-xs-rg text-text-secondary">{swatch.source}</span>
-                    <span class="mono-xs-rg text-text-secondary">{swatch.value}</span>
+                    <span class="font-body-primary-sm-semi text-text-primary">{swatch.name}</span>
+                    <span class="font-mono-primary-xs-rg text-text-secondary">{swatch.token}</span>
+                    <span class="font-mono-primary-xs-rg text-text-secondary">{swatch.source}</span>
+                    <span class="font-mono-primary-xs-rg text-text-secondary">{swatch.value}</span>
                   </div>
                 </div>
               )}
@@ -72,15 +175,109 @@ export default function UiKitPage() {
           </div>
         </Panel>
 
-        <Panel title="Typography">
+        <Panel title="Typography Guidelines">
           <div class="grid gap-3">
-            <For each={typographySamples}>
+            <For each={typographyGuidelines}>
               {(sample) => (
                 <div class="grid grid-cols-[16rem_1fr] items-baseline gap-4 border-b border-border py-2 last:border-b-0">
-                  <span class="mono-xs-rg text-text-secondary">{sample.label}</span>
-                  <span class={sample.className}>{sample.text}</span>
+                  <div class="flex flex-col gap-1">
+                    <span class="font-body-primary-sm-rg text-text-primary">{sample.label}</span>
+                    <span class="font-mono-secondary-xs-rg text-text-secondary">{sample.className}</span>
+                  </div>
+                  <span class={clsx(sample.className, "text-text-primary")}>{sample.text}</span>
                 </div>
               )}
+            </For>
+          </div>
+        </Panel>
+
+        <Panel bodyClass="min-w-0 overflow-hidden p-0" class="min-w-0" title="Typography Examples">
+          <div class="max-w-full overflow-x-auto overflow-y-hidden" style={{ "scrollbar-gutter": "stable" }}>
+            <div
+              class="grid w-max border-solid border-2 border-border bg-surface-secondary"
+              style={{ "grid-template-columns": typographyGridTemplateColumns }}
+            >
+              <div class="sticky left-0 z-20 row-span-3 flex items-center bg-surface-secondary px-3 py-2 font-mono-primary-xs-semi text-text-secondary uppercase">
+                Size
+              </div>
+              <For each={typographyRoles}>
+                {(role) => (
+                  <div
+                    class="border-solid border-b border-l border-r-0 border-t-0 border-border bg-surface-secondary px-3 py-2 text-center font-body-primary-xs-semi text-text-secondary uppercase"
+                    style={{ "grid-column": `span ${typographyRoleSpan} / span ${typographyRoleSpan}` }}
+                  >
+                    {role}
+                  </div>
+                )}
+              </For>
+              <For each={typographyRoles}>
+                {() => (
+                  <For each={typographyTypes}>
+                    {(type) => (
+                      <div
+                        class="border-solid border-b border-l border-r-0 border-t-0 border-border bg-surface-secondary px-3 py-2 text-center font-body-primary-xs-semi text-text-secondary uppercase"
+                        style={{ "grid-column": `span ${typographyTypeSpan} / span ${typographyTypeSpan}` }}
+                      >
+                        {type}
+                      </div>
+                    )}
+                  </For>
+                )}
+              </For>
+              <For each={typographyColumns}>
+                {(column) => (
+                  <div class="border-border border-solid border-b-0 border-l border-r-0 border-t-0 bg-surface-secondary px-3 py-2 text-center font-body-primary-xs-rg text-text-secondary uppercase">
+                    {typographyWeightLabels[column.weight]}
+                  </div>
+                )}
+              </For>
+              <For each={typographySizes}>
+                {(size) => (
+                  <>
+                    <div class="sticky left-0 z-10 flex items-center border-solid border-b-0 border-x-0 border-t border-border bg-surface-secondary px-3 py-3 font-mono-primary-xs-semi text-text-secondary uppercase">
+                      {typographySizeLabels[size]}
+                    </div>
+                    <For each={typographyColumns}>
+                      {(column) => {
+                        const className = typographyClassName(column.role, column.type, size, column.weight);
+
+                        return (
+                          <div
+                            class={clsx(
+                              "grid min-h-24 content-between border-border gap-3 bg-surface-secondary p-3",
+                              "border-solid border-b-0 border-r-0 border-t border-l",
+                            )}
+                          >
+                            <span class={`${className} text-text-primary`}>{typographySampleText[column.role]}</span>
+                            <span class="break-all font-mono-primary-xxs-rg text-text-secondary">{className}</span>
+                          </div>
+                        );
+                      }}
+                    </For>
+                  </>
+                )}
+              </For>
+            </div>
+          </div>
+        </Panel>
+
+        <Panel title="Icons">
+          <div class="grid grid-cols-[repeat(auto-fit,minmax(10rem,1fr))] gap-3">
+            <For each={iconSamples}>
+              {(sample) => {
+                const Icon = sample.Icon;
+
+                return (
+                  <div class="flex items-center gap-3 rounded border border-border bg-surface-secondary p-3">
+                    <span
+                      class={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded border border-border bg-surface-primary ${sample.toneClass}`}
+                    >
+                      <Icon aria-hidden="true" class="h-5 w-5" strokeWidth={1.8} />
+                    </span>
+                    <span class="font-body-primary-sm-semi text-text-primary">{sample.label}</span>
+                  </div>
+                );
+              }}
             </For>
           </div>
         </Panel>
@@ -89,6 +286,12 @@ export default function UiKitPage() {
           <Panel title="Controls">
             <div class="grid gap-4">
               <TabBar tabs={kitTabs} value={activeTab()} onChange={setActiveTab} />
+
+              <div class="flex flex-row gap-2">
+                <Link>Link</Link>
+                <Divider />
+                <span>Divider</span>
+              </div>
 
               <div class="flex flex-wrap gap-2">
                 <Button variant="primary">Primary</Button>

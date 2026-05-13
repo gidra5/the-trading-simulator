@@ -1,5 +1,6 @@
 import clsx from "clsx";
 import { For } from "solid-js";
+import { buttonVariants } from "./Button";
 
 export type TabOption<Value extends string> = {
   label: string;
@@ -30,10 +31,9 @@ export function TabBar<Value extends string>(props: TabBarProps<Value>) {
             <button
               aria-selected={isActive()}
               class={clsx(
-                "body-sm-semi h-7 appearance-none rounded border-0 px-3 transition",
-                isActive()
-                  ? "bg-accent-primary text-surface-primary hover:bg-accent-primary hover:text-surface-primary"
-                  : "bg-transparent text-text-secondary hover:bg-surface-secondary hover:text-text-primary",
+                "font-body-primary-sm-semi h-7 appearance-none rounded border-0 px-3 transition",
+                isActive() && buttonVariants.primary,
+                !isActive() && buttonVariants.ghost,
               )}
               role="tab"
               type="button"

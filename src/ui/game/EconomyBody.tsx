@@ -12,8 +12,8 @@ export const EconomyBody: Component<EconomyBodyProps> = (props) => (
     type="button"
     onClick={props.onEarnMoney}
   >
-    <span class="body-secondary-xs-semi uppercase">Economy</span>
-    <span class="mono-xxl-rg mt-2 text-accent-primary">{formatMoney(props.clickValue)}</span>
-    <span class="body-secondary-sm-rg mt-2">per click</span>
+    <span class="font-body-secondary-xs-semi text-text-secondary uppercase">Economy</span>
+    <span class="font-mono-primary-xxl-rg mt-2 text-accent-primary">{formatMoney(props.clickValue)}</span>
+    <span class="font-body-secondary-sm-rg mt-2 text-text-secondary">per click</span>
   </button>
 );

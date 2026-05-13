@@ -7,7 +7,7 @@ export const TextInput: Component<TextInputProps> = (props) => (
   <input
     {...props}
     class={clsx(
-      "body-primary-sm-rg h-9 w-full rounded border border-border bg-surface-primary px-2.5 outline-none transition placeholder:text-text-secondary focus:border-accent-primary disabled:cursor-not-allowed disabled:opacity-60",
+      "font-body-primary-sm-rg h-9 w-full rounded border border-solid border-border bg-surface-body px-2.5 text-text-primary outline-none transition placeholder:text-text-secondary hover:border-accent-secondary focus:border-accent-primary focus:ring-1 focus:ring-accent-primary disabled:cursor-not-allowed disabled:bg-surface-secondary disabled:opacity-60",
       props.class,
     )}
   />

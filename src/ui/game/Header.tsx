@@ -12,11 +12,11 @@ type HeaderProps = {
 
 export const Header: Component<HeaderProps> = (props) => (
   <header class="flex h-12 shrink-0 items-center justify-between gap-4 border-b border-border bg-surface-secondary px-3">
-    <a class="title-primary-xs-semi no-underline hover:text-accent-primary" href="/">
+    <a class="font-title-primary-xs-semi text-text-primary no-underline hover:text-accent-primary" href="/">
       Trading Simulator
     </a>
     <TabBar tabs={gameTabs} value={props.activeTab} onChange={props.onTabChange} />
-    <div class="mono-xs-rg flex items-center gap-3 text-text-secondary">
+    <div class="font-mono-primary-xs-rg flex items-center gap-3 text-text-secondary">
       <span>Buy {formatNumber(props.priceSpread().buy, digits)}</span>
       <span>Sell {formatNumber(props.priceSpread().sell, digits)}</span>
     </div>

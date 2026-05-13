@@ -230,7 +230,7 @@ export default function GamePage() {
   });
 
   return (
-    <div class="body-primary-base-rg flex h-screen min-h-[680px] w-full flex-col overflow-hidden bg-surface-primary">
+    <div class="font-body-primary-base-rg flex h-screen min-h-[680px] w-full flex-col overflow-hidden bg-surface-primary text-text-primary">
       <Header activeTab={activeTab()} priceSpread={priceSpread} onTabChange={setActiveTab} />
 
       <div class="flex min-h-0 flex-1">

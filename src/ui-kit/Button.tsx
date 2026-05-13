@@ -10,19 +10,19 @@ type ButtonProps = JSX.ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: ButtonVariant;
 };
 
-const buttonVariants: Record<ButtonVariant, string> = {
+export const buttonVariants: Record<ButtonVariant, string> = {
   primary:
     "border-accent-primary bg-accent-primary text-surface-primary hover:opacity-90 focus-visible:outline-accent-primary",
   secondary:
-    "border-border bg-surface-secondary text-text-primary hover:border-accent-primary focus-visible:outline-accent-primary",
+    "border-border border-solid bg-surface-secondary text-text-primary hover:bg-black-high hover:border-accent-secondary focus-visible:outline-accent-primary",
   ghost:
-    "border-transparent bg-transparent text-text-secondary hover:bg-surface-secondary hover:text-text-primary focus-visible:outline-accent-primary",
+    "border-transparent bg-transparent text-text-secondary hover:bg-black-high/60 hover:text-text-primary focus-visible:outline-accent-primary",
   danger: "border-danger bg-danger text-surface-primary hover:opacity-90 focus-visible:outline-danger",
 };
 
 const buttonSizes: Record<ButtonSize, string> = {
-  sm: "h-8 px-2.5 body-xs-semi",
-  md: "h-9 px-3 body-sm-semi",
+  sm: "px-2 py-0.5 font-body-primary-xs-semi",
+  md: "px-4 py-1 font-body-primary-sm-semi",
 };
 
 export const Button: Component<ButtonProps> = (props) => {

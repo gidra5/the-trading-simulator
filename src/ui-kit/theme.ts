@@ -89,8 +89,8 @@ export const paletteColors = {
 
 const semanticColors = {
   "surface-body": color("black", "xlow"),
-  "surface-secondary": color("black", "low"),
-  "surface-primary": color("black", "high"),
+  "surface-secondary": color("black", "base"),
+  "surface-primary": color("black", "xhigh"),
   border: color("white", "xlow", 80),
   "text-primary": color("white", "base"),
   "text-secondary": color("white", "low"),

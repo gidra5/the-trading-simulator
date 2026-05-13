@@ -15,12 +15,12 @@
          11. modals/dialogs
          12. themes - light, dark, system
          13. intl
-         14. svg icons set
+         14. svg icons set https://lucide.dev/icons/categories#tools
          15. Assets - images, fonts, music, sounds, etc
          16. animations
       2. setup keyboard shortcuts in the ui for all actions per tab
       3. Create a new page with a proper game ui with 4 tabs:
-         1. market - the price graph and order placement controls
+         1. + market - the price graph and order placement controls
          2. account profile - balance, portfolio, orders, liquidations, stats, etc
          3. economy - clicker mini-game where you earn money
          4. settings - market display settings, performance dials, feature flags, lang select, etc
@@ -59,7 +59,7 @@
          1. Shareable artifacts, like game session stats and results, leaderboards, etc
          2. Setup conversion targets - discord, email, twitter, reddit, steam, patreon, yt, devlog?, etc
          3. Advertise/sell this version
-2. Implement basic economy simulation
+2. Implement economy simulation
    1. Resources
    2. Recipes
    3. Exchanges

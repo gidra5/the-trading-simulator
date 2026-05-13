@@ -23,9 +23,9 @@ export const Metric: Component<MetricProps> = (props) => {
 
   return (
     <div class="rounded border border-border bg-surface-primary p-3">
-      <p class="body-secondary-xs-rg">{props.label}</p>
-      <p class={clsx("mono-lg-rg mt-1", metricToneClasses[tone()])}>{props.value}</p>
-      {props.detail ? <p class="body-secondary-xs-rg mt-1">{props.detail}</p> : null}
+      <p class="font-body-primary-xs-rg text-text-secondary">{props.label}</p>
+      <p class={clsx("font-mono-primary-lg-rg mt-1", metricToneClasses[tone()])}>{props.value}</p>
+      {props.detail ? <p class="font-body-secondary-xs-rg mt-1 text-text-secondary">{props.detail}</p> : null}
     </div>
   );
 };

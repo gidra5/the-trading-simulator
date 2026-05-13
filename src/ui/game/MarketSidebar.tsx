@@ -51,7 +51,10 @@ export const MarketSidebar: Component<MarketSidebarProps> = (props) => (
     </Panel>
 
     <Panel bodyClass="p-0" title="Active Orders">
-      <Show fallback={<p class="body-secondary-sm-rg p-3">None</p>} when={props.account.activeOrders().length > 0}>
+      <Show
+        fallback={<p class="font-body-secondary-sm-rg p-3 text-text-secondary">None</p>}
+        when={props.account.activeOrders().length > 0}
+      >
         <div class="grid">
           <For each={props.account.activeOrders()}>
             {(order) => (
@@ -59,13 +62,13 @@ export const MarketSidebar: Component<MarketSidebarProps> = (props) => (
                 <span
                   class={
                     order.side === "buy"
-                      ? "body-xs-rg rounded bg-accent-secondary px-2 py-1 text-text-primary"
-                      : "body-xs-rg rounded bg-danger px-2 py-1 text-surface-primary"
+                      ? "font-body-primary-xs-rg rounded bg-accent-secondary px-2 py-1 text-text-primary"
+                      : "font-body-primary-xs-rg rounded bg-danger px-2 py-1 text-surface-primary"
                   }
                 >
                   {order.side}
                 </span>
-                <div class="mono-xs-rg min-w-0">
+                <div class="font-mono-primary-xs-rg min-w-0">
                   <p>#{order.id}</p>
                   <p class="truncate text-text-secondary">
                     {formatAmount(order.size)} @ {formatNumber(order.price, digits)}

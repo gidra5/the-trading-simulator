@@ -1,27 +1,36 @@
-type FontRole = "title" | "body" | "mono";
-type TypographySize = "xxl" | "xl" | "lg" | "base" | "sm" | "xs" | "xxs";
-type TypographyWeight = "bold" | "semi" | "rg" | "light";
-type TypographyType = "primary" | "secondary";
+import { UserShortcuts } from "@unocss/core";
 
-const roleTypeFontClasses: Record<FontRole, Record<TypographyType, string>> = {
+export const typographyRoles = ["title", "body", "mono"] as const;
+type TypographyRole = (typeof typographyRoles)[number];
+
+export const typographyTypes = ["primary", "secondary"] as const;
+type TypographyType = (typeof typographyTypes)[number];
+
+export const typographySizes = ["xxl", "xl", "lg", "base", "sm", "xs", "xxs"] as const;
+type TypographySize = (typeof typographySizes)[number];
+
+export const typographyWeights = ["bold", "semi", "rg", "light"] as const;
+type TypographyWeight = (typeof typographyWeights)[number];
+
+const roleTypeFontClasses: Record<TypographyRole, Record<TypographyType, string>> = {
   title: {
-    primary: "font-sans",
-    secondary: "font-sans",
+    primary: "font-serif",
+    secondary: "font-crimson",
   },
   body: {
     primary: "font-sans",
     secondary: "font-sans",
   },
   mono: {
-    primary: "font-mono",
+    primary: "font-fira",
     secondary: "font-mono",
   },
 };
 
-const roleSizeClasses: Record<FontRole, Record<TypographySize, string>> = {
+const roleSizeClasses: Record<TypographyRole, Record<TypographySize, string>> = {
   title: {
-    xxl: "text-7xl leading-none",
-    xl: "text-5xl leading-none",
+    xxl: "text-5xl leading-none",
+    xl: "text-4xl leading-none",
     lg: "text-3xl leading-9",
     base: "text-2xl leading-8",
     sm: "text-xl leading-7",
@@ -35,12 +44,12 @@ const roleSizeClasses: Record<FontRole, Record<TypographySize, string>> = {
     base: "text-base leading-6",
     sm: "text-sm leading-5",
     xs: "text-xs leading-4",
-    xxs: "text-[11px] leading-4",
+    xxs: "text-[10px] leading-4",
   },
   mono: {
-    xxl: "text-6xl leading-none",
-    xl: "text-2xl leading-8",
-    lg: "text-xl leading-7",
+    xxl: "text-2xl leading-8",
+    xl: "text-xl leading-7",
+    lg: "text-lg leading-7",
     base: "text-base leading-6",
     sm: "text-sm leading-5",
     xs: "text-xs leading-4",
@@ -55,40 +64,30 @@ const weightClasses: Record<TypographyWeight, string> = {
   light: "font-light",
 };
 
-const typeColorClasses: Record<TypographyType, string> = {
-  primary: "text-text-primary",
-  secondary: "text-text-secondary",
-};
-
-const isFontRole = (value: string): value is FontRole => value in roleTypeFontClasses;
-const isTypographySize = (value: string): value is TypographySize => value in roleSizeClasses.title;
-const isTypographyWeight = (value: string): value is TypographyWeight => value in weightClasses;
-const isTypographyType = (value: string): value is TypographyType => value in typeColorClasses;
-
-const primitiveTypography = (role: FontRole, size: TypographySize, weight: TypographyWeight): string =>
-  `${roleTypeFontClasses[role].primary} ${roleSizeClasses[role][size]} ${weightClasses[weight]}`;
+const isTypographyRole = (value: string): value is TypographyRole => typographyRoles.includes(value as TypographyRole);
+const isTypographySize = (value: string): value is TypographySize => typographySizes.includes(value as TypographySize);
+const isTypographyWeight = (value: string): value is TypographyWeight =>
+  typographyWeights.includes(value as TypographyWeight);
+const isTypographyType = (value: string): value is TypographyType => typographyTypes.includes(value as TypographyType);
 
 const semanticTypography = (
-  role: FontRole,
+  role: TypographyRole,
   type: TypographyType,
   size: TypographySize,
   weight: TypographyWeight,
-): string => `${roleTypeFontClasses[role][type]} ${roleSizeClasses[role][size]} ${typeColorClasses[type]} ${weightClasses[weight]}`;
+): string => `${roleTypeFontClasses[role][type]} ${roleSizeClasses[role][size]} ${weightClasses[weight]}`;
 
-export const typographyShortcuts = [
+export const typographyShortcuts: UserShortcuts = [
   [
-    /^(title|body|mono)-(xxl|xl|lg|base|sm|xs|xxs)-(bold|semi|rg|light)$/,
-    ([, font, size, weight]: string[]): string | undefined => {
-      if (!font || !size || !weight) return undefined;
-      if (!isFontRole(font) || !isTypographySize(size) || !isTypographyWeight(weight)) return undefined;
-      return primitiveTypography(font, size, weight);
-    },
-  ],
-  [
-    /^(title|body|mono)-(primary|secondary)-(xxl|xl|lg|base|sm|xs|xxs)-(bold|semi|rg|light)$/,
+    /^font-(title|body|mono)-(primary|secondary)-(xxl|xl|lg|base|sm|xs|xxs)-(bold|semi|rg|light)$/,
     ([, role, type, size, weight]: string[]): string | undefined => {
       if (!role || !type || !size || !weight) return undefined;
-      if (!isFontRole(role) || !isTypographyType(type) || !isTypographySize(size) || !isTypographyWeight(weight)) {
+      if (
+        !isTypographyRole(role) ||
+        !isTypographyType(type) ||
+        !isTypographySize(size) ||
+        !isTypographyWeight(weight)
+      ) {
         return undefined;
       }
       return semanticTypography(role, type, size, weight);

@@ -8,7 +8,7 @@ type FooterProps = {
 };
 
 export const Footer: Component<FooterProps> = (props) => (
-  <footer class="mono-xs-rg flex h-8 shrink-0 items-center justify-between gap-4 border-t border-border bg-surface-secondary px-3 text-text-secondary">
+  <footer class="font-mono-primary-xs-rg flex h-8 shrink-0 items-center justify-between gap-4 border-t border-border bg-surface-secondary px-3 text-text-secondary">
     <span>Account #{props.account.id}</span>
     <span>Balance {formatMoney(props.account.portfolio().Money)}</span>
     <span>Net Worth {formatMoney(props.account.netWorth())}</span>

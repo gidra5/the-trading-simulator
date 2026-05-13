@@ -29,8 +29,8 @@ export const AccountBody: Component<AccountBodyProps> = (props) => (
           <For each={assets}>
             {(asset) => (
               <div class="flex items-center justify-between border-b border-border py-2 last:border-b-0">
-                <span class="body-secondary-base-rg">{asset}</span>
-                <span class="mono-base-rg">
+                <span class="font-body-secondary-base-rg text-text-secondary">{asset}</span>
+                <span class="font-mono-primary-base-rg">
                   {asset === "Money"
                     ? formatMoney(props.account.portfolio()[asset])
                     : formatAmount(props.account.portfolio()[asset])}
