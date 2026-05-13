@@ -27,7 +27,7 @@ import { MarketBody } from "../ui/game/MarketBody";
 import { MarketSidebar } from "../ui/game/MarketSidebar";
 import { SettingsBody } from "../ui/game/SettingsBody";
 import { SettingsSidebar } from "../ui/game/SettingsSidebar";
-import type { GameTab, OrderKind } from "../ui/game/types";
+import type { Tab, OrderKind } from "../ui/game/types";
 import { HistogramNormalization } from "../ui/OrderBookHistogram";
 import { createThrottledMemo } from "../utils";
 
@@ -38,7 +38,7 @@ export default function GamePage() {
   const startTime = time();
   const priceSpread = createThrottledMemo(marketPriceSpread, pollingInterval);
 
-  const [activeTab, setActiveTab] = createSignal<GameTab>("market");
+  const [activeTab, setActiveTab] = createSignal<Tab>("market");
   const [feeRate] = createSignal(0.0001);
   const [debtCapitalizationRate] = createSignal(0.00001);
   const [maintenanceMargin] = createSignal(0);
@@ -67,7 +67,6 @@ export default function GamePage() {
   const [deltaSnapshotInput, setDeltaSnapshotInput] = createSignal(String(deltaSnapshotInterval()));
   const [fanoutInput, setFanoutInput] = createSignal(String(fanout()));
   const [levelsInput, setLevelsInput] = createSignal(String(levels()));
-  const [language, setLanguage] = createSignal("en");
   const [advancedOrdersEnabled, setAdvancedOrdersEnabled] = createSignal(false);
   const [newsEventsEnabled, setNewsEventsEnabled] = createSignal(false);
   const [autosaveEnabled, setAutosaveEnabled] = createSignal(true);
@@ -268,7 +267,6 @@ export default function GamePage() {
                 isHeatmapEnabled={isHeatmapEnabled()}
                 isHistogramCumulative={isHistogramCumulative()}
                 isHistogramEnabled={isHistogramEnabled()}
-                language={language()}
                 levelsInput={levelsInput()}
                 newsEventsEnabled={newsEventsEnabled()}
                 showFrameRate={showFrameRate()}
@@ -290,7 +288,6 @@ export default function GamePage() {
                 onHistogramWindowInputChange={(value) =>
                   updateNonNegativeNumberInput(value, setHistogramWindowInput, setHistogramWindowFraction)
                 }
-                onLanguageChange={setLanguage}
                 onLevelsInputChange={(value) => updatePositiveIntegerInput(value, setLevelsInput, setLevels)}
                 onNewsEventsEnabledChange={setNewsEventsEnabled}
                 onShowFrameRateChange={setShowFrameRate}
@@ -331,7 +328,6 @@ export default function GamePage() {
                 advancedOrdersEnabled={advancedOrdersEnabled()}
                 isHeatmapEnabled={isHeatmapEnabled()}
                 isHistogramEnabled={isHistogramEnabled()}
-                language={language()}
                 newsEventsEnabled={newsEventsEnabled()}
                 showFrameRate={showFrameRate()}
               />

@@ -1,29 +1,33 @@
 import type { Component } from "solid-js";
+import { locale, t } from "../../i18n/game";
 import { Panel } from "../../ui-kit/Panel";
 
 type SettingsSidebarProps = {
   advancedOrdersEnabled: boolean;
   isHeatmapEnabled: boolean;
   isHistogramEnabled: boolean;
-  language: string;
   newsEventsEnabled: boolean;
   showFrameRate: boolean;
 };
 
-export const SettingsSidebar: Component<SettingsSidebarProps> = (props) => (
-  <div class="grid gap-3 p-3">
-    <Panel title="Runtime">
-      <div class="grid gap-2">
-        <SideValue label="Heatmap" value={props.isHeatmapEnabled ? "On" : "Off"} />
-        <SideValue label="Histogram" value={props.isHistogramEnabled ? "On" : "Off"} />
-        <SideValue label="FPS" value={props.showFrameRate ? "On" : "Off"} />
-        <SideValue label="Language" value={props.language.toUpperCase()} />
-        <SideValue label="Advanced orders" value={props.advancedOrdersEnabled ? "On" : "Off"} />
-        <SideValue label="News events" value={props.newsEventsEnabled ? "On" : "Off"} />
-      </div>
-    </Panel>
-  </div>
-);
+export const SettingsSidebar: Component<SettingsSidebarProps> = (props) => {
+  const status = (enabled: boolean): string => (enabled ? t("common.on") : t("common.off"));
+
+  return (
+    <div class="grid gap-3 p-3">
+      <Panel title={t("settings.panels.runtime")}>
+        <div class="grid gap-2">
+          <SideValue label={t("settings.display.heatmap")} value={status(props.isHeatmapEnabled)} />
+          <SideValue label={t("settings.display.histogram")} value={status(props.isHistogramEnabled)} />
+          <SideValue label={t("settings.performance.fps")} value={status(props.showFrameRate)} />
+          <SideValue label={t("settings.language.label")} value={t(`settings.language.${locale()}`)} />
+          <SideValue label={t("settings.features.advancedOrders")} value={status(props.advancedOrdersEnabled)} />
+          <SideValue label={t("settings.features.newsEvents")} value={status(props.newsEventsEnabled)} />
+        </div>
+      </Panel>
+    </div>
+  );
+};
 
 const SideValue: Component<{ label: string; value: string }> = (props) => (
   <div class="flex items-center justify-between border-b border-border py-2 last:border-b-0">
