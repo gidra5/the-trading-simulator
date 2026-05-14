@@ -1,5 +1,5 @@
-import { ChartColumn, Gauge, Settings, Volume2 } from "lucide-solid";
-import { createMemo, createSignal, For, type Component } from "solid-js";
+import { ChartColumn, Gauge, Pause, Play, Settings, Volume2 } from "lucide-solid";
+import { createMemo, createSignal, For, Show, type Component } from "solid-js";
 import { t } from "../../i18n/game";
 import { Button } from "../../ui-kit/Button";
 import { Field } from "../../ui-kit/Field";
@@ -24,6 +24,9 @@ export const Header: Component<HeaderProps> = (props) => {
   const [isMixerOpen, setIsMixerOpen] = createSignal(false);
   const [isSpeedOpen, setIsSpeedOpen] = createSignal(false);
   const tabs = createMemo(() => mainTabValues.map((value) => ({ value: value as Tab, label: t(`tabs.${value}`) })));
+  const speedLabel = createMemo(() =>
+    gameSettings.isSimulationPaused() ? t("header.paused") : `${gameSettings.simulationSpeed()}x`,
+  );
 
   return (
     <header class="flex h-16 shrink-0 items-center justify-between gap-4 px-3">
@@ -109,13 +112,27 @@ export const Header: Component<HeaderProps> = (props) => {
               onClick={() => setIsSpeedOpen((open) => !open)}
             >
               <Gauge aria-hidden="true" class="h-4 w-4" strokeWidth={1.8} />
-              <span>{gameSettings.simulationSpeed()}x</span>
+              <span>{speedLabel()}</span>
             </Button>
           }
           onOpenChange={setIsSpeedOpen}
         >
           <div class="grid gap-2">
             <p class="font-body-primary-xs-semi text-text-secondary uppercase">{t("header.speed")}</p>
+            <Button
+              active={gameSettings.isSimulationPaused()}
+              size="sm"
+              variant={gameSettings.isSimulationPaused() ? "primary" : "secondary"}
+              onClick={() => gameSettings.setIsSimulationPaused(!gameSettings.isSimulationPaused())}
+            >
+              <Show
+                fallback={<Pause aria-hidden="true" class="h-4 w-4" strokeWidth={1.8} />}
+                when={gameSettings.isSimulationPaused()}
+              >
+                <Play aria-hidden="true" class="h-4 w-4" strokeWidth={1.8} />
+              </Show>
+              <span>{gameSettings.isSimulationPaused() ? t("header.resume") : t("header.pause")}</span>
+            </Button>
             <div class="grid grid-cols-4 gap-2">
               <For each={simulationSpeedOptions}>
                 {(speed) => (

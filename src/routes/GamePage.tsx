@@ -1,7 +1,6 @@
 import { createEffect, createMemo, createSignal, Match, onCleanup, onMount, Switch } from "solid-js";
 import { createAccountState, type AssetPair } from "../economy/account";
 import type { MarketState, OrderSide, PriceCandle } from "../market/index";
-import { simulationTickTime } from "../simulation/index";
 import { market, simulation, time } from "./game/state";
 import type { ChartViewport } from "../components/Chart";
 import { AccountBody } from "../components/game/AccountBody";
@@ -243,10 +242,24 @@ export default function GamePage() {
   const accountTelemetry = createAccountTelemetryState(accountState.account);
 
   onMount(() => {
-    const simulationIntervalId = setInterval(() => simulation.tick(simulationTickTime), simulationTickTime);
+    let previousTimestamp = performance.now();
+    let animationFrameId = 0;
+
+    const tick = (timestamp: number): void => {
+      const elapsed = timestamp - previousTimestamp;
+      previousTimestamp = timestamp;
+
+      if (elapsed > 0 && !gameSettings.isSimulationPaused()) {
+        simulation.tick(elapsed * gameSettings.simulationSpeed());
+      }
+
+      animationFrameId = requestAnimationFrame(tick);
+    };
+
+    animationFrameId = requestAnimationFrame(tick);
 
     onCleanup(() => {
-      clearInterval(simulationIntervalId);
+      cancelAnimationFrame(animationFrameId);
     });
   });
 

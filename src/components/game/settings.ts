@@ -15,6 +15,7 @@ const createSettingsState = () => {
   const [newsEventsEnabled, setNewsEventsEnabled] = createSignal(false);
   const [autosaveEnabled, setAutosaveEnabled] = createSignal(true);
   const [simulationSpeed, setSimulationSpeed] = createSignal(1);
+  const [isSimulationPaused, setIsSimulationPaused] = createSignal(false);
   const [masterVolume, setMasterVolume] = createSignal(70);
   const [musicVolume, setMusicVolume] = createSignal(70);
   const [effectsVolume, setEffectsVolume] = createSignal(70);
@@ -29,6 +30,7 @@ const createSettingsState = () => {
     isHeatmapEnabled,
     isHistogramCumulative,
     isHistogramEnabled,
+    isSimulationPaused,
     masterVolume,
     musicVolume,
     newsEventsEnabled,
@@ -41,6 +43,7 @@ const createSettingsState = () => {
     setIsHeatmapEnabled,
     setIsHistogramCumulative,
     setIsHistogramEnabled,
+    setIsSimulationPaused,
     setMasterVolume,
     setMusicVolume,
     setNewsEventsEnabled,
