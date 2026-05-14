@@ -1,4 +1,4 @@
-import { MarketChart } from "../ui/MarketChart";
+import { MarketChart } from "../components/MarketChart";
 import { simulation, market, time } from "./simulation/state";
 
 export default function SimulationPage() {
