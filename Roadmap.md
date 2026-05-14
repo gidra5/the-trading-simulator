@@ -2,28 +2,28 @@
    1. + Separate current simulation UI into a separate page
    2. Tidy up the PoC
       1. Create a UI kit, implemented on-demand
-         1. + buttons - primary, secondary, ghost, danger, disabled
-         2. inputs - + number, + select, text, textarea, checkbox, radio, + switch/tab
+         1. + buttons - primary, secondary, ghost, icon, danger, disabled
+         2. inputs - + number, + select, + text, textarea, + checkbox, + range, + switch/tab/radio
          3. Chart - line, bar, pie, donut, etc
          4. table
          5. accordion
          6. "skill tree"
-         7. dividers
+         7. + dividers
          8. + palette - colors, gradients
          9. + typography - headings, text, code, links
-         10. tooltips/popovers
+         10. tooltips/+ popovers
          11. modals/dialogs
          12. themes - light, dark, system
-         13. intl
-         14. svg icons set https://lucide.dev/icons/categories#tools
+         13. + intl
+         14. + svg icons set https://lucide.dev/icons/categories#tools
          15. Assets - images, fonts, music, sounds, etc
          16. animations
       2. setup keyboard shortcuts in the ui for all actions per tab
       3. Create a new page with a proper game ui with 4 tabs:
          1. + market - the price graph and order placement controls
-         2. account profile - balance, portfolio, orders, liquidations, stats, etc
-         3. economy - clicker mini-game where you earn money
-         4. settings - market display settings, performance dials, feature flags, lang select, etc
+         2. + account profile - balance, portfolio, orders, liquidations, stats, etc
+         3. + economy - clicker mini-game where you earn money
+         4. + settings - market display settings, performance dials, feature flags, lang select, etc
          5. desktop first, mobile second, but not neglected
       4. + The layout is header/body[main/sidebar]/footer
       5. setup survival mechanics
@@ -44,21 +44,23 @@
          8. Or instead of company upgrade, you choose skill upgrades, which allows learning industry specific skills
          9. Or instead a management upgrade, which allows you to hire other actors to work for you
          10. Or instead a scientist/engineer upgrade, which allows you to research new technologies
-      7. Save system - store simulation and account state in a file/localstorage
-         1. Autosave
-         2. Manual load/save
-      8. Offline simulation/time skip/speedup
-      9.  Multiplayer - play in the same session as other players
+      7. + Save system - store simulation and account state in a file/localstorage
+         1. + Autosave
+         2. + Manual load/save
+         3. + Reset
+      8. Offline simulation/time skip/+ speedup
+      9. Multiplayer - play in the same session as other players
          1. Centralized state and simulation on a server
          2. Or P2P with discovery through centralized server 
          3. Local network discovery
       10. Challenges/tasks to direct players?
       11. Market narrator - a system that would direct and adjust parameters of the market simulation and simulate market events like dump/pump
       12. Native build?
-      13. Funding, marketing, discoverability https://chatgpt.com/c/6a01d729-4d34-8393-aea3-337e52f37b34
+      13. Funding, marketing, discoverability, analytics https://chatgpt.com/c/6a01d729-4d34-8393-aea3-337e52f37b34
          1. Shareable artifacts, like game session stats and results, leaderboards, etc
          2. Setup conversion targets - discord, email, twitter, reddit, steam, patreon, yt, devlog?, etc
          3. Advertise/sell this version
+         4. Collect analytics on what features were used and how often, what progress do players make, how often they return back and how many players in total visited https://docs.umami.is/docs/install
 2. Implement economy simulation
    1. Resources
    2. Recipes

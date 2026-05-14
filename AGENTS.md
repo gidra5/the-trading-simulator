@@ -8,3 +8,4 @@ keep interfaces minimal, including exports from modules. If an export is never u
 
 when creating new ui components, use the ui kit
 when there is no suitable ui kit component, create a new one and display it in the ui kit route
+defer optional parameters as high as possible in hierarchy
