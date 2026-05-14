@@ -1,5 +1,5 @@
-import { createMemo, createSignal, Match, onCleanup, onMount, Switch } from "solid-js";
-import { createAccountState } from "../economy/account";
+import { createEffect, createMemo, createSignal, Match, onCleanup, onMount, Switch } from "solid-js";
+import { createAccountState, type AssetPair } from "../economy/account";
 import type { MarketState, OrderSide, PriceCandle } from "../market/index";
 import { simulationTickTime } from "../simulation/index";
 import { market, simulation, time } from "./game/state";
@@ -9,16 +9,17 @@ import { AccountSidebar } from "../components/game/AccountSidebar";
 import { EconomyBody } from "../components/game/EconomyBody";
 import { EconomySidebar } from "../components/game/EconomySidebar";
 import { Footer } from "../components/game/Footer";
-import { Header } from "../components/game/Header";
+import { Header, type Tab } from "../components/game/Header";
 import { MarketBody } from "../components/game/MarketBody";
 import { MarketSidebar } from "../components/game/MarketSidebar";
 import { gameSettings } from "../components/game/settings";
 import { SettingsBody } from "../components/game/SettingsBody";
 import { SettingsSidebar } from "../components/game/SettingsSidebar";
-import type { Tab, OrderKind } from "../components/game/types";
+import type { OrderKind } from "../components/game/types";
 import { createThrottledMemo } from "../utils";
 
 const pollingInterval = 200;
+export const tabValues = ["market", "account", "economy", "settings"] as const;
 
 const createAccountGameState = (market: MarketState) => {
   const [feeRate] = createSignal(0.0001);
@@ -205,12 +206,41 @@ const createEconomyGameState = (account: ReturnType<typeof createAccountGameStat
   };
 };
 
+const createAccountTelemetryState = (account: ReturnType<typeof createAccountGameState>["account"]) => {
+  let previousSample = {
+    cash: account.portfolio().Money,
+    netWorth: account.netWorth(),
+    time: time.time(),
+  };
+  const [cashPerMinute, setCashPerMinute] = createSignal(0);
+
+  createEffect(() => {
+    const sample = { cash: account.portfolio().Money, netWorth: account.netWorth(), time: time.time() };
+    const elapsed = sample.time - previousSample.time;
+
+    if (elapsed <= 0) {
+      previousSample = sample;
+      return;
+    }
+
+    const cashPerMinuteEmaTimeConstant = 60_000; // todo: move to settings
+    const instantCashPerMinute = ((sample.cash - previousSample.cash) / elapsed) * 60_000;
+    const alpha = 1 - Math.exp(-elapsed / cashPerMinuteEmaTimeConstant);
+    setCashPerMinute((current) => current + alpha * (instantCashPerMinute - current));
+    previousSample = sample;
+  });
+
+  return { cashPerMinute };
+};
+
 export default function GamePage() {
   const startTime = time.time();
   const [activeTab, setActiveTab] = createSignal<Tab>("market");
+  const [accountName, setAccountName] = createSignal("");
   const accountState = createAccountGameState(market);
   const marketState = createMarketGameState({ account: accountState.account, market, startTime });
   const economy = createEconomyGameState(accountState.account);
+  const accountTelemetry = createAccountTelemetryState(accountState.account);
 
   onMount(() => {
     const simulationIntervalId = setInterval(() => simulation.tick(simulationTickTime), simulationTickTime);
@@ -222,7 +252,7 @@ export default function GamePage() {
 
   return (
     <div class="font-body-primary-base-rg flex h-screen min-h-[680px] w-full flex-col overflow-hidden bg-surface-body text-text-primary">
-      <Header activeTab={activeTab()} priceSpread={marketState.priceSpread} onTabChange={setActiveTab} />
+      <Header activeTab={activeTab()} onTabChange={setActiveTab} />
 
       <div class="flex min-h-0 flex-1">
         <main class="min-w-0 flex-1">
@@ -282,7 +312,12 @@ export default function GamePage() {
         </aside>
       </div>
 
-      <Footer account={accountState.account} activeTab={activeTab()} />
+      <Footer
+        account={accountState.account}
+        accountName={accountName()}
+        cashPerMinute={accountTelemetry.cashPerMinute()}
+        priceSpread={marketState.priceSpread}
+      />
     </div>
   );
 }

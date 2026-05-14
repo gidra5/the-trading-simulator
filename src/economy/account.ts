@@ -5,8 +5,10 @@ import { type SimulationTimeState } from "../simulation/time";
 let nextAccountId = 0;
 
 export const assets = ["Money", "Stock"] as const;
+export type Asset = (typeof assets)[number];
+export type AssetPair = { buy: Asset; sell: Asset };
 
-type Portfolio = Record<(typeof assets)[number], number>;
+type Portfolio = Record<Asset, number>;
 type PendingOrder = {
   id: number;
   side: OrderSide;
