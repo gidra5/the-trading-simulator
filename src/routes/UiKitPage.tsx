@@ -12,15 +12,18 @@ import { Button } from "../ui-kit/Button";
 import { Field } from "../ui-kit/Field";
 import { Metric } from "../ui-kit/Metric";
 import { Panel } from "../ui-kit/Panel";
-import { SelectField } from "../ui-kit/SelectField";
-import { TabBar } from "../ui-kit/TabBar";
+import { Popover } from "../ui-kit/Popover";
+import { Range } from "../ui-kit/Range";
+import { Radio } from "../ui-kit/Radio";
+import { Select } from "../ui-kit/Select";
 import { TextInput } from "../ui-kit/TextInput";
-import { ToggleField } from "../ui-kit/ToggleField";
+import { Checkbox } from "../ui-kit/Checkbox";
 import { paletteSwatches } from "../ui-kit/theme";
 import { Link } from "../ui-kit/Link";
 import { typographyRoles, typographySizes, typographyTypes, typographyWeights } from "../ui-kit/typography";
 import clsx from "clsx";
 import { Divider } from "../ui-kit/Divider";
+import { Dialog } from "../ui-kit/Dialog";
 
 const kitTabs = [
   { value: "market", label: "Market" },
@@ -136,6 +139,11 @@ export default function UiKitPage() {
   const [heatmapEnabled, setHeatmapEnabled] = createSignal(true);
   const [histogramEnabled, setHistogramEnabled] = createSignal(false);
   const [language, setLanguage] = createSignal("en");
+  const [isDialogOpen, setIsDialogOpen] = createSignal(false);
+  const [hoverPopoverOpen, setHoverPopoverOpen] = createSignal(false);
+  const [popoverOpen, setPopoverOpen] = createSignal(false);
+  const [rangeValue, setRangeValue] = createSignal(40);
+  const [volume, setVolume] = createSignal(70);
 
   return (
     <main class="font-body-primary-base-rg min-h-screen bg-surface-body p-6 text-text-primary">
@@ -276,7 +284,7 @@ export default function UiKitPage() {
         <div class="grid grid-cols-[1fr_22rem] gap-5">
           <Panel title="Controls">
             <div class="grid gap-4">
-              <TabBar tabs={kitTabs} value={activeTab()} onChange={setActiveTab} />
+              <Radio options={kitTabs} value={activeTab()} onChange={setActiveTab} />
 
               <div class="flex flex-row gap-2">
                 <Link>Link</Link>
@@ -299,6 +307,50 @@ export default function UiKitPage() {
                 <Button aria-label="Small settings" size="sm" variant="icon">
                   <Settings aria-hidden="true" class="h-4 w-4" strokeWidth={1.8} />
                 </Button>
+                <Button onClick={() => setIsDialogOpen(true)}>Open Dialog</Button>
+                <Popover
+                  open={popoverOpen()}
+                  align="start"
+                  trigger={
+                    <Button
+                      aria-expanded={popoverOpen()}
+                      aria-label="Open popover"
+                      variant="secondary"
+                      onClick={() => setPopoverOpen((open) => !open)}
+                    >
+                      Popover
+                    </Button>
+                  }
+                  onOpenChange={setPopoverOpen}
+                >
+                  <div class="grid gap-3">
+                    <p class="font-body-primary-sm-semi text-text-primary">Mixer</p>
+                    <Field class="flex items-center justify-between gap-3" label="Master">
+                      <div class="flex items-center gap-2">
+                        <span class="font-mono-primary-xs-rg text-text-primary">{volume()}%</span>
+                        <Range class="w-36" max={100} min={0} value={volume()} onChange={setVolume} />
+                      </div>
+                    </Field>
+                  </div>
+                </Popover>
+                <Popover
+                  open={hoverPopoverOpen()}
+                  align="start"
+                  openOnHover
+                  trigger={
+                    <Button aria-expanded={hoverPopoverOpen()} aria-label="Open hover popover" variant="secondary">
+                      Hover Popover
+                    </Button>
+                  }
+                  onOpenChange={setHoverPopoverOpen}
+                >
+                  <div class="grid gap-1">
+                    <p class="font-body-primary-sm-semi text-text-primary">Hover Popover</p>
+                    <p class="font-body-primary-xs-rg text-text-secondary">
+                      Pointer enter opens it, pointer leave closes it.
+                    </p>
+                  </div>
+                </Popover>
               </div>
 
               <div class="grid grid-cols-2 gap-3">
@@ -310,24 +362,75 @@ export default function UiKitPage() {
                 </Field>
               </div>
 
+              <Field class="flex items-center justify-between gap-3" label="Range">
+                <div class="flex items-center gap-2 w-1/2">
+                  <span class="font-mono-primary-xs-rg text-text-primary">{rangeValue()}%</span>
+                  <Range class="w-52" max={100} min={0} value={rangeValue()} onChange={setRangeValue} />
+                </div>
+              </Field>
+
               <div class="grid grid-cols-2 gap-3">
-                <SelectField
-                  label="Language"
-                  options={[
-                    { value: "en", label: "English" },
-                    { value: "uk", label: "Ukrainian" },
-                    { value: "de", label: "German" },
-                  ]}
-                  value={language()}
-                  onChange={setLanguage}
-                />
-                <div class="grid gap-2 pt-5">
-                  <ToggleField checked={heatmapEnabled()} label="Heatmap" onChange={setHeatmapEnabled} />
-                  <ToggleField checked={histogramEnabled()} label="Histogram" onChange={setHistogramEnabled} />
+                <Field label="Language">
+                  <Select
+                    options={[
+                      { value: "en", label: "English" },
+                      { value: "uk", label: "Ukrainian" },
+                      { value: "de", label: "German" },
+                    ]}
+                    value={language()}
+                    onChange={(event) => setLanguage(event.currentTarget.value)}
+                  />
+                </Field>
+                <div class="grid gap-2">
+                  <Field class="flex items-center justify-between gap-3" label="Heatmap">
+                    <Checkbox
+                      checked={heatmapEnabled()}
+                      onInput={(event) => setHeatmapEnabled(event.currentTarget.checked)}
+                    />
+                  </Field>
+                  <Field class="flex items-center justify-between gap-3" label="Histogram">
+                    <Checkbox
+                      checked={histogramEnabled()}
+                      onInput={(event) => setHistogramEnabled(event.currentTarget.checked)}
+                    />
+                  </Field>
                 </div>
               </div>
             </div>
           </Panel>
+
+          <Dialog open={isDialogOpen()} onOpenChange={setIsDialogOpen}>
+            <div class="grid gap-4">
+              <div class="grid gap-1">
+                <h2 class="font-title-secondary-base-rg text-text-primary">Order Confirmation</h2>
+                <p class="font-body-primary-sm-rg text-text-secondary">
+                  Review the order details before submitting it to the market.
+                </p>
+              </div>
+              <div class="grid gap-2 rounded border border-border bg-surface-secondary p-3 font-mono-primary-sm-rg">
+                <div class="flex items-center justify-between gap-4">
+                  <span class="text-text-secondary">Side</span>
+                  <span>Buy</span>
+                </div>
+                <div class="flex items-center justify-between gap-4">
+                  <span class="text-text-secondary">Size</span>
+                  <span>250</span>
+                </div>
+                <div class="flex items-center justify-between gap-4">
+                  <span class="text-text-secondary">Limit</span>
+                  <span>1.002500</span>
+                </div>
+              </div>
+              <div class="flex justify-end gap-2">
+                <Button variant="ghost" onClick={() => setIsDialogOpen(false)}>
+                  Cancel
+                </Button>
+                <Button variant="primary" onClick={() => setIsDialogOpen(false)}>
+                  Submit
+                </Button>
+              </div>
+            </div>
+          </Dialog>
 
           <Panel title="Metrics">
             <div class="grid gap-3">

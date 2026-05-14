@@ -50,6 +50,16 @@ export default defineConfig({
 `,
     },
   ],
+  variants: [
+    (matcher) => {
+      if (!matcher.startsWith("field-hover:")) return matcher;
+
+      return {
+        matcher: matcher.slice("field-hover:".length),
+        selector: (selector) => `.field:hover ${selector}`,
+      };
+    },
+  ],
   safelist: typographySafelist,
   shortcuts: typographyShortcuts as any,
   theme: {

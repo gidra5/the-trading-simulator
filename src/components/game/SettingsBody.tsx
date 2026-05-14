@@ -3,13 +3,14 @@ import { locales, locale, setLocale, t, type Locale } from "../../i18n/game";
 import { market } from "../../routes/game/state";
 import { Field } from "../../ui-kit/Field";
 import { Panel } from "../../ui-kit/Panel";
-import { SelectField } from "../../ui-kit/SelectField";
+import { Select } from "../../ui-kit/Select";
 import { TextInput } from "../../ui-kit/TextInput";
-import { ToggleField } from "../../ui-kit/ToggleField";
+import { Checkbox } from "../../ui-kit/Checkbox";
 import { HistogramNormalization } from "../OrderBookHistogram";
 import { gameSettings } from "./settings";
 
 const isLocale = (value: string): value is Locale => locales.includes(value as Locale);
+const checkboxFieldClass = "flex items-center justify-between gap-3";
 
 export const SettingsBody: Component = () => {
   const [candleIntervalInput, setCandleIntervalInput] = createSignal(String(gameSettings.candleInterval() / 1_000));
@@ -83,27 +84,33 @@ export const SettingsBody: Component = () => {
       <div class="grid grid-cols-2 gap-4">
         <Panel title={t("settings.panels.marketDisplay")}>
           <div class="grid gap-3">
-            <ToggleField
-              checked={gameSettings.isHeatmapEnabled()}
-              label={t("settings.display.heatmap")}
-              onChange={gameSettings.setIsHeatmapEnabled}
-            />
-            <ToggleField
-              checked={gameSettings.isHistogramEnabled()}
-              label={t("settings.display.histogram")}
-              onChange={gameSettings.setIsHistogramEnabled}
-            />
-            <ToggleField
-              checked={gameSettings.isHistogramCumulative()}
-              label={t("settings.display.cumulativeHistogram")}
-              onChange={gameSettings.setIsHistogramCumulative}
-            />
-            <SelectField
-              label={t("settings.display.histogramNormalization")}
-              options={normalizationOptions()}
-              value={gameSettings.histogramNormalization()}
-              onChange={(value) => gameSettings.setHistogramNormalization(value as HistogramNormalization)}
-            />
+            <Field class={checkboxFieldClass} label={t("settings.display.heatmap")}>
+              <Checkbox
+                checked={gameSettings.isHeatmapEnabled()}
+                onInput={(event) => gameSettings.setIsHeatmapEnabled(event.currentTarget.checked)}
+              />
+            </Field>
+            <Field class={checkboxFieldClass} label={t("settings.display.histogram")}>
+              <Checkbox
+                checked={gameSettings.isHistogramEnabled()}
+                onInput={(event) => gameSettings.setIsHistogramEnabled(event.currentTarget.checked)}
+              />
+            </Field>
+            <Field class={checkboxFieldClass} label={t("settings.display.cumulativeHistogram")}>
+              <Checkbox
+                checked={gameSettings.isHistogramCumulative()}
+                onInput={(event) => gameSettings.setIsHistogramCumulative(event.currentTarget.checked)}
+              />
+            </Field>
+            <Field label={t("settings.display.histogramNormalization")}>
+              <Select
+                options={normalizationOptions()}
+                value={gameSettings.histogramNormalization()}
+                onChange={(event) =>
+                  gameSettings.setHistogramNormalization(event.currentTarget.value as HistogramNormalization)
+                }
+              />
+            </Field>
             <Field label={t("settings.display.candleInterval")}>
               <TextInput
                 inputMode="decimal"
@@ -124,11 +131,12 @@ export const SettingsBody: Component = () => {
 
         <Panel title={t("settings.panels.performance")}>
           <div class="grid gap-3">
-            <ToggleField
-              checked={gameSettings.showFrameRate()}
-              label={t("settings.performance.fpsCounter")}
-              onChange={gameSettings.setShowFrameRate}
-            />
+            <Field class={checkboxFieldClass} label={t("settings.performance.fpsCounter")}>
+              <Checkbox
+                checked={gameSettings.showFrameRate()}
+                onInput={(event) => gameSettings.setShowFrameRate(event.currentTarget.checked)}
+              />
+            </Field>
             <Field label={t("settings.performance.deltaSnapshotInterval")}>
               <TextInput
                 inputMode="numeric"
@@ -155,35 +163,39 @@ export const SettingsBody: Component = () => {
 
         <Panel title={t("settings.panels.featureFlags")}>
           <div class="grid gap-3">
-            <ToggleField
-              checked={gameSettings.advancedOrdersEnabled()}
-              label={t("settings.features.advancedOrders")}
-              onChange={gameSettings.setAdvancedOrdersEnabled}
-            />
-            <ToggleField
-              checked={gameSettings.newsEventsEnabled()}
-              label={t("settings.features.newsEvents")}
-              onChange={gameSettings.setNewsEventsEnabled}
-            />
-            <ToggleField
-              checked={gameSettings.autosaveEnabled()}
-              label={t("settings.features.autosave")}
-              onChange={gameSettings.setAutosaveEnabled}
-            />
+            <Field class={checkboxFieldClass} label={t("settings.features.advancedOrders")}>
+              <Checkbox
+                checked={gameSettings.advancedOrdersEnabled()}
+                onInput={(event) => gameSettings.setAdvancedOrdersEnabled(event.currentTarget.checked)}
+              />
+            </Field>
+            <Field class={checkboxFieldClass} label={t("settings.features.newsEvents")}>
+              <Checkbox
+                checked={gameSettings.newsEventsEnabled()}
+                onInput={(event) => gameSettings.setNewsEventsEnabled(event.currentTarget.checked)}
+              />
+            </Field>
+            <Field class={checkboxFieldClass} label={t("settings.features.autosave")}>
+              <Checkbox
+                checked={gameSettings.autosaveEnabled()}
+                onInput={(event) => gameSettings.setAutosaveEnabled(event.currentTarget.checked)}
+              />
+            </Field>
           </div>
         </Panel>
 
         <Panel title={t("settings.panels.localization")}>
-          <SelectField
-            label={t("settings.language.label")}
-            options={languageOptions()}
-            value={locale()}
-            onChange={(value) => {
-              if (isLocale(value)) {
-                setLocale(value);
-              }
-            }}
-          />
+          <Field label={t("settings.language.label")}>
+            <Select
+              options={languageOptions()}
+              value={locale()}
+              onChange={(event) => {
+                if (isLocale(event.currentTarget.value)) {
+                  setLocale(event.currentTarget.value);
+                }
+              }}
+            />
+          </Field>
         </Panel>
       </div>
     </div>

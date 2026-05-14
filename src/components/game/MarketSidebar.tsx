@@ -4,7 +4,7 @@ import type { OrderSide } from "../../market";
 import { Button } from "../../ui-kit/Button";
 import { Field } from "../../ui-kit/Field";
 import { Panel } from "../../ui-kit/Panel";
-import { TabBar } from "../../ui-kit/TabBar";
+import { Radio } from "../../ui-kit/Radio";
 import { TextInput } from "../../ui-kit/TextInput";
 import { formatNumber } from "../../utils";
 import { digits, formatAmount } from "./format";
@@ -31,8 +31,8 @@ export const MarketSidebar: Component<MarketSidebarProps> = (props) => {
     <div class="grid gap-3 p-3">
       <Panel title={t("market.order.placement")}>
         <div class="grid gap-3">
-          <TabBar class="w-full" tabs={orderSideTabs()} value={props.orderSide} onChange={props.onOrderSideChange} />
-          <TabBar class="w-full" tabs={orderKindTabs()} value={props.orderKind} onChange={props.onOrderKindChange} />
+          <Radio class="w-full" options={orderSideTabs()} value={props.orderSide} onChange={props.onOrderSideChange} />
+          <Radio class="w-full" options={orderKindTabs()} value={props.orderKind} onChange={props.onOrderKindChange} />
           <Show when={props.orderKind === "limit"}>
             <Field label={t("market.order.limitPrice")}>
               <TextInput

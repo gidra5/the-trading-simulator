@@ -1,6 +1,6 @@
 import { createMemo, type Accessor, type Component } from "solid-js";
 import { t } from "../../i18n/game";
-import { TabBar } from "../../ui-kit/TabBar";
+import { Radio } from "../../ui-kit/Radio";
 import { formatNumber } from "../../utils";
 import { digits } from "./format";
 import { tabValues, type Tab } from "./types";
@@ -17,7 +17,7 @@ export const Header: Component<HeaderProps> = (props) => {
   return (
     <header class="flex h-16 shrink-0 items-center justify-between gap-4 px-3">
       <span class="font-body-primary-xl-semi text-text-primary">{t("app.title")}</span>
-      <TabBar tabs={tabs()} value={props.activeTab} onChange={props.onTabChange} />
+      <Radio options={tabs()} value={props.activeTab} onChange={props.onTabChange} />
       <div class="font-mono-primary-xs-rg flex items-center gap-3 text-text-secondary">
         <span>{t("market.header.buy", { price: formatNumber(props.priceSpread().buy, digits) })}</span>
         <span>{t("market.header.sell", { price: formatNumber(props.priceSpread().sell, digits) })}</span>

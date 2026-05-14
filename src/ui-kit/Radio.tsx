@@ -2,39 +2,39 @@ import clsx from "clsx";
 import { For } from "solid-js";
 import { buttonSizes, buttonVariants } from "./Button";
 
-export type TabOption<Value extends string> = {
+type RadioOption<Value extends string> = {
   label: string;
   value: Value;
 };
 
-type TabBarProps<Value extends string> = {
+type RadioProps<Value extends string> = {
   class?: string;
   onChange: (value: Value) => void;
-  tabs: readonly TabOption<Value>[];
+  options: readonly RadioOption<Value>[];
   value: Value;
 };
 
-export function TabBar<Value extends string>(props: TabBarProps<Value>) {
+export function Radio<Value extends string>(props: RadioProps<Value>) {
   return (
-    <div class={clsx("inline-flex items-center gap-1", props.class)} role="tablist">
-      <For each={props.tabs}>
-        {(tab) => {
-          const isActive = () => props.value === tab.value;
+    <div class={clsx("inline-flex items-center gap-1", props.class)} role="radiogroup">
+      <For each={props.options}>
+        {(option) => {
+          const isActive = () => props.value === option.value;
 
           return (
             <button
-              aria-selected={isActive()}
+              aria-checked={isActive()}
               class={clsx(
                 "inline-flex appearance-none items-center justify-center gap-2 rounded border transition disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2",
                 buttonSizes.md,
                 isActive() && buttonVariants.primary,
                 !isActive() && buttonVariants.ghost,
               )}
-              role="tab"
+              role="radio"
               type="button"
-              onClick={() => props.onChange(tab.value)}
+              onClick={() => props.onChange(option.value)}
             >
-              {tab.label}
+              {option.label}
             </button>
           );
         }}
