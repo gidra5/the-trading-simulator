@@ -3,11 +3,15 @@ import {
   ChartCandlestick,
   ChartLine,
   CircleDollarSign,
+  Download,
   Settings,
+  Upload,
   Wallet,
   type LucideIcon,
 } from "lucide-solid";
-import { createSignal, For } from "solid-js";
+import { createMemo, createSignal, For } from "solid-js";
+import { createManualStore } from "../storage/manual";
+import type { Serializer } from "../storage/interface";
 import { Button } from "../ui-kit/Button";
 import { Field } from "../ui-kit/Field";
 import { Metric } from "../ui-kit/Metric";
@@ -17,6 +21,7 @@ import { Range } from "../ui-kit/Range";
 import { Radio } from "../ui-kit/Radio";
 import { Select } from "../ui-kit/Select";
 import { TextInput } from "../ui-kit/TextInput";
+import { Textarea } from "../ui-kit/Textarea";
 import { Checkbox } from "../ui-kit/Checkbox";
 import { paletteSwatches } from "../ui-kit/theme";
 import { Link } from "../ui-kit/Link";
@@ -134,6 +139,127 @@ const iconSamples: readonly { Icon: LucideIcon; label: string; toneClass: string
   { Icon: Settings, label: "Settings", toneClass: "text-text-secondary" },
 ] as const;
 
+const saveEncodingFormats = [
+  { value: "text", label: "Plain text", extension: "txt", mimeType: "text/plain" },
+  { value: "json", label: "JSON", extension: "json", mimeType: "application/json" },
+  { value: "base64", label: "Base64", extension: "b64", mimeType: "text/plain" },
+  { value: "binary", label: "Binary", extension: "bin", mimeType: "application/octet-stream" },
+] as const;
+type SaveEncoding = (typeof saveEncodingFormats)[number]["value"];
+type SaveFileBlobPart = string | ArrayBuffer;
+
+const sampleSavePayload = `Trader: Demo Trader
+Cash: 104820.25
+Pair: SIM/USD
+Open orders: 3`;
+
+const textEncoder = new TextEncoder();
+const textDecoder = new TextDecoder();
+
+const saveEncodingFormat = (encoding: SaveEncoding): (typeof saveEncodingFormats)[number] =>
+  saveEncodingFormats.find((format) => format.value === encoding) ?? saveEncodingFormats[0];
+
+const parseSaveEncoding = (value: string): SaveEncoding => {
+  const format = saveEncodingFormats.find((format) => format.value === value);
+
+  return format?.value ?? "text";
+};
+
+const replaceFileExtension = (fileName: string, extension: string): string => {
+  const fallbackName = "trading-simulator-save";
+  const name = fileName.trim() || fallbackName;
+  const lastDirectorySeparatorIndex = Math.max(name.lastIndexOf("/"), name.lastIndexOf("\\"));
+  const extensionIndex = name.lastIndexOf(".");
+
+  if (extensionIndex > lastDirectorySeparatorIndex) {
+    return `${name.slice(0, extensionIndex)}.${extension}`;
+  }
+
+  return `${name}.${extension}`;
+};
+
+const bytesToBase64 = (bytes: Uint8Array): string => {
+  let binary = "";
+  const chunkSize = 0x8000;
+
+  for (let index = 0; index < bytes.length; index += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize));
+  }
+
+  return btoa(binary);
+};
+
+const base64ToBytes = (base64: string): Uint8Array => {
+  const binary = atob(base64.trim());
+  const bytes = new Uint8Array(binary.length);
+
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+
+  return bytes;
+};
+
+const bytesToHex = (bytes: Uint8Array): string =>
+  Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join(" ");
+
+const bytesToArrayBuffer = (bytes: Uint8Array): ArrayBuffer => {
+  const buffer = new ArrayBuffer(bytes.byteLength);
+
+  new Uint8Array(buffer).set(bytes);
+  return buffer;
+};
+
+const encodeSavePayload = (payload: string, encoding: SaveEncoding): SaveFileBlobPart => {
+  switch (encoding) {
+    case "text":
+      return payload;
+    case "json":
+      return JSON.stringify({ payload }, null, 2);
+    case "base64":
+      return bytesToBase64(textEncoder.encode(payload));
+    case "binary":
+      return bytesToArrayBuffer(textEncoder.encode(payload));
+  }
+};
+
+const decodeSavePayload = async (file: File, encoding: SaveEncoding): Promise<string> => {
+  switch (encoding) {
+    case "text":
+      return await file.text();
+    case "json": {
+      const content = JSON.parse(await file.text()) as unknown;
+      if (typeof content === "object" && content !== null && "payload" in content) {
+        const payload = (content as Record<string, unknown>).payload;
+        if (typeof payload === "string") return payload;
+      }
+
+      throw new Error("JSON save file must contain a string payload");
+    }
+    case "base64":
+      return textDecoder.decode(base64ToBytes(await file.text()));
+    case "binary":
+      return textDecoder.decode(await file.arrayBuffer());
+  }
+};
+
+const encodedPayloadPreview = (payload: string, encoding: SaveEncoding): string => {
+  const encoded = encodeSavePayload(payload, encoding);
+
+  if (typeof encoded === "string") return encoded;
+
+  return bytesToHex(new Uint8Array(encoded));
+};
+
+const encodedPayloadByteLength = (payload: string, encoding: SaveEncoding): number => {
+  const encoded = encodeSavePayload(payload, encoding);
+
+  if (typeof encoded === "string") return textEncoder.encode(encoded).byteLength;
+  return encoded.byteLength;
+};
+
+const unknownErrorMessage = (error: unknown): string => (error instanceof Error ? error.message : "Unknown error");
+
 export default function UiKitPage() {
   const [activeTab, setActiveTab] = createSignal<(typeof kitTabs)[number]["value"]>("market");
   const [heatmapEnabled, setHeatmapEnabled] = createSignal(true);
@@ -144,6 +270,57 @@ export default function UiKitPage() {
   const [popoverOpen, setPopoverOpen] = createSignal(false);
   const [rangeValue, setRangeValue] = createSignal(40);
   const [volume, setVolume] = createSignal(70);
+  const [saveFileName, setSaveFileName] = createSignal("trading-simulator-save.txt");
+  const [saveEncoding, setSaveEncoding] = createSignal<SaveEncoding>("text");
+  const [savePayload, setSavePayload] = createSignal(sampleSavePayload);
+  const [saveFileStatus, setSaveFileStatus] = createSignal("No file loaded");
+  const selectedSaveFormat = createMemo(() => saveEncodingFormat(saveEncoding()));
+  const savePreview = createMemo(() => encodedPayloadPreview(savePayload(), saveEncoding()));
+  const saveByteLength = createMemo(() => encodedPayloadByteLength(savePayload(), saveEncoding()));
+  const saveFileSerializer: Serializer<SaveFileBlobPart> = {
+    get mimeType() {
+      return selectedSaveFormat().mimeType;
+    },
+    serialize: (data) => encodeSavePayload(String(data), saveEncoding()),
+    async deserialize<T>(data: File): Promise<T> {
+      return (await decodeSavePayload(data, saveEncoding())) as T;
+    },
+  };
+  const saveFileStore = createManualStore<string, SaveFileBlobPart>({
+    name: saveFileName,
+    serializer: saveFileSerializer,
+  });
+
+  const updateSaveEncoding = (value: string): void => {
+    const encoding = parseSaveEncoding(value);
+
+    setSaveEncoding(encoding);
+    setSaveFileName((current) => replaceFileExtension(current, saveEncodingFormat(encoding).extension));
+  };
+
+  const saveSampleFile = async (): Promise<void> => {
+    try {
+      await saveFileStore.save(savePayload());
+      setSaveFileStatus(`Saved ${saveFileName()} as ${selectedSaveFormat().label}`);
+    } catch (error) {
+      setSaveFileStatus(`Save failed: ${unknownErrorMessage(error)}`);
+    }
+  };
+
+  const loadSampleFile = async (): Promise<void> => {
+    try {
+      const saveFile = await saveFileStore.load();
+      if (!saveFile) {
+        setSaveFileStatus("No file selected");
+        return;
+      }
+
+      setSavePayload(saveFile);
+      setSaveFileStatus(`Loaded ${saveFile.length} characters`);
+    } catch (error) {
+      setSaveFileStatus(`Load failed: ${unknownErrorMessage(error)}`);
+    }
+  };
 
   return (
     <main class="font-body-primary-base-rg min-h-screen bg-surface-body p-6 text-text-primary">
@@ -441,6 +618,58 @@ export default function UiKitPage() {
             </div>
           </Panel>
         </div>
+
+        <Panel title="Save File">
+          <div class="grid gap-3">
+            <div class="grid grid-cols-1 items-end gap-2 md:grid-cols-[minmax(0,1fr)_12rem_auto_auto]">
+              <Field label="File name">
+                <TextInput value={saveFileName()} onInput={(event) => setSaveFileName(event.currentTarget.value)} />
+              </Field>
+              <Field label="Encoding">
+                <Select
+                  options={saveEncodingFormats}
+                  value={saveEncoding()}
+                  onChange={(event) => updateSaveEncoding(event.currentTarget.value)}
+                />
+              </Field>
+              <Button class="h-9" variant="primary" onClick={() => void saveSampleFile()}>
+                <Download aria-hidden="true" class="h-4 w-4" strokeWidth={1.8} />
+                Save
+              </Button>
+              <Button class="h-9" onClick={() => void loadSampleFile()}>
+                <Upload aria-hidden="true" class="h-4 w-4" strokeWidth={1.8} />
+                Load
+              </Button>
+            </div>
+
+            <Field label="Payload">
+              <Textarea
+                class="min-h-40 font-mono-primary-sm-rg"
+                value={savePayload()}
+                onInput={(event) => setSavePayload(event.currentTarget.value)}
+              />
+            </Field>
+
+            <div class="grid grid-cols-[repeat(auto-fit,minmax(10rem,1fr))] gap-3">
+              <Metric
+                detail="Format"
+                label="Encoding"
+                value={<span class="block truncate">{selectedSaveFormat().label}</span>}
+              />
+              <Metric
+                detail="File type"
+                label="MIME"
+                value={<span class="block truncate">{selectedSaveFormat().mimeType}</span>}
+              />
+              <Metric detail="Encoded payload" label="Bytes" value={String(saveByteLength())} />
+            </div>
+
+            <Field label="Encoded output">
+              <Textarea class="min-h-36 font-mono-primary-sm-rg" readOnly value={savePreview()} />
+            </Field>
+            <p class="break-words font-body-primary-xs-rg text-text-secondary">{saveFileStatus()}</p>
+          </div>
+        </Panel>
       </div>
     </main>
   );

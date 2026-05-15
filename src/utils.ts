@@ -13,6 +13,11 @@ export const unreachable = (message = "Unreachable code reached"): never => {
   throw new Error(message);
 };
 
+export const promiseYield = (): Promise<void> =>
+  new Promise((resolve) => {
+    window.setTimeout(resolve, 0);
+  });
+
 export const sigmoid = (x: number): number => 1 / (1 + Math.exp(-x));
 
 export const formatNumber = (value: number, digits: number): string => {
