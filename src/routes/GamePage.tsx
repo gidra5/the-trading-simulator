@@ -1,5 +1,5 @@
 import { createEffect, createMemo, createSignal, Match, onCleanup, onMount, Switch } from "solid-js";
-import { createAccountState, type AssetPair } from "../economy/account";
+import { createAccountState } from "../economy/account";
 import type { MarketState, OrderSide, PriceCandle } from "../market/index";
 import { market, simulation, time } from "./game/state";
 import type { ChartViewport } from "../components/Chart";
@@ -328,6 +328,7 @@ export default function GamePage() {
       <Footer
         account={accountState.account}
         accountName={accountName()}
+        autosaveStatus={gameSettings.autosaveStatus}
         cashPerMinute={accountTelemetry.cashPerMinute()}
         priceSpread={marketState.priceSpread}
       />

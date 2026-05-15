@@ -1,8 +1,5 @@
-export const stores = ["file-system", "opfs", "manual-file"] as const;
+export const stores = ["file-system", "opfs", "manual"] as const;
 export type StoreKind = (typeof stores)[number];
-
-export const preferences = [...stores, "auto"] as const;
-export type StorePreference = (typeof preferences)[number];
 
 export const encodings = ["binary", "json"] as const;
 export type StoreEncoding = (typeof encodings)[number];

@@ -12,9 +12,10 @@ import {
 import { createMemo, createSignal, For } from "solid-js";
 import { createManualStore } from "../storage/manual";
 import { createOriginPrivateFileSystemStore, originPrivateFileSystemRoot } from "../storage/originPrivateFileSystem";
-import { binarySerializer, jsonSerializer, type SaveEncoding, type SaveFileBlobPart } from "../storage/serializers";
+import { createSaveFileStore, type SaveFileStoreStatus } from "../storage/persistence";
+import { binarySerializer, jsonSerializer, type SaveEncoding } from "../storage/serializers";
 import { createWebFileSystemStore, webFileSystemDirectory } from "../storage/webFileSystem";
-import { encodings, extensions, mimeTypes, type Serializer, type Store, type StoreKind } from "../storage/interface";
+import { encodings, extensions, mimeTypes, type Store, type StoreEncoding, type StoreKind } from "../storage/interface";
 import { t } from "../i18n/game";
 import { Button } from "../ui-kit/Button";
 import { Field } from "../ui-kit/Field";
@@ -33,7 +34,7 @@ import { typographyRoles, typographySizes, typographyTypes, typographyWeights } 
 import clsx from "clsx";
 import { Divider } from "../ui-kit/Divider";
 import { Dialog } from "../ui-kit/Dialog";
-import { base64ToBytes, bytesToBase64, bytesToHex } from "../utils";
+import { bytesToHex, formatStorageBytes } from "../utils";
 
 const kitTabs = [
   { value: "market", label: "Market" },
@@ -137,10 +138,29 @@ const iconSamples: readonly { Icon: LucideIcon; label: string; toneClass: string
 ] as const;
 
 const saveStorageOptions: readonly { label: string; value: StoreKind }[] = [
-  { value: "manual-file", label: "Manual file" },
+  { value: "manual", label: "Manual file" },
   { value: "file-system", label: "File System API" },
   { value: "opfs", label: "OPFS" },
 ];
+const resolverStorageOptions: readonly { label: string; value: string }[] = [
+  { value: "auto", label: "Auto" },
+  ...saveStorageOptions,
+];
+
+const saveStoreStatusLabels: Record<SaveFileStoreStatus, string> = {
+  available: "Available",
+  denied: "Denied",
+  error: "Error",
+  "not-supported": "Not supported",
+  pending: "Pending",
+};
+const saveStoreStatusClasses: Record<SaveFileStoreStatus, string> = {
+  available: "text-success",
+  denied: "text-danger",
+  error: "text-danger",
+  "not-supported": "text-text-secondary",
+  pending: "text-warning",
+};
 
 const sampleSavePayload = `Trader: Demo Trader
 Cash: 104820.25
@@ -150,7 +170,13 @@ Open orders: 3`;
 const parseSaveStorage = (value: string): StoreKind => {
   const option = saveStorageOptions.find((option) => option.value === value);
 
-  return option?.value ?? "manual-file";
+  return option?.value ?? "manual";
+};
+
+const parseResolverPreference = (value: string): StoreKind | null => {
+  if (value === "auto") return null;
+
+  return parseSaveStorage(value);
 };
 
 const saveStorageLabel = (value: StoreKind): string =>
@@ -158,31 +184,14 @@ const saveStorageLabel = (value: StoreKind): string =>
 
 const unknownErrorMessage = (error: unknown): string => (error instanceof Error ? error.message : "Unknown error");
 
+type SaveFileBlobPart = string | ArrayBuffer;
+
 const textEncoder = new TextEncoder();
-const textDecoder = new TextDecoder();
-
-const textSerializer: Serializer<string> = {
-  mimeType: "text/plain",
-  serialize: (data) => String(data),
-  async deserialize<T>(data: File): Promise<T> {
-    return (await data.text()) as T;
-  },
-};
-
-const base64Serializer: Serializer<string> = {
-  mimeType: "text/plain",
-  serialize: (data) => bytesToBase64(textEncoder.encode(String(data))),
-  async deserialize<T>(file: File): Promise<T> {
-    return textDecoder.decode(base64ToBytes(await file.text())) as T;
-  },
-};
 
 const savePayloadSerializers = {
-  base64: base64Serializer,
   binary: binarySerializer,
   json: jsonSerializer,
-  text: textSerializer,
-};
+} as const satisfies Record<SaveEncoding, { serialize<T>(data: T): SaveFileBlobPart }>;
 
 const saveSerializerLabel = (encoding: SaveEncoding): string => t(`storage.serializer.${encoding}` as const);
 
@@ -202,7 +211,13 @@ const replaceFileExtension = (fileName: string, extension: string): string => {
 const parseSaveEncoding = (value: string): SaveEncoding => {
   const encoding = encodings.find((encoding) => encoding === value);
 
-  return encoding ?? ("text" as SaveEncoding);
+  return encoding ?? "json";
+};
+
+const parseStoreEncoding = (value: string): StoreEncoding => {
+  const encoding = encodings.find((encoding) => encoding === value);
+
+  return encoding ?? "json";
 };
 
 const encodedPayload = (payload: string, encoding: SaveEncoding): SaveFileBlobPart =>
@@ -233,13 +248,18 @@ export default function UiKitPage() {
   const [popoverOpen, setPopoverOpen] = createSignal(false);
   const [rangeValue, setRangeValue] = createSignal(40);
   const [volume, setVolume] = createSignal(70);
-  const [saveFileName, setSaveFileName] = createSignal("trading-simulator-save.txt");
-  const [saveStorage, setSaveStorage] = createSignal<StoreKind>("manual-file");
-  const [saveEncoding, setSaveEncoding] = createSignal<SaveEncoding>("text" as SaveEncoding);
+  const [saveFileName, setSaveFileName] = createSignal("trading-simulator-save.json");
+  const [saveStorage, setSaveStorage] = createSignal<StoreKind>("manual");
+  const [saveEncoding, setSaveEncoding] = createSignal<SaveEncoding>("json");
   const [savePayload, setSavePayload] = createSignal(sampleSavePayload);
   const [saveFileStatus, setSaveFileStatus] = createSignal("No file loaded");
   const [webDirectory, setWebDirectory] = createSignal<Awaited<ReturnType<typeof webFileSystemDirectory>>>(null);
   const [opfsDirectory, setOpfsDirectory] = createSignal<Awaited<ReturnType<typeof originPrivateFileSystemRoot>>>(null);
+  const [resolverFileName, setResolverFileName] = createSignal("resolved-trading-simulator-save.json");
+  const [resolverPreference, setResolverPreference] = createSignal<StoreKind | null>(null);
+  const [resolverEncoding, setResolverEncoding] = createSignal<StoreEncoding>("json");
+  const [resolverPayload, setResolverPayload] = createSignal(sampleSavePayload);
+  const [resolverStatus, setResolverStatus] = createSignal<string | null>(null);
   const selectedSaveFormatLabel = createMemo(() => saveSerializerLabel(saveEncoding()));
   const selectedSaveStorageLabel = createMemo(() => saveStorageLabel(saveStorage()));
   const saveEncodingOptions = createMemo(() =>
@@ -248,6 +268,34 @@ export default function UiKitPage() {
   const savePreview = createMemo(() => encodedPayloadPreview(savePayload(), saveEncoding()));
   const saveByteLength = createMemo(() => encodedPayloadByteLength(savePayload(), saveEncoding()));
   const saveFileSerializer = createMemo(() => savePayloadSerializers[saveEncoding()]);
+  const resolvedSaveFileStore = createSaveFileStore<string>({
+    name: resolverFileName,
+    preference: resolverPreference,
+    encoding: resolverEncoding,
+  });
+  const resolverPreferenceLabel = createMemo(() => {
+    const preference = resolverPreference();
+
+    return preference ? saveStorageLabel(preference) : "Auto";
+  });
+  const resolverActiveLabel = createMemo(() => {
+    const active = resolvedSaveFileStore.active();
+
+    return active ? saveStorageLabel(active.kind) : "None";
+  });
+  const resolvedStore = createMemo(() => resolvedSaveFileStore.active()?.store ?? null);
+  const resolverAutomaticStatus = createMemo(() => {
+    const active = resolvedSaveFileStore.active();
+    if (active) return `Automatically selected ${saveStorageLabel(active.kind)}`;
+
+    if (resolvedSaveFileStore.stores().some((entry) => entry.status === "pending")) {
+      return "Checking available save stores";
+    }
+
+    const preference = resolverPreference();
+    return preference ? `${saveStorageLabel(preference)} is not available` : "No save store is available";
+  });
+  const resolverStatusText = createMemo(() => resolverStatus() ?? resolverAutomaticStatus());
   const saveFileStore = createMemo<Store<string>>(() => {
     const serializer = saveFileSerializer();
 
@@ -278,7 +326,7 @@ export default function UiKitPage() {
           name: saveFileName,
           serializer,
         });
-      case "manual-file":
+      case "manual":
         return createManualStore<string, SaveFileBlobPart>({
           name: saveFileName,
           serializer,
@@ -316,7 +364,7 @@ export default function UiKitPage() {
       case "opfs":
         await ensureOpfsDirectory();
         break;
-      case "manual-file":
+      case "manual":
         break;
     }
 
@@ -332,6 +380,19 @@ export default function UiKitPage() {
 
     setSaveEncoding(encoding);
     setSaveFileName((current) => replaceFileExtension(current, extensions[encoding]));
+  };
+
+  const updateResolverPreference = (value: string): void => {
+    setResolverPreference(parseResolverPreference(value));
+    setResolverStatus(null);
+  };
+
+  const updateResolverEncoding = (value: string): void => {
+    const encoding = parseStoreEncoding(value);
+
+    setResolverEncoding(encoding);
+    setResolverFileName((current) => replaceFileExtension(current, extensions[encoding]));
+    setResolverStatus(null);
   };
 
   const saveSampleFile = async (): Promise<void> => {
@@ -355,6 +416,48 @@ export default function UiKitPage() {
       setSaveFileStatus(`Loaded ${saveFile.length} characters with ${selectedSaveStorageLabel()}`);
     } catch (error) {
       setSaveFileStatus(`Load failed: ${unknownErrorMessage(error)}`);
+    }
+  };
+
+  const saveResolvedFile = async (): Promise<void> => {
+    try {
+      const store = resolvedStore();
+      if (!store) {
+        setResolverStatus("Save failed: no available store");
+        return;
+      }
+
+      await store.save(resolverPayload());
+      const active = resolvedSaveFileStore.active();
+      setResolverStatus(
+        `Saved ${resolverFileName()} with ${active ? saveStorageLabel(active.kind) : "resolved store"}`,
+      );
+    } catch (error) {
+      setResolverStatus(`Save failed: ${unknownErrorMessage(error)}`);
+    }
+  };
+
+  const loadResolvedFile = async (): Promise<void> => {
+    try {
+      const store = resolvedStore();
+      if (!store) {
+        setResolverStatus("Load failed: no available store");
+        return;
+      }
+
+      const saveFile = await store.load();
+      if (!saveFile) {
+        setResolverStatus("No file selected");
+        return;
+      }
+
+      setResolverPayload(saveFile);
+      const active = resolvedSaveFileStore.active();
+      setResolverStatus(
+        `Loaded ${saveFile.length} characters with ${active ? saveStorageLabel(active.kind) : "resolved store"}`,
+      );
+    } catch (error) {
+      setResolverStatus(`Load failed: ${unknownErrorMessage(error)}`);
     }
   };
 
@@ -716,6 +819,113 @@ export default function UiKitPage() {
               <Textarea class="min-h-36 font-mono-primary-sm-rg" readOnly value={savePreview()} />
             </Field>
             <p class="break-words font-body-primary-xs-rg text-text-secondary">{saveFileStatus()}</p>
+          </div>
+        </Panel>
+
+        <Panel title="Save Store Resolver">
+          <div class="grid gap-3">
+            <div class="grid grid-cols-1 items-end gap-2 md:grid-cols-[minmax(0,1fr)_12rem_12rem_auto_auto]">
+              <Field label="File name">
+                <TextInput
+                  value={resolverFileName()}
+                  onInput={(event) => setResolverFileName(event.currentTarget.value)}
+                />
+              </Field>
+              <Field label="Preference">
+                <Select
+                  options={resolverStorageOptions}
+                  value={resolverPreference() ?? "auto"}
+                  onChange={(event) => updateResolverPreference(event.currentTarget.value)}
+                />
+              </Field>
+              <Field label="Encoding">
+                <Select
+                  options={saveEncodingOptions()}
+                  value={resolverEncoding()}
+                  onChange={(event) => updateResolverEncoding(event.currentTarget.value)}
+                />
+              </Field>
+              <Button class="h-9" variant="primary" onClick={() => void saveResolvedFile()}>
+                <Download aria-hidden="true" class="h-4 w-4" strokeWidth={1.8} />
+                Save
+              </Button>
+              <Button class="h-9" onClick={() => void loadResolvedFile()}>
+                <Upload aria-hidden="true" class="h-4 w-4" strokeWidth={1.8} />
+                Load
+              </Button>
+            </div>
+
+            <Field label="Payload">
+              <Textarea
+                class="min-h-32 font-mono-primary-sm-rg"
+                value={resolverPayload()}
+                onInput={(event) => setResolverPayload(event.currentTarget.value)}
+              />
+            </Field>
+
+            <div class="grid grid-cols-[repeat(auto-fit,minmax(10rem,1fr))] gap-3">
+              <Metric detail="Requested behavior" label="Preference" value={resolverPreferenceLabel()} />
+              <Metric
+                detail="Selected available store"
+                label="Active"
+                tone={resolvedStore() ? "success" : "warning"}
+                value={<span class="block truncate">{resolverActiveLabel()}</span>}
+              />
+              <Metric
+                detail="Serializer"
+                label="Encoding"
+                value={<span class="block truncate">{saveSerializerLabel(resolverEncoding())}</span>}
+              />
+              <Metric
+                detail="Usable store object"
+                label="Store"
+                tone={resolvedStore() ? "success" : "warning"}
+                value={resolvedStore() ? "Ready" : "None"}
+              />
+            </div>
+
+            <div class="grid grid-cols-[repeat(auto-fit,minmax(14rem,1fr))] gap-3">
+              <For each={resolvedSaveFileStore.stores()}>
+                {(entry) => (
+                  <div
+                    class={clsx(
+                      "grid gap-2 rounded border bg-surface-secondary p-3",
+                      resolvedSaveFileStore.active()?.kind === entry.kind ? "border-accent-primary" : "border-border",
+                    )}
+                  >
+                    <div class="flex items-center justify-between gap-3">
+                      <span class="font-body-primary-sm-semi text-text-primary">{saveStorageLabel(entry.kind)}</span>
+                      <span class={clsx("font-body-primary-xs-semi uppercase", saveStoreStatusClasses[entry.status])}>
+                        {saveStoreStatusLabels[entry.status]}
+                      </span>
+                    </div>
+                    <p class="min-h-10 break-words font-body-primary-xs-rg text-text-secondary">{entry.message}</p>
+                    <div class="grid gap-1 font-mono-primary-xs-rg text-text-secondary">
+                      <div class="flex justify-between gap-3">
+                        <span>store</span>
+                        <span class={entry.store ? "text-success" : "text-text-secondary"}>
+                          {entry.store ? "ready" : "none"}
+                        </span>
+                      </div>
+                      {entry.kind === "opfs" ? (
+                        <>
+                          <div class="flex justify-between gap-3">
+                            <span>usage</span>
+                            <span>{formatStorageBytes(entry.usage)}</span>
+                          </div>
+                          <div class="flex justify-between gap-3">
+                            <span>quota</span>
+                            <span>{formatStorageBytes(entry.quota)}</span>
+                          </div>
+                        </>
+                      ) : null}
+                    </div>
+                  </div>
+                )}
+              </For>
+            </div>
+
+            <p class="break-words font-body-primary-xs-rg text-text-secondary">{resolverStatusText()}</p>
           </div>
         </Panel>
       </div>

@@ -56,6 +56,11 @@ export const bytesToArrayBuffer = (bytes: Uint8Array): ArrayBuffer => {
 export const bytesToHex = (bytes: Uint8Array): string =>
   Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join(" ");
 
+export const formatStorageBytes = (value: number | undefined): string => {
+  if (typeof value !== "number") return "Unknown";
+
+  return `${(value / 1024 / 1024).toFixed(1)} MiB`;
+};
 
 export const clamp = (value: number, min: number, max: number): number => Math.min(Math.max(value, min), max);
 

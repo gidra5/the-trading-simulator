@@ -22,19 +22,30 @@ type OpfsDirectoryHandle = {
 };
 const isNotFoundError = (error: unknown): boolean => error instanceof DOMException && error.name === "NotFoundError";
 
-export const originPrivateFileSystemRoot = async (): Promise<OpfsDirectoryHandle | null> => {
-  type OpfsNavigator = Navigator & {
-    storage?: {
-      getDirectory?: () => Promise<OpfsDirectoryHandle>;
-    };
-  };
+export const storageEstimate = async (): Promise<{ quota: number; usage: number } | null> => {
+  if (typeof navigator === "undefined") return null;
+  if (!navigator.storage?.estimate) return null;
 
-  const storage = (navigator as OpfsNavigator).storage;
-  if (!storage?.getDirectory) {
+  try {
+    const estimated = await navigator.storage.estimate();
+    return { quota: estimated.quota ?? 0, usage: estimated.usage ?? 0 };
+  } catch (e) {
+    console.warn(e);
     return null;
   }
+};
 
-  return await storage.getDirectory();
+export const originPrivateFileSystemRoot = async (): Promise<OpfsDirectoryHandle | null> => {
+  if (typeof navigator === "undefined") return null;
+  const storage = navigator.storage;
+  if (!storage?.getDirectory) return null;
+
+  try {
+    return await storage.getDirectory();
+  } catch (e) {
+    console.warn(e);
+    return null;
+  }
 };
 
 export const createOriginPrivateFileSystemStore = <T, Target extends BlobPart>(options: Options<Target>): Store<T> => {

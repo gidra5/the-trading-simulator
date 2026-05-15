@@ -1,6 +1,7 @@
 import { createRoot, createSignal } from "solid-js";
 import { HistogramNormalization } from "../OrderBookHistogram";
 
+// todo: lifetime for history - store at most last time interval of size N
 const createSettingsState = () => {
   const [candleInterval, setCandleInterval] = createSignal(1_000);
   const [isHeatmapEnabled, setIsHeatmapEnabled] = createSignal(false);

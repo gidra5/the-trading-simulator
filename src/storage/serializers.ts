@@ -2,7 +2,6 @@ import { bytesToArrayBuffer } from "../utils";
 import { mimeTypes, type Serializer, type StoreEncoding } from "./interface";
 
 export type SaveEncoding = StoreEncoding;
-export type SaveFileBlobPart = string | ArrayBuffer;
 
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
@@ -25,3 +24,4 @@ export const binarySerializer: Serializer<ArrayBuffer> = {
     return textDecoder.decode(await file.arrayBuffer()) as T;
   },
 };
+
