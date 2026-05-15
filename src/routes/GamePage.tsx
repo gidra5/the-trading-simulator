@@ -235,7 +235,7 @@ const createAccountTelemetryState = (account: ReturnType<typeof createAccountGam
 export default function GamePage() {
   const startTime = time.time();
   const [activeTab, setActiveTab] = createSignal<Tab>("market");
-  const [accountName, setAccountName] = createSignal("");
+  const [accountName, setAccountName] = createSignal(""); // todo: prompt user for name on first load
   const accountState = createAccountGameState(market);
   const marketState = createMarketGameState({ account: accountState.account, market, startTime });
   const economy = createEconomyGameState(accountState.account);

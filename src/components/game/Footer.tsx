@@ -11,22 +11,25 @@ import { digits, formatAmount, formatMoney } from "./format";
 import type { AccountState } from "./types";
 import { assets, type Asset, type AssetPair } from "../../economy/account";
 import type { OrderSide } from "../../market";
+import { autosaveIconConfig, autosaveStatusTitle, autosaveTooltipMessage, type AutosaveStatus } from "./autosaveStatus";
 
 type FooterProps = {
   account: AccountState;
   accountName: string;
+  autosaveStatus: Accessor<AutosaveStatus<unknown>>;
   cashPerMinute: number;
   priceSpread: Accessor<{ buy: number; sell: number }>;
 };
-
 export const Footer: Component<FooterProps> = (props) => {
+  const [isAutosaveOpen, setIsAutosaveOpen] = createSignal(false);
   const [isPairOpen, setIsPairOpen] = createSignal(false);
   const [selectedPair, setSelectedPair] = createSignal<AssetPair>({ buy: "Stock", sell: "Money" });
-  const midPrice = createMemo(() => (props.priceSpread().buy + props.priceSpread().sell) / 2);
+  const midPrice = () => (props.priceSpread().buy + props.priceSpread().sell) / 2;
   const assetOptions = createMemo(() => assets.map((asset) => ({ value: asset, label: t(`asset.${asset}`) })));
-  const pairLabel = createMemo(
-    () => `${t(`asset.${selectedPair().buy}`)} / ${t(`asset.${selectedPair().sell}`)}`,
-  );
+  const autosaveVisual = () => autosaveIconConfig[props.autosaveStatus().variant];
+  const autosaveTitle = () => autosaveStatusTitle(props.autosaveStatus().reason);
+  const autosaveMessage = () => autosaveTooltipMessage(props.autosaveStatus().reason);
+  const pairLabel = () => `${t(`asset.${selectedPair().buy}`)} / ${t(`asset.${selectedPair().sell}`)}`;
   const sellAssetBalance = createMemo(() => {
     const portfolio = props.account.portfolio() as Record<string, number | undefined>;
     return portfolio[selectedPair().sell] ?? 0;
@@ -42,6 +45,11 @@ export const Footer: Component<FooterProps> = (props) => {
   const swapPair = (): void => {
     setSelectedPair((selectedPair) => ({ buy: selectedPair.sell, sell: selectedPair.buy }));
   };
+  const AutosaveIcon: Component = () => {
+    const Icon = autosaveVisual().Icon;
+
+    return <Icon aria-hidden="true" class="h-4 w-4" strokeWidth={1.8} />;
+  };
 
   return (
     <footer class="font-mono-primary-xs-rg flex h-8 shrink-0 items-center justify-between p-2 text-text-secondary">
@@ -53,6 +61,32 @@ export const Footer: Component<FooterProps> = (props) => {
         <span>{t("account.footer.cashPerMinute", { value: formatMoney(props.cashPerMinute) })}</span>
       </div>
       <div class="flex shrink-0 items-center justify-right gap-2 h-full">
+        <Popover
+          // todo: move to separate component
+          contentClass="w-64"
+          open={isAutosaveOpen()}
+          openOnHover
+          placement="top"
+          trigger={
+            <Button
+              aria-expanded={isAutosaveOpen()}
+              aria-label={t("autosave.status.aria", { status: autosaveTitle() })}
+              class={autosaveVisual().toneClass}
+              size="sm"
+              title={autosaveTitle()}
+              variant="icon"
+              onBlur={() => setIsAutosaveOpen(false)}
+              onClick={() => setIsAutosaveOpen((open) => !open)}
+              onFocus={() => setIsAutosaveOpen(true)}
+            >
+              <AutosaveIcon />
+            </Button>
+          }
+          onOpenChange={setIsAutosaveOpen}
+        >
+          <p class="font-body-primary-xs-rg text-text-primary">{autosaveMessage()}</p>
+        </Popover>
+        <Divider />
         <span>
           {formatPrice(props.priceSpread().buy)} / {formatPrice(midPrice())} / {formatPrice(props.priceSpread().sell)}
         </span>

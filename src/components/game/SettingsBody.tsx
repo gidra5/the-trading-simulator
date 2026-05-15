@@ -1,16 +1,135 @@
-import { createMemo, createSignal, type Component } from "solid-js";
+import clsx from "clsx";
+import { Download, Upload } from "lucide-solid";
+import { createMemo, createSignal, For, type Component } from "solid-js";
 import { locales, locale, setLocale, t, type Locale } from "../../i18n/game";
 import { market } from "../../routes/game/state";
+import { encodings, type StoreEncoding, type StoreKind } from "../../storage/interface";
+import type { SaveFileStoreEntry, SaveFileStoreStatus } from "../../storage/persistence";
+import { Button } from "../../ui-kit/Button";
 import { Field } from "../../ui-kit/Field";
 import { Panel } from "../../ui-kit/Panel";
 import { Select } from "../../ui-kit/Select";
 import { TextInput } from "../../ui-kit/TextInput";
+import { formatStorageBytes } from "../../utils";
+import type { AutosaveStatusReason } from "./autosaveStatus";
 import { Checkbox } from "../../ui-kit/Checkbox";
 import { HistogramNormalization } from "../OrderBookHistogram";
 import { gameSettings } from "./settings";
 
 const isLocale = (value: string): value is Locale => locales.includes(value as Locale);
 const checkboxFieldClass = "flex items-center justify-between gap-3";
+const saveStoreStatusClasses: Record<SaveFileStoreStatus, string> = {
+  available: "text-success",
+  denied: "text-danger",
+  error: "text-danger",
+  "not-supported": "text-text-secondary",
+  pending: "text-warning",
+};
+
+const isStoreEncoding = (value: string): value is StoreEncoding => encodings.includes(value as StoreEncoding);
+
+const parseAutosavePreference = (value: string): Exclude<StoreKind, "manual"> | null => {
+  if (value === "opfs" || value === "file-system") return value;
+
+  return null;
+};
+
+const autosaveStoreLabel = (kind: StoreKind): string => {
+  switch (kind) {
+    case "file-system":
+      return t("autosave.store.fileSystem");
+    case "opfs":
+      return t("autosave.store.opfs");
+    case "manual":
+      return t("autosave.store.manual");
+  }
+};
+
+const autosaveStoreStatusLabel = (status: SaveFileStoreStatus): string => {
+  switch (status) {
+    case "available":
+      return t("autosave.storeStatus.available");
+    case "denied":
+      return t("autosave.storeStatus.denied");
+    case "error":
+      return t("autosave.storeStatus.error");
+    case "not-supported":
+      return t("autosave.storeStatus.notSupported");
+    case "pending":
+      return t("autosave.storeStatus.pending");
+  }
+};
+
+const autosaveStatusCopy = (
+  reason: AutosaveStatusReason,
+  store: string,
+): { action: string; description: string; title: string } => {
+  switch (reason) {
+    case "automatic-ready":
+      return {
+        action: t("autosave.status.active.action"),
+        description: t("autosave.status.active.description", { store }),
+        title: t("autosave.status.active.title"),
+      };
+    case "automatic-unavailable":
+      return {
+        action: t("autosave.status.unavailable.action"),
+        description: t("autosave.status.unavailable.description"),
+        title: t("autosave.status.unavailable.title"),
+      };
+    case "autosave-disabled":
+      return {
+        action: t("autosave.status.disabled.action"),
+        description: t("autosave.status.disabled.description"),
+        title: t("autosave.status.disabled.title"),
+      };
+    case "file-system-pending":
+      return {
+        action: t("autosave.status.pending.action"),
+        description: t("autosave.status.pending.description", { store }),
+        title: t("autosave.status.pending.title"),
+      };
+    case "opfs-quota-low":
+      return {
+        action: t("autosave.status.quotaLow.action"),
+        description: t("autosave.status.quotaLow.description"),
+        title: t("autosave.status.quotaLow.title"),
+      };
+    case "storage-checking":
+      return {
+        action: t("autosave.status.checking.action"),
+        description: t("autosave.status.checking.description"),
+        title: t("autosave.status.checking.title"),
+      };
+    case "store-error":
+      return {
+        action: t("autosave.status.error.action"),
+        description: t("autosave.status.error.description", { store }),
+        title: t("autosave.status.error.title"),
+      };
+  }
+};
+
+const autosaveStatusToneClass = (reason: AutosaveStatusReason): string => {
+  switch (reason) {
+    case "automatic-ready":
+      return "text-success";
+    case "store-error":
+      return "text-danger";
+    case "file-system-pending":
+    case "opfs-quota-low":
+    case "storage-checking":
+      return "text-warning";
+    case "automatic-unavailable":
+    case "autosave-disabled":
+      return "text-text-secondary";
+  }
+};
+
+const autosaveEntryStoreState = (entry: SaveFileStoreEntry<unknown>): string =>
+  entry.store ? t("autosave.store.ready") : t("autosave.store.none");
+
+const errorMessage = (error: unknown): string => (error instanceof Error ? error.message : "Unknown error");
 
 export const SettingsBody: Component = () => {
   const [candleIntervalInput, setCandleIntervalInput] = createSignal(String(gameSettings.candleInterval() / 1_000));
@@ -18,11 +137,28 @@ export const SettingsBody: Component = () => {
   const [deltaSnapshotInput, setDeltaSnapshotInput] = createSignal(String(market.deltaSnapshotInterval()));
   const [fanoutInput, setFanoutInput] = createSignal(String(market.fanout()));
   const [levelsInput, setLevelsInput] = createSignal(String(market.levels()));
+  const [settingsTransferStatus, setSettingsTransferStatus] = createSignal("");
   const languageOptions = createMemo(() => locales.map((value) => ({ value, label: t(`settings.language.${value}`) })));
   const normalizationOptions = createMemo(() => [
     { value: HistogramNormalization.Linear, label: t("settings.normalization.linear") },
     { value: HistogramNormalization.Logarithmic, label: t("settings.normalization.logarithmic") },
   ]);
+  const autosaveEncodingOptions = createMemo(() =>
+    encodings.map((encoding) => ({ value: encoding, label: t(`storage.serializer.${encoding}` as const) })),
+  );
+  const autosaveStorageOptions = createMemo(() => [
+    { value: "auto", label: t("settings.autosave.storage.auto") },
+    { value: "opfs", label: t("autosave.store.opfs") },
+    { value: "file-system", label: t("autosave.store.fileSystem") },
+  ]);
+  const autosaveStatusEntry = () => gameSettings.autosaveStatus().entry;
+  const autosaveStatusStore = () => {
+    const entry = autosaveStatusEntry();
+
+    return entry ? autosaveStoreLabel(entry.kind) : t("autosave.store.manual");
+  };
+  const autosaveStatusDetails = () => autosaveStatusCopy(gameSettings.autosaveStatus().reason, autosaveStatusStore());
+  const autosaveStatusClass = () => autosaveStatusToneClass(gameSettings.autosaveStatus().reason);
 
   const updatePositiveNumberInput = (
     value: string,
@@ -77,6 +213,36 @@ export const SettingsBody: Component = () => {
 
   const updateLevelsInput = (value: string): void => {
     updatePositiveIntegerInput(value, setLevelsInput, market.setLevels);
+  };
+
+  const exportSettings = async (): Promise<void> => {
+    try {
+      // todo: export current save file using gameSettings.stores.manual
+      setSettingsTransferStatus(t("settings.importExport.exported"));
+    } catch (error) {
+      setSettingsTransferStatus(t("settings.importExport.exportFailed", { error: errorMessage(error) }));
+    }
+  };
+
+  const importSettings = async (): Promise<void> => {
+    try {
+      // todo: use gameSettings.stores.manual
+      // const snapshot = await settingsFileStore.load();
+      // if (!snapshot) {
+      //   setSettingsTransferStatus(t("settings.importExport.importCanceled"));
+      //   return;
+      // }
+
+      // todo: import current save file
+      // if (!applySettingsSnapshot(snapshot)) {
+      //   setSettingsTransferStatus(t("settings.importExport.importInvalid"));
+      //   return;
+      // }
+
+      setSettingsTransferStatus(t("settings.importExport.imported"));
+    } catch (error) {
+      setSettingsTransferStatus(t("settings.importExport.importFailed", { error: errorMessage(error) }));
+    }
   };
 
   return (
@@ -161,6 +327,120 @@ export const SettingsBody: Component = () => {
           </div>
         </Panel>
 
+        <Panel class="col-span-2" title={t("settings.panels.saveSettings")}>
+          <div class="grid gap-3">
+            <div class="grid grid-cols-2 gap-3">
+              <Field class={checkboxFieldClass} label={t("settings.features.autosave")}>
+                <Checkbox
+                  checked={gameSettings.autosaveEnabled()}
+                  onInput={(event) => gameSettings.setAutosaveEnabled(event.currentTarget.checked)}
+                />
+              </Field>
+              <Field label={t("settings.autosave.storage")}>
+                <Select
+                  options={autosaveStorageOptions()}
+                  value={gameSettings.autosaveStorePreference() ?? "auto"}
+                  onChange={(event) =>
+                    gameSettings.setAutosaveStorePreference(parseAutosavePreference(event.currentTarget.value))
+                  }
+                />
+              </Field>
+              <Field label={t("settings.autosave.fileName")}>
+                <TextInput
+                  value={gameSettings.autosaveFileName()}
+                  onInput={(event) => gameSettings.setAutosaveFileName(event.currentTarget.value)}
+                />
+              </Field>
+              <Field label={t("settings.autosave.encoding")}>
+                <Select
+                  options={autosaveEncodingOptions()}
+                  value={gameSettings.autosaveEncoding()}
+                  onChange={(event) => {
+                    if (isStoreEncoding(event.currentTarget.value)) {
+                      gameSettings.setAutosaveEncoding(event.currentTarget.value);
+                    }
+                  }}
+                />
+              </Field>
+            </div>
+
+            <div class="grid gap-1 rounded border border-border bg-surface-secondary p-3">
+              <div class="flex items-center justify-between gap-3">
+                <span class={clsx("font-body-primary-sm-semi", autosaveStatusClass())}>
+                  {autosaveStatusDetails().title}
+                </span>
+                <span class="font-mono-primary-xs-rg text-text-secondary">{autosaveStatusStore()}</span>
+              </div>
+              <p class="font-body-primary-xs-rg text-text-secondary">{autosaveStatusDetails().description}</p>
+              <p class="font-body-primary-xs-rg text-text-primary">{autosaveStatusDetails().action}</p>
+            </div>
+
+            <div class="grid grid-cols-[repeat(auto-fit,minmax(14rem,1fr))] gap-3">
+              <For each={gameSettings.autosaveStores()}>
+                {(entry) => (
+                  <div
+                    class={clsx(
+                      "grid gap-2 rounded border bg-surface-secondary p-3",
+                      gameSettings.autosaveActiveStore()?.kind === entry.kind
+                        ? "border-accent-primary"
+                        : "border-border",
+                    )}
+                  >
+                    <div class="flex items-center justify-between gap-3">
+                      <span class="font-body-primary-sm-semi text-text-primary">{autosaveStoreLabel(entry.kind)}</span>
+                      <span class={clsx("font-body-primary-xs-semi uppercase", saveStoreStatusClasses[entry.status])}>
+                        {autosaveStoreStatusLabel(entry.status)}
+                      </span>
+                    </div>
+                    <p class="min-h-10 break-words font-body-primary-xs-rg text-text-secondary">{entry.message}</p>
+                    <div class="grid gap-1 font-mono-primary-xs-rg text-text-secondary">
+                      <div class="flex justify-between gap-3">
+                        <span>{t("autosave.store.label")}</span>
+                        <span class={entry.store ? "text-success" : "text-text-secondary"}>
+                          {autosaveEntryStoreState(entry)}
+                        </span>
+                      </div>
+                      {entry.kind === "manual" ? (
+                        <>
+                          <div class="flex justify-between gap-3">
+                            {settingsTransferStatus() ? (
+                              <span class="font-body-primary-xs-rg text-text-secondary">
+                                {settingsTransferStatus()}
+                              </span>
+                            ) : null}
+                          </div>
+                          <div class="flex flex-wrap items-center justify-center gap-2">
+                            <Button onClick={() => void exportSettings()} disabled={entry.status !== "available"}>
+                              <Download aria-hidden="true" class="h-4 w-4" strokeWidth={1.8} />
+                              <span>{t("settings.importExport.export")}</span>
+                            </Button>
+                            <Button onClick={() => void importSettings()} disabled={entry.status !== "available"}>
+                              <Upload aria-hidden="true" class="h-4 w-4" strokeWidth={1.8} />
+                              <span>{t("settings.importExport.import")}</span>
+                            </Button>
+                          </div>
+                        </>
+                      ) : null}
+                      {entry.kind === "opfs" ? (
+                        <>
+                          <div class="flex justify-between gap-3">
+                            <span>{t("autosave.storage.usage")}</span>
+                            <span>{formatStorageBytes(entry.usage)}</span>
+                          </div>
+                          <div class="flex justify-between gap-3">
+                            <span>{t("autosave.storage.quota")}</span>
+                            <span>{formatStorageBytes(entry.quota)}</span>
+                          </div>
+                        </>
+                      ) : null}
+                    </div>
+                  </div>
+                )}
+              </For>
+            </div>
+          </div>
+        </Panel>
+
         <Panel title={t("settings.panels.featureFlags")}>
           <div class="grid gap-3">
             <Field class={checkboxFieldClass} label={t("settings.features.advancedOrders")}>
@@ -173,12 +453,6 @@ export const SettingsBody: Component = () => {
               <Checkbox
                 checked={gameSettings.newsEventsEnabled()}
                 onInput={(event) => gameSettings.setNewsEventsEnabled(event.currentTarget.checked)}
-              />
-            </Field>
-            <Field class={checkboxFieldClass} label={t("settings.features.autosave")}>
-              <Checkbox
-                checked={gameSettings.autosaveEnabled()}
-                onInput={(event) => gameSettings.setAutosaveEnabled(event.currentTarget.checked)}
               />
             </Field>
           </div>
