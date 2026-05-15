@@ -12,8 +12,10 @@ import {
 import { createMemo, createSignal, For } from "solid-js";
 import { createManualStore } from "../storage/manual";
 import { createOriginPrivateFileSystemStore, originPrivateFileSystemRoot } from "../storage/originPrivateFileSystem";
+import { binarySerializer, jsonSerializer, type SaveEncoding, type SaveFileBlobPart } from "../storage/serializers";
 import { createWebFileSystemStore, webFileSystemDirectory } from "../storage/webFileSystem";
-import type { Serializer, Store, StoreKind } from "../storage/interface";
+import { encodings, extensions, mimeTypes, type Serializer, type Store, type StoreKind } from "../storage/interface";
+import { t } from "../i18n/game";
 import { Button } from "../ui-kit/Button";
 import { Field } from "../ui-kit/Field";
 import { Metric } from "../ui-kit/Metric";
@@ -31,6 +33,7 @@ import { typographyRoles, typographySizes, typographyTypes, typographyWeights } 
 import clsx from "clsx";
 import { Divider } from "../ui-kit/Divider";
 import { Dialog } from "../ui-kit/Dialog";
+import { base64ToBytes, bytesToBase64, bytesToHex } from "../utils";
 
 const kitTabs = [
   { value: "market", label: "Market" },
@@ -80,14 +83,6 @@ type TypographyRole = (typeof typographyRoles)[number];
 type TypographyType = (typeof typographyTypes)[number];
 type TypographySize = (typeof typographySizes)[number];
 type TypographyWeight = (typeof typographyWeights)[number];
-type TypographyColumn = {
-  role: TypographyRole;
-  roleIndex: number;
-  type: TypographyType;
-  typeIndex: number;
-  weight: TypographyWeight;
-  weightIndex: number;
-};
 
 const typographyColumns = typographyRoles.flatMap((role, roleIndex) =>
   typographyTypes.flatMap((type, typeIndex) =>
@@ -141,15 +136,6 @@ const iconSamples: readonly { Icon: LucideIcon; label: string; toneClass: string
   { Icon: Settings, label: "Settings", toneClass: "text-text-secondary" },
 ] as const;
 
-const saveEncodingFormats = [
-  { value: "text", label: "Plain text", extension: "txt", mimeType: "text/plain" },
-  { value: "json", label: "JSON", extension: "json", mimeType: "application/json" },
-  { value: "base64", label: "Base64", extension: "b64", mimeType: "text/plain" },
-  { value: "binary", label: "Binary", extension: "bin", mimeType: "application/octet-stream" },
-] as const;
-type SaveEncoding = (typeof saveEncodingFormats)[number]["value"];
-type SaveFileBlobPart = string | ArrayBuffer;
-
 const saveStorageOptions: readonly { label: string; value: StoreKind }[] = [
   { value: "manual-file", label: "Manual file" },
   { value: "file-system", label: "File System API" },
@@ -161,18 +147,6 @@ Cash: 104820.25
 Pair: SIM/USD
 Open orders: 3`;
 
-const textEncoder = new TextEncoder();
-const textDecoder = new TextDecoder();
-
-const saveEncodingFormat = (encoding: SaveEncoding): (typeof saveEncodingFormats)[number] =>
-  saveEncodingFormats.find((format) => format.value === encoding) ?? saveEncodingFormats[0];
-
-const parseSaveEncoding = (value: string): SaveEncoding => {
-  const format = saveEncodingFormats.find((format) => format.value === value);
-
-  return format?.value ?? "text";
-};
-
 const parseSaveStorage = (value: string): StoreKind => {
   const option = saveStorageOptions.find((option) => option.value === value);
 
@@ -181,6 +155,36 @@ const parseSaveStorage = (value: string): StoreKind => {
 
 const saveStorageLabel = (value: StoreKind): string =>
   saveStorageOptions.find((option) => option.value === value)?.label ?? saveStorageOptions[0].label;
+
+const unknownErrorMessage = (error: unknown): string => (error instanceof Error ? error.message : "Unknown error");
+
+const textEncoder = new TextEncoder();
+const textDecoder = new TextDecoder();
+
+const textSerializer: Serializer<string> = {
+  mimeType: "text/plain",
+  serialize: (data) => String(data),
+  async deserialize<T>(data: File): Promise<T> {
+    return (await data.text()) as T;
+  },
+};
+
+const base64Serializer: Serializer<string> = {
+  mimeType: "text/plain",
+  serialize: (data) => bytesToBase64(textEncoder.encode(String(data))),
+  async deserialize<T>(file: File): Promise<T> {
+    return textDecoder.decode(base64ToBytes(await file.text())) as T;
+  },
+};
+
+const savePayloadSerializers = {
+  base64: base64Serializer,
+  binary: binarySerializer,
+  json: jsonSerializer,
+  text: textSerializer,
+};
+
+const saveSerializerLabel = (encoding: SaveEncoding): string => t(`storage.serializer.${encoding}` as const);
 
 const replaceFileExtension = (fileName: string, extension: string): string => {
   const fallbackName = "trading-simulator-save";
@@ -195,87 +199,29 @@ const replaceFileExtension = (fileName: string, extension: string): string => {
   return `${name}.${extension}`;
 };
 
-const bytesToBase64 = (bytes: Uint8Array): string => {
-  let binary = "";
-  const chunkSize = 0x8000;
+const parseSaveEncoding = (value: string): SaveEncoding => {
+  const encoding = encodings.find((encoding) => encoding === value);
 
-  for (let index = 0; index < bytes.length; index += chunkSize) {
-    binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize));
-  }
-
-  return btoa(binary);
+  return encoding ?? ("text" as SaveEncoding);
 };
 
-const base64ToBytes = (base64: string): Uint8Array => {
-  const binary = atob(base64.trim());
-  const bytes = new Uint8Array(binary.length);
-
-  for (let index = 0; index < binary.length; index += 1) {
-    bytes[index] = binary.charCodeAt(index);
-  }
-
-  return bytes;
-};
-
-const bytesToHex = (bytes: Uint8Array): string =>
-  Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join(" ");
-
-const bytesToArrayBuffer = (bytes: Uint8Array): ArrayBuffer => {
-  const buffer = new ArrayBuffer(bytes.byteLength);
-
-  new Uint8Array(buffer).set(bytes);
-  return buffer;
-};
-
-const encodeSavePayload = (payload: string, encoding: SaveEncoding): SaveFileBlobPart => {
-  switch (encoding) {
-    case "text":
-      return payload;
-    case "json":
-      return JSON.stringify({ payload }, null, 2);
-    case "base64":
-      return bytesToBase64(textEncoder.encode(payload));
-    case "binary":
-      return bytesToArrayBuffer(textEncoder.encode(payload));
-  }
-};
-
-const decodeSavePayload = async (file: File, encoding: SaveEncoding): Promise<string> => {
-  switch (encoding) {
-    case "text":
-      return await file.text();
-    case "json": {
-      const content = JSON.parse(await file.text()) as unknown;
-      if (typeof content === "object" && content !== null && "payload" in content) {
-        const payload = (content as Record<string, unknown>).payload;
-        if (typeof payload === "string") return payload;
-      }
-
-      throw new Error("JSON save file must contain a string payload");
-    }
-    case "base64":
-      return textDecoder.decode(base64ToBytes(await file.text()));
-    case "binary":
-      return textDecoder.decode(await file.arrayBuffer());
-  }
-};
-
-const encodedPayloadPreview = (payload: string, encoding: SaveEncoding): string => {
-  const encoded = encodeSavePayload(payload, encoding);
-
-  if (typeof encoded === "string") return encoded;
-
-  return bytesToHex(new Uint8Array(encoded));
-};
+const encodedPayload = (payload: string, encoding: SaveEncoding): SaveFileBlobPart =>
+  savePayloadSerializers[encoding].serialize(payload);
 
 const encodedPayloadByteLength = (payload: string, encoding: SaveEncoding): number => {
-  const encoded = encodeSavePayload(payload, encoding);
+  const encoded = encodedPayload(payload, encoding);
 
   if (typeof encoded === "string") return textEncoder.encode(encoded).byteLength;
   return encoded.byteLength;
 };
 
-const unknownErrorMessage = (error: unknown): string => (error instanceof Error ? error.message : "Unknown error");
+const encodedPayloadPreview = (payload: string, encoding: SaveEncoding): string => {
+  const encoded = encodedPayload(payload, encoding);
+
+  if (typeof encoded === "string") return encoded;
+
+  return bytesToHex(new Uint8Array(encoded));
+};
 
 export default function UiKitPage() {
   const [activeTab, setActiveTab] = createSignal<(typeof kitTabs)[number]["value"]>("market");
@@ -289,60 +235,54 @@ export default function UiKitPage() {
   const [volume, setVolume] = createSignal(70);
   const [saveFileName, setSaveFileName] = createSignal("trading-simulator-save.txt");
   const [saveStorage, setSaveStorage] = createSignal<StoreKind>("manual-file");
-  const [saveEncoding, setSaveEncoding] = createSignal<SaveEncoding>("text");
+  const [saveEncoding, setSaveEncoding] = createSignal<SaveEncoding>("text" as SaveEncoding);
   const [savePayload, setSavePayload] = createSignal(sampleSavePayload);
   const [saveFileStatus, setSaveFileStatus] = createSignal("No file loaded");
   const [webDirectory, setWebDirectory] = createSignal<Awaited<ReturnType<typeof webFileSystemDirectory>>>(null);
   const [opfsDirectory, setOpfsDirectory] = createSignal<Awaited<ReturnType<typeof originPrivateFileSystemRoot>>>(null);
-  const selectedSaveFormat = createMemo(() => saveEncodingFormat(saveEncoding()));
+  const selectedSaveFormatLabel = createMemo(() => saveSerializerLabel(saveEncoding()));
   const selectedSaveStorageLabel = createMemo(() => saveStorageLabel(saveStorage()));
+  const saveEncodingOptions = createMemo(() =>
+    encodings.map((encoding) => ({ value: encoding, label: saveSerializerLabel(encoding) })),
+  );
   const savePreview = createMemo(() => encodedPayloadPreview(savePayload(), saveEncoding()));
   const saveByteLength = createMemo(() => encodedPayloadByteLength(savePayload(), saveEncoding()));
-  const saveFileSerializer: Serializer<SaveFileBlobPart> = {
-    get mimeType() {
-      return selectedSaveFormat().mimeType;
-    },
-    serialize: (data) => encodeSavePayload(String(data), saveEncoding()),
-    async deserialize<T>(data: File): Promise<T> {
-      return (await decodeSavePayload(data, saveEncoding())) as T;
-    },
-  };
-  const manualSaveFileStore = createManualStore<string, SaveFileBlobPart>({
-    name: saveFileName,
-    serializer: saveFileSerializer,
-  });
-  const webFileSystemSaveFileStore = createWebFileSystemStore<string, SaveFileBlobPart>({
-    directory: () => {
-      const directory = webDirectory();
-      if (!directory) {
-        throw new Error("File System Access directory is not initialized");
-      }
-
-      return directory;
-    },
-    name: saveFileName,
-    serializer: saveFileSerializer,
-  });
-  const originPrivateFileSystemSaveFileStore = createOriginPrivateFileSystemStore<string, SaveFileBlobPart>({
-    directory: () => {
-      const directory = opfsDirectory();
-      if (!directory) {
-        throw new Error("Origin Private File System is not initialized");
-      }
-
-      return directory;
-    },
-    name: saveFileName,
-    serializer: saveFileSerializer,
-  });
+  const saveFileSerializer = createMemo(() => savePayloadSerializers[saveEncoding()]);
   const saveFileStore = createMemo<Store<string>>(() => {
+    const serializer = saveFileSerializer();
+
     switch (saveStorage()) {
       case "file-system":
-        return webFileSystemSaveFileStore;
+        return createWebFileSystemStore<string, SaveFileBlobPart>({
+          directory: () => {
+            const directory = webDirectory();
+            if (!directory) {
+              throw new Error("File System Access directory is not initialized");
+            }
+
+            return directory;
+          },
+          name: saveFileName,
+          serializer,
+        });
       case "opfs":
-        return originPrivateFileSystemSaveFileStore;
+        return createOriginPrivateFileSystemStore<string, SaveFileBlobPart>({
+          directory: () => {
+            const directory = opfsDirectory();
+            if (!directory) {
+              throw new Error("Origin Private File System is not initialized");
+            }
+
+            return directory;
+          },
+          name: saveFileName,
+          serializer,
+        });
       case "manual-file":
-        return manualSaveFileStore;
+        return createManualStore<string, SaveFileBlobPart>({
+          name: saveFileName,
+          serializer,
+        });
     }
   });
 
@@ -391,13 +331,13 @@ export default function UiKitPage() {
     const encoding = parseSaveEncoding(value);
 
     setSaveEncoding(encoding);
-    setSaveFileName((current) => replaceFileExtension(current, saveEncodingFormat(encoding).extension));
+    setSaveFileName((current) => replaceFileExtension(current, extensions[encoding]));
   };
 
   const saveSampleFile = async (): Promise<void> => {
     try {
       await (await selectedSaveFileStore()).save(savePayload());
-      setSaveFileStatus(`Saved ${saveFileName()} with ${selectedSaveStorageLabel()} as ${selectedSaveFormat().label}`);
+      setSaveFileStatus(`Saved ${saveFileName()} with ${selectedSaveStorageLabel()} as ${selectedSaveFormatLabel()}`);
     } catch (error) {
       setSaveFileStatus(`Save failed: ${unknownErrorMessage(error)}`);
     }
@@ -730,7 +670,7 @@ export default function UiKitPage() {
               </Field>
               <Field label="Encoding">
                 <Select
-                  options={saveEncodingFormats}
+                  options={saveEncodingOptions()}
                   value={saveEncoding()}
                   onChange={(event) => updateSaveEncoding(event.currentTarget.value)}
                 />
@@ -762,12 +702,12 @@ export default function UiKitPage() {
               <Metric
                 detail="Format"
                 label="Encoding"
-                value={<span class="block truncate">{selectedSaveFormat().label}</span>}
+                value={<span class="block truncate">{selectedSaveFormatLabel()}</span>}
               />
               <Metric
                 detail="File type"
                 label="MIME"
-                value={<span class="block truncate">{selectedSaveFormat().mimeType}</span>}
+                value={<span class="block truncate">{mimeTypes[saveEncoding()]}</span>}
               />
               <Metric detail="Encoded payload" label="Bytes" value={String(saveByteLength())} />
             </div>

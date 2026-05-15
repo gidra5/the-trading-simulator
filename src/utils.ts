@@ -24,6 +24,39 @@ export const formatNumber = (value: number, digits: number): string => {
   return value.toFixed(digits);
 };
 
+export const bytesToBase64 = (bytes: Uint8Array): string => {
+  let binary = "";
+  const chunkSize = 0x8000;
+
+  for (let index = 0; index < bytes.length; index += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize));
+  }
+
+  return btoa(binary);
+};
+
+export const base64ToBytes = (base64: string): Uint8Array => {
+  const binary = atob(base64.trim());
+  const bytes = new Uint8Array(binary.length);
+
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+
+  return bytes;
+};
+
+export const bytesToArrayBuffer = (bytes: Uint8Array): ArrayBuffer => {
+  const buffer = new ArrayBuffer(bytes.byteLength);
+
+  new Uint8Array(buffer).set(bytes);
+  return buffer;
+};
+
+export const bytesToHex = (bytes: Uint8Array): string =>
+  Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join(" ");
+
+
 export const clamp = (value: number, min: number, max: number): number => Math.min(Math.max(value, min), max);
 
 export const binarySearchIndex = <T>(
