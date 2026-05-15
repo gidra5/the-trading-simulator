@@ -11,7 +11,9 @@ import {
 } from "lucide-solid";
 import { createMemo, createSignal, For } from "solid-js";
 import { createManualStore } from "../storage/manual";
-import type { Serializer } from "../storage/interface";
+import { createOriginPrivateFileSystemStore, originPrivateFileSystemRoot } from "../storage/originPrivateFileSystem";
+import { createWebFileSystemStore, webFileSystemDirectory } from "../storage/webFileSystem";
+import type { Serializer, Store, StoreKind } from "../storage/interface";
 import { Button } from "../ui-kit/Button";
 import { Field } from "../ui-kit/Field";
 import { Metric } from "../ui-kit/Metric";
@@ -148,6 +150,12 @@ const saveEncodingFormats = [
 type SaveEncoding = (typeof saveEncodingFormats)[number]["value"];
 type SaveFileBlobPart = string | ArrayBuffer;
 
+const saveStorageOptions: readonly { label: string; value: StoreKind }[] = [
+  { value: "manual-file", label: "Manual file" },
+  { value: "file-system", label: "File System API" },
+  { value: "opfs", label: "OPFS" },
+];
+
 const sampleSavePayload = `Trader: Demo Trader
 Cash: 104820.25
 Pair: SIM/USD
@@ -164,6 +172,15 @@ const parseSaveEncoding = (value: string): SaveEncoding => {
 
   return format?.value ?? "text";
 };
+
+const parseSaveStorage = (value: string): StoreKind => {
+  const option = saveStorageOptions.find((option) => option.value === value);
+
+  return option?.value ?? "manual-file";
+};
+
+const saveStorageLabel = (value: StoreKind): string =>
+  saveStorageOptions.find((option) => option.value === value)?.label ?? saveStorageOptions[0].label;
 
 const replaceFileExtension = (fileName: string, extension: string): string => {
   const fallbackName = "trading-simulator-save";
@@ -271,10 +288,14 @@ export default function UiKitPage() {
   const [rangeValue, setRangeValue] = createSignal(40);
   const [volume, setVolume] = createSignal(70);
   const [saveFileName, setSaveFileName] = createSignal("trading-simulator-save.txt");
+  const [saveStorage, setSaveStorage] = createSignal<StoreKind>("manual-file");
   const [saveEncoding, setSaveEncoding] = createSignal<SaveEncoding>("text");
   const [savePayload, setSavePayload] = createSignal(sampleSavePayload);
   const [saveFileStatus, setSaveFileStatus] = createSignal("No file loaded");
+  const [webDirectory, setWebDirectory] = createSignal<Awaited<ReturnType<typeof webFileSystemDirectory>>>(null);
+  const [opfsDirectory, setOpfsDirectory] = createSignal<Awaited<ReturnType<typeof originPrivateFileSystemRoot>>>(null);
   const selectedSaveFormat = createMemo(() => saveEncodingFormat(saveEncoding()));
+  const selectedSaveStorageLabel = createMemo(() => saveStorageLabel(saveStorage()));
   const savePreview = createMemo(() => encodedPayloadPreview(savePayload(), saveEncoding()));
   const saveByteLength = createMemo(() => encodedPayloadByteLength(savePayload(), saveEncoding()));
   const saveFileSerializer: Serializer<SaveFileBlobPart> = {
@@ -286,10 +307,85 @@ export default function UiKitPage() {
       return (await decodeSavePayload(data, saveEncoding())) as T;
     },
   };
-  const saveFileStore = createManualStore<string, SaveFileBlobPart>({
+  const manualSaveFileStore = createManualStore<string, SaveFileBlobPart>({
     name: saveFileName,
     serializer: saveFileSerializer,
   });
+  const webFileSystemSaveFileStore = createWebFileSystemStore<string, SaveFileBlobPart>({
+    directory: () => {
+      const directory = webDirectory();
+      if (!directory) {
+        throw new Error("File System Access directory is not initialized");
+      }
+
+      return directory;
+    },
+    name: saveFileName,
+    serializer: saveFileSerializer,
+  });
+  const originPrivateFileSystemSaveFileStore = createOriginPrivateFileSystemStore<string, SaveFileBlobPart>({
+    directory: () => {
+      const directory = opfsDirectory();
+      if (!directory) {
+        throw new Error("Origin Private File System is not initialized");
+      }
+
+      return directory;
+    },
+    name: saveFileName,
+    serializer: saveFileSerializer,
+  });
+  const saveFileStore = createMemo<Store<string>>(() => {
+    switch (saveStorage()) {
+      case "file-system":
+        return webFileSystemSaveFileStore;
+      case "opfs":
+        return originPrivateFileSystemSaveFileStore;
+      case "manual-file":
+        return manualSaveFileStore;
+    }
+  });
+
+  const ensureWebDirectory = async (): Promise<void> => {
+    if (webDirectory()) return;
+
+    const directory = await webFileSystemDirectory();
+    if (!directory) {
+      throw new Error("File System Access directory is not available");
+    }
+
+    setWebDirectory(directory);
+  };
+
+  const ensureOpfsDirectory = async (): Promise<void> => {
+    if (opfsDirectory()) return;
+
+    const directory = await originPrivateFileSystemRoot();
+    if (!directory) {
+      throw new Error("Origin Private File System is not available in this browser");
+    }
+
+    setOpfsDirectory(directory);
+  };
+
+  const selectedSaveFileStore = async (): Promise<Store<string>> => {
+    switch (saveStorage()) {
+      case "file-system":
+        await ensureWebDirectory();
+        break;
+      case "opfs":
+        await ensureOpfsDirectory();
+        break;
+      case "manual-file":
+        break;
+    }
+
+    return saveFileStore();
+  };
+
+  const updateSaveStorage = (value: string): void => {
+    setSaveStorage(parseSaveStorage(value));
+  };
 
   const updateSaveEncoding = (value: string): void => {
     const encoding = parseSaveEncoding(value);
@@ -300,8 +396,8 @@ export default function UiKitPage() {
 
   const saveSampleFile = async (): Promise<void> => {
     try {
-      await saveFileStore.save(savePayload());
-      setSaveFileStatus(`Saved ${saveFileName()} as ${selectedSaveFormat().label}`);
+      await (await selectedSaveFileStore()).save(savePayload());
+      setSaveFileStatus(`Saved ${saveFileName()} with ${selectedSaveStorageLabel()} as ${selectedSaveFormat().label}`);
     } catch (error) {
       setSaveFileStatus(`Save failed: ${unknownErrorMessage(error)}`);
     }
@@ -309,14 +405,14 @@ export default function UiKitPage() {
 
   const loadSampleFile = async (): Promise<void> => {
     try {
-      const saveFile = await saveFileStore.load();
+      const saveFile = await (await selectedSaveFileStore()).load();
       if (!saveFile) {
         setSaveFileStatus("No file selected");
         return;
       }
 
       setSavePayload(saveFile);
-      setSaveFileStatus(`Loaded ${saveFile.length} characters`);
+      setSaveFileStatus(`Loaded ${saveFile.length} characters with ${selectedSaveStorageLabel()}`);
     } catch (error) {
       setSaveFileStatus(`Load failed: ${unknownErrorMessage(error)}`);
     }
@@ -621,9 +717,16 @@ export default function UiKitPage() {
 
         <Panel title="Save File">
           <div class="grid gap-3">
-            <div class="grid grid-cols-1 items-end gap-2 md:grid-cols-[minmax(0,1fr)_12rem_auto_auto]">
+            <div class="grid grid-cols-1 items-end gap-2 md:grid-cols-[minmax(0,1fr)_12rem_12rem_auto_auto]">
               <Field label="File name">
                 <TextInput value={saveFileName()} onInput={(event) => setSaveFileName(event.currentTarget.value)} />
+              </Field>
+              <Field label="Storage">
+                <Select
+                  options={saveStorageOptions}
+                  value={saveStorage()}
+                  onChange={(event) => updateSaveStorage(event.currentTarget.value)}
+                />
               </Field>
               <Field label="Encoding">
                 <Select
@@ -651,6 +754,11 @@ export default function UiKitPage() {
             </Field>
 
             <div class="grid grid-cols-[repeat(auto-fit,minmax(10rem,1fr))] gap-3">
+              <Metric
+                detail="Interface"
+                label="Storage"
+                value={<span class="block truncate">{selectedSaveStorageLabel()}</span>}
+              />
               <Metric
                 detail="Format"
                 label="Encoding"
