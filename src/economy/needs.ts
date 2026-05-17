@@ -1,4 +1,4 @@
-import { batch, createEffect, createMemo, createSignal, untrack, type Accessor } from "solid-js";
+import { createEffect, createMemo, createSignal, untrack, type Accessor } from "solid-js";
 
 enum Need {
   Food = "Food",
@@ -27,17 +27,17 @@ export const createNeeds = (options: NeedsOptions) => {
   };
 
   createEffect(() => {
-    if (dead()) return;
-
+    if (untrack(dead)) return;
     const elapsed = options.dt();
+    const decayRates = untrack(options.decayRates);
 
-    batch(() => {
+    setNeeds((current) => {
+      const next = { ...current };
       for (const need of needValues) {
-        const decayRate = untrack(options.decayRates)[need];
-        const current = needs()[need];
-        const next = current - current * decayRate * elapsed;
-        setNeeds((current) => ({ ...current, [need]: next }));
+        next[need] = current[need] * (1 - decayRates[need] * elapsed);
       }
+
+      return next;
     });
   });
 

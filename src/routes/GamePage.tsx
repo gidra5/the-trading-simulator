@@ -291,13 +291,7 @@ export default function GamePage() {
               <AccountSidebar liquidations={accountState.liquidations()} orderHistory={accountState.orderHistory()} />
             </Match>
             <Match when={activeTab() === "economy"}>
-              <EconomySidebar
-                canBuyUpgrade={economy.canBuyUpgrade()}
-                clickValue={economy.clickValue()}
-                nextClickValue={economy.nextClickValue()}
-                upgradeCost={economy.upgradeCost()}
-                onBuyUpgrade={economy.buyClickUpgrade}
-              />
+              <EconomySidebar />
             </Match>
             <Match when={activeTab() === "settings"}>
               <SettingsSidebar />

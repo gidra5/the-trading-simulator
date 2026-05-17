@@ -1,5 +1,13 @@
-import { batch, createSignal } from "solid-js";
-import { ProgressionMetric, ProgressionNode, ProgressionResource, type ProgressionGraph } from "./data";
+import { batch, createMemo, createSignal } from "solid-js";
+import {
+  ProgressionMetric,
+  ProgressionNode,
+  ProgressionResource,
+  type ProgressionGraph,
+  type ProgressionMetrics,
+  type ProgressionNodeData,
+  type ProgressionResources,
+} from "./data";
 import { assert } from "../utils";
 
 // nodes that have all their progression node requirements fulfilled
@@ -9,8 +17,8 @@ export type ProgressionFrontier = Array<ProgressionFrontierNode>;
 // todo: inventory instead of pure resources
 export type Progression = {
   frontier: ProgressionFrontier;
-  metrics: Record<ProgressionMetric, number>;
-  resources: Record<ProgressionResource, number>;
+  metrics: ProgressionMetrics;
+  resources: ProgressionResources;
 };
 
 // complete - the node is already completed
@@ -19,24 +27,33 @@ export type Progression = {
 // inaccessible - the node is completely outside of the frontier
 type ProgressionNodeStatus = "complete" | "available" | "accessible" | "inaccessible";
 
-const getInitialProgression = (graph: ProgressionGraph): Progression => {
-  const frontier = Object.keys(graph).filter((node) => {
+export type ProgressionTierNodeData = { node: ProgressionNode } & ProgressionNodeData;
+type ProgressionTier = ProgressionTierNodeData[];
+export type ProgressionTierList = ProgressionTier[];
+
+const getInitialFrontier = (graph: ProgressionGraph): ProgressionFrontier => {
+  return Object.keys(graph).filter((node) => {
     const graphNode = graph[node as keyof ProgressionGraph];
     return graphNode.requirements.length === 0;
   }) as ProgressionNode[];
+};
+
+const getInitialProgression = (graph: ProgressionGraph): Progression => {
   return {
-    frontier,
+    frontier: getInitialFrontier(graph),
     metrics: { [ProgressionMetric.Handwork]: 0 },
     resources: { [ProgressionResource.Capital]: 0 },
   };
 };
 
 export const createProgression = (graph: ProgressionGraph) => {
-  const [progression, setProgression] = createSignal<Progression>(getInitialProgression(graph));
-  const frontier = () => progression().frontier;
+  const [frontier, setFrontier] = createSignal<ProgressionFrontier>(getInitialFrontier(graph));
+  const [metrics, setMetrics] = createSignal<ProgressionMetrics>({ [ProgressionMetric.Handwork]: 0 });
+  const [resources, setResources] = createSignal<ProgressionResources>({ [ProgressionResource.Capital]: 0 });
+
   const nodes = Object.keys(graph) as ProgressionFrontierNode[];
-  const metrics = Object.keys(progression().metrics) as ProgressionMetric[];
-  const resources = Object.keys(progression().resources) as ProgressionResource[];
+  const _metrics = Object.keys(metrics()) as ProgressionMetric[];
+  const _resources = Object.keys(resources()) as ProgressionResource[];
 
   const compareNodeWithFrontier = (node: ProgressionFrontierNode, currentFrontier: ProgressionFrontier): number => {
     if (currentFrontier.includes(node)) return 0;
@@ -60,11 +77,11 @@ export const createProgression = (graph: ProgressionGraph) => {
   };
 
   const isMilestoneReached = (metric: ProgressionMetric, value: number) => {
-    return progression().metrics[metric] >= value;
+    return metrics()[metric] >= value;
   };
 
   const isAffordable = (resource: ProgressionResource, price: number) => {
-    return progression().resources[resource] >= price;
+    return resources()[resource] >= price;
   };
 
   const advanceFrontier = (node: ProgressionFrontierNode) => {
@@ -76,12 +93,9 @@ export const createProgression = (graph: ProgressionGraph) => {
 
     batch(() => {
       const prices = graph[node].prices;
-      for (const resource of resources) removeResource(resource, prices[resource] ?? 0);
+      for (const resource of _resources) removeResource(resource, prices[resource] ?? 0);
 
-      setProgression((prev) => ({
-        ...prev,
-        frontier: nextFrontier,
-      }));
+      setFrontier(nextFrontier);
     });
   };
 
@@ -91,42 +105,59 @@ export const createProgression = (graph: ProgressionGraph) => {
     const graphNode = graph[node];
     assert(graphNode.requirements.every(isComplete));
 
-    const areMilestonesReached = metrics.every((metric) =>
+    const areMilestonesReached = _metrics.every((metric) =>
       isMilestoneReached(metric, graphNode.milestones[metric] ?? 0),
     );
-    const arePricesAffordable = resources.every((resource) => isAffordable(resource, graphNode.prices[resource] ?? 0));
+    const arePricesAffordable = _resources.every((resource) => isAffordable(resource, graphNode.prices[resource] ?? 0));
 
     return areMilestonesReached && arePricesAffordable;
   };
 
   const addMetric = (metric: ProgressionMetric, value: number) => {
-    setProgression((prev) => ({
-      ...prev,
-      metrics: { ...prev.metrics, [metric]: value },
-    }));
+    setMetrics((current) => ({ ...current, [metric]: value }));
   };
 
   const addResource = (resource: ProgressionResource, value: number) => {
-    setProgression((prev) => ({
-      ...prev,
-      resources: { ...prev.resources, [resource]: value },
-    }));
+    setResources((current) => ({ ...current, [resource]: value }));
   };
 
   const removeResource = (resource: ProgressionResource, value: number) => {
-    setProgression((prev) => ({
-      ...prev,
-      resources: { ...prev.resources, [resource]: prev.resources[resource] - value },
-    }));
+    setResources((current) => ({ ...current, [resource]: current[resource] - value }));
   };
 
+  const tierListState = createMemo<{ list: ProgressionTierList; frontier: ProgressionFrontier }>(
+    (state) => {
+      const tiers = state.list;
+      const delta = frontier().filter((node) => !state.frontier.includes(node));
+      if (delta.length === 0) return state;
+
+      for (const node of delta) {
+        const requirements = graph[node].requirements;
+        const tier = tiers.findLastIndex((tier) => tier.some((node) => requirements.includes(node.node)));
+        const nodeTier = tiers[tier + 1] ?? [];
+        tiers[tier + 1] = [...nodeTier, { node, ...graph[node] }];
+      }
+
+      return { list: tiers, frontier: frontier() };
+    },
+    { list: [[]], frontier: [] },
+    { equals: false },
+  );
+  const tierList = () => tierListState().list;
+
   return {
-    progression,
+    graph,
+
+    frontier,
+    metrics,
+    resources,
     addMetric,
     addResource,
     removeResource,
 
+    tierList,
     advanceFrontier,
     getStatus,
+    isComplete,
   };
 };

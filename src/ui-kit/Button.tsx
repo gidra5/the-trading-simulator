@@ -27,10 +27,11 @@ export const buttonSizes: Record<ButtonSize, string> = {
 };
 
 const iconButtonSizes: Record<ButtonSize, string> = {
-  sm: "h-6 w-6 p-0",
-  md: "h-8 w-8 p-0",
+  sm: "h-6 w-6 min-h-6 min-w-6 p-0",
+  md: "h-8 w-8 min-h-8 min-w-8 p-0",
 };
 
+// todo: if tooltip present, show it on hover
 export const Button: Component<ButtonProps> = (props) => {
   const [local, buttonProps] = splitProps(props, ["active", "class", "size", "variant"]);
   const variant = () => local.variant ?? "secondary";

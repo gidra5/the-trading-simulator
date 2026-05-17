@@ -8,6 +8,7 @@ import type { SaveFileStoreEntry, SaveFileStoreStatus } from "../../storage/pers
 import { Button } from "../../ui-kit/Button";
 import { Field } from "../../ui-kit/Field";
 import { Panel } from "../../ui-kit/Panel";
+import { Range } from "../../ui-kit/Range";
 import { Select } from "../../ui-kit/Select";
 import { TextInput } from "../../ui-kit/TextInput";
 import { formatStorageBytes } from "../../utils";
@@ -17,6 +18,8 @@ import { HistogramNormalization } from "../OrderBookHistogram";
 
 const isLocale = (value: string): value is Locale => locales.includes(value as Locale);
 const checkboxFieldClass = "flex items-center justify-between gap-3";
+const volumeFieldClass = "flex items-center justify-between gap-3";
+const volumeRangeClass = "w-48";
 const saveStoreStatusClasses: Record<SaveFileStoreStatus, string> = {
   available: "text-success",
   denied: "text-danger",
@@ -290,6 +293,47 @@ export const SettingsBody: Component = () => {
                 value={histogramWindowInput()}
                 onInput={(event) => updateHistogramWindowInput(event.currentTarget.value)}
               />
+            </Field>
+          </div>
+        </Panel>
+
+        <Panel title={t("settings.panels.audio")}>
+          <div class="grid gap-3">
+            <Field class={volumeFieldClass} label={t("settings.audio.master")}>
+              <div class="flex items-center gap-2">
+                <span class="font-mono-primary-xs-rg text-text-primary">{Math.round(settings.masterVolume())}%</span>
+                <Range
+                  class={volumeRangeClass}
+                  max={100}
+                  min={0}
+                  value={settings.masterVolume()}
+                  onChange={settings.setMasterVolume}
+                />
+              </div>
+            </Field>
+            <Field class={volumeFieldClass} label={t("settings.audio.music")}>
+              <div class="flex items-center gap-2">
+                <span class="font-mono-primary-xs-rg text-text-primary">{Math.round(settings.musicVolume())}%</span>
+                <Range
+                  class={volumeRangeClass}
+                  max={100}
+                  min={0}
+                  value={settings.musicVolume()}
+                  onChange={settings.setMusicVolume}
+                />
+              </div>
+            </Field>
+            <Field class={volumeFieldClass} label={t("settings.audio.effects")}>
+              <div class="flex items-center gap-2">
+                <span class="font-mono-primary-xs-rg text-text-primary">{Math.round(settings.effectsVolume())}%</span>
+                <Range
+                  class={volumeRangeClass}
+                  max={100}
+                  min={0}
+                  value={settings.effectsVolume()}
+                  onChange={settings.setEffectsVolume}
+                />
+              </div>
             </Field>
           </div>
         </Panel>

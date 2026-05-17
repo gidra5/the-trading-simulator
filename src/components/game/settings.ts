@@ -8,6 +8,7 @@ type AutosaveStorePreference = Exclude<StoreKind, "manual"> | null;
 
 // todo: lifetime for history - store at most last time interval of size N
 export const createSettings = () => {
+  const [frontierPickerSize, setFrontierPickerSize] = createSignal(3);
   const [candleInterval, setCandleInterval] = createSignal(1_000);
   const [isHeatmapEnabled, setIsHeatmapEnabled] = createSignal(false);
   const [isHistogramEnabled, setIsHistogramEnabled] = createSignal(false);
@@ -46,6 +47,7 @@ export const createSettings = () => {
   );
 
   return {
+    frontierPickerSize,
     advancedOrdersEnabled,
     autosaveActiveStore: autosaveFileStore.active,
     autosaveEncoding,

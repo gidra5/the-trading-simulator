@@ -2,6 +2,7 @@ export enum ProgressionNode {
   Handwork = "Handwork",
   HandworkProficiency = "HandworkProficiency",
   Hardworking = "Hardworking",
+  Habits = "Habits",
 
   Trading = "Trading",
   TradingAdvanced = "TradingAdvanced",
@@ -17,8 +18,10 @@ export enum ProgressionResource {
 }
 
 export type ProgressionGraph = Record<ProgressionNode, ProgressionNodeData>;
-type ProgressionPrice = Partial<Record<ProgressionResource, number>>;
-type ProgressionMilestone = Partial<Record<ProgressionMetric, number>>;
+export type ProgressionPrice = Partial<Record<ProgressionResource, number>>;
+export type ProgressionMilestone = Partial<Record<ProgressionMetric, number>>;
+export type ProgressionMetrics = Record<ProgressionMetric, number>;
+export type ProgressionResources = Record<ProgressionResource, number>;
 
 export type ProgressionNodeData = {
   requirements: ProgressionNode[];
@@ -45,6 +48,12 @@ export const progressionGraph: ProgressionGraph = {
     prices: {},
   },
 
+  [ProgressionNode.Habits]: {
+    requirements: [ProgressionNode.Handwork],
+    milestones: { [ProgressionMetric.Handwork]: 50 },
+    prices: {},
+  },
+
   [ProgressionNode.Trading]: {
     requirements: [ProgressionNode.Handwork],
     milestones: { [ProgressionMetric.Handwork]: 50 },
@@ -53,7 +62,7 @@ export const progressionGraph: ProgressionGraph = {
 
   [ProgressionNode.TradingAdvanced]: {
     requirements: [ProgressionNode.Trading],
-    milestones: {  },
+    milestones: {},
     prices: { [ProgressionResource.Capital]: 20 },
   },
 
