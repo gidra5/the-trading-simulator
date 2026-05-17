@@ -8,26 +8,30 @@ import { settings } from "../../routes/game/state";
 
 type HeaderProps = {
   activeTab: Tab;
+  tabs: readonly Tab[];
   onTabChange: (tab: Tab) => void;
 };
 
 const simulationSpeedOptions = [1, 2, 4, 8] as const;
 
 export type Tab = "market" | "account" | "economy" | "settings";
-export const mainTabValues = ["market", "economy"] as const satisfies readonly Tab[];
 
 export const Header: Component<HeaderProps> = (props) => {
   const [isSpeedOpen, setIsSpeedOpen] = createSignal(false);
-  const tabs = createMemo(() => mainTabValues.map((value) => ({ value: value as Tab, label: t(`tabs.${value}`) })));
+  const tabs = createMemo(() => props.tabs.map((value) => ({ value, label: t(`tabs.${value}`) })));
   const speedLabel = createMemo(() =>
     settings.isSimulationPaused() ? t("header.paused") : `${settings.simulationSpeed()}x`,
   );
 
   return (
-    <header class="flex h-16 shrink-0 items-center justify-between gap-4 px-3">
-      <span class="font-body-primary-xl-semi text-text-primary">{t("app.title")}</span>
-      <Radio options={tabs()} value={props.activeTab} onChange={props.onTabChange} />
-      <div class="flex items-center gap-1">
+    <header class="grid h-16 shrink-0 grid-cols-3 gap-4 px-3">
+      <div class="flex items-center">
+        <span class="font-body-primary-xl-semi text-text-primary">{t("app.title")}</span>
+      </div>
+      <div class="flex items-center justify-center">
+        <Radio options={tabs()} value={props.activeTab} onChange={props.onTabChange} />
+      </div>
+      <div class="flex items-center justify-end gap-1">
         <Popover
           open={isSpeedOpen()}
           trigger={

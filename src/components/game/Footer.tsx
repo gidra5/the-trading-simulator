@@ -61,32 +61,7 @@ export const Footer: Component<FooterProps> = (props) => {
         <span>{t("account.footer.cashPerMinute", { value: formatMoney(props.cashPerMinute) })}</span>
       </div>
       <div class="flex shrink-0 items-center justify-right gap-2 h-full">
-        <Popover
-          // todo: move to separate component
-          contentClass="w-64"
-          open={isAutosaveOpen()}
-          openOnHover
-          placement="top"
-          trigger={
-            <Button
-              aria-expanded={isAutosaveOpen()}
-              aria-label={t("autosave.status.aria", { status: autosaveTitle() })}
-              class={autosaveVisual().toneClass}
-              size="sm"
-              title={autosaveTitle()}
-              variant="icon"
-              onBlur={() => setIsAutosaveOpen(false)}
-              onClick={() => setIsAutosaveOpen((open) => !open)}
-              onFocus={() => setIsAutosaveOpen(true)}
-            >
-              <AutosaveIcon />
-            </Button>
-          }
-          onOpenChange={setIsAutosaveOpen}
-        >
-          <p class="font-body-primary-xs-rg text-text-primary">{autosaveMessage()}</p>
-        </Popover>
-        <Divider />
+        
         <span>
           {formatPrice(props.priceSpread().buy)} / {formatPrice(midPrice())} / {formatPrice(props.priceSpread().sell)}
         </span>
@@ -143,6 +118,32 @@ export const Footer: Component<FooterProps> = (props) => {
               </Field>
             </div>
           </div>
+</Popover>
+          <Divider />
+        <Popover
+          // todo: move to separate component
+          contentClass="w-64"
+          open={isAutosaveOpen()}
+          openOnHover
+          placement="top"
+          trigger={
+            <Button
+              aria-expanded={isAutosaveOpen()}
+              aria-label={t("autosave.status.aria", { status: autosaveTitle() })}
+              class={autosaveVisual().toneClass}
+              size="sm"
+              title={autosaveTitle()}
+              variant="icon"
+              onBlur={() => setIsAutosaveOpen(false)}
+              onClick={() => setIsAutosaveOpen((open) => !open)}
+              onFocus={() => setIsAutosaveOpen(true)}
+            >
+              <AutosaveIcon />
+            </Button>
+          }
+          onOpenChange={setIsAutosaveOpen}
+        >
+          <span class="font-body-primary-xs-rg text-text-primary">{autosaveMessage()}</span>
         </Popover>
       </div>
     </footer>

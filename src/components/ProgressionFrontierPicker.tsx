@@ -43,6 +43,7 @@ export const ProgressionFrontierPicker: Component<ProgressionFrontierPickerProps
                 resources={props.resources}
                 milestones={node.milestones}
                 prices={node.prices}
+                isComplete={false}
                 onComplete={() => props.onComplete(node.node)}
                 onRefresh={() => props.onRefresh(index())}
               />
