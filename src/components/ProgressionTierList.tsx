@@ -43,7 +43,8 @@ export const ProgressionTierList: Component<ProgressionTierListProps> = (props) 
                         resources={props.resources}
                         milestones={node.milestones}
                         prices={node.prices}
-                        onComplete={props.isComplete(node.node) ? undefined : () => props.onComplete(node.node)}
+                        isComplete={props.isComplete(node.node)}
+                        onComplete={() => props.onComplete(node.node)}
                       />
                     </div>
                   )}

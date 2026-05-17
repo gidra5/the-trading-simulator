@@ -18,6 +18,7 @@ type ProgressionNodeProps = {
   resources: ProgressionResources;
   milestones: ProgressionMilestone;
   prices: ProgressionPrice;
+  isComplete: boolean;
   onRefresh?: () => void;
   onComplete?: () => void;
 };
@@ -40,7 +41,7 @@ export const ProgressionNode: Component<ProgressionNodeProps> = (props) => {
                 <RotateCcw aria-hidden="true" class="h-4 w-4" strokeWidth={1.8} />
               </Button>
             </Show>
-            <Show when={props.onComplete}>
+            <Show when={props.onComplete && !props.isComplete}>
               <Button variant="icon" onClick={props.onComplete} size="sm" disabled={!available()}>
                 <Check aria-hidden="true" class="h-4 w-4" strokeWidth={1.8} />
               </Button>
@@ -58,16 +59,16 @@ export const ProgressionNode: Component<ProgressionNodeProps> = (props) => {
           <For each={milestones()}>
             {(metric) => (
               <div class="flex flex-row gap-1 items-center">
-                <Show when={props.metrics[metric] >= props.milestones[metric]!}>
+                <Show when={props.metrics[metric] >= props.milestones[metric]! || props.isComplete}>
                   <Check aria-hidden="true" class="h-4 w-4 text-success" strokeWidth={1.8} />
                 </Show>
-                <Show when={props.metrics[metric] < props.milestones[metric]!}>
+                <Show when={props.metrics[metric] < props.milestones[metric]! && !props.isComplete}>
                   <X aria-hidden="true" class="h-4 w-4 text-danger" strokeWidth={1.8} />
                 </Show>
                 <span>
                   {t(`progression.metric.${metric}`, {
                     total: props.milestones[metric]!,
-                    value: props.metrics[metric],
+                    value: props.metrics[metric].toFixed(2),
                   })}
                 </span>
               </div>
@@ -82,16 +83,16 @@ export const ProgressionNode: Component<ProgressionNodeProps> = (props) => {
           <For each={resources()}>
             {(resource) => (
               <div class="flex flex-row gap-1 items-center">
-                <Show when={props.resources[resource] >= props.prices[resource]!}>
+                <Show when={props.resources[resource] >= props.prices[resource]! || props.isComplete}>
                   <Check aria-hidden="true" class="h-4 w-4 text-success" strokeWidth={1.8} />
                 </Show>
-                <Show when={props.resources[resource] < props.prices[resource]!}>
+                <Show when={props.resources[resource] < props.prices[resource]! && !props.isComplete}>
                   <X aria-hidden="true" class="h-4 w-4 text-danger" strokeWidth={1.8} />
                 </Show>
                 <span>
                   {t(`progression.resource.${resource}`, {
                     total: props.prices[resource]!,
-                    value: props.resources[resource],
+                    value: props.resources[resource].toFixed(2),
                   })}
                 </span>
               </div>

@@ -13,7 +13,7 @@ export const EconomySidebar = () => {
   };
   const samplePickerNodes = (): ProgressionTierNodeData[] => {
     if (actor.progression.frontier().length === 0) return [];
-    if (actor.progression.frontier().length < settings.frontierPickerSize())
+    if (actor.progression.frontier().length <= settings.frontierPickerSize())
       return actor.progression.frontier().map((node) => ({ node, ...actor.progression.graph[node] }));
 
     const nodes: ProgressionTierNodeData[] = [];
@@ -36,10 +36,17 @@ export const EconomySidebar = () => {
         frontierNodes={pickerNodes()}
         onShuffle={() => setPickerNodes(samplePickerNodes())}
         onComplete={(node) => actor.progression.advanceFrontier(node)}
-        onRefresh={(node) =>
+        onRefresh={(idx) =>
           setPickerNodes((current) => {
+            if (actor.progression.frontier().length <= settings.frontierPickerSize()) return current;
             const next = [...current];
-            next[node] = samplePickerNode();
+            const node = (() => {
+              while (true) {
+                const node = samplePickerNode();
+                if (!next.some((nodeData) => nodeData.node === node.node)) return node;
+              }
+            })();
+            next[idx] = node;
             return next;
           })
         }
