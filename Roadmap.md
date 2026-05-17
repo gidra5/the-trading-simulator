@@ -3,16 +3,19 @@
    2. Tidy up the PoC
       1. Create a UI kit, implemented on-demand
          1. + buttons - primary, secondary, ghost, icon, danger, disabled
-         2. inputs - + number, + select, + text, textarea, + checkbox, + range, + switch/tab/radio
+         2. + inputs - number, select, text, textarea, checkbox, range, switch/tab/radio
          3. Chart - line, bar, pie, donut, etc
          4. table
          5. accordion
-         6. "skill tree"
+         6. skill tree
+            1. graph view
+            2. tier list view
+            3. frontier sample picker
          7. + dividers
          8. + palette - colors, gradients
-         9. + typography - headings, text, code, links
-         10. tooltips/+ popovers
-         11. modals/dialogs
+         9.  + typography - headings, text, code, links
+         10. + tooltips/popovers
+         11. + modals/dialogs
          12. themes - light, dark, system
          13. + intl
          14. + svg icons set https://lucide.dev/icons/categories#tools
@@ -44,10 +47,12 @@
          8. Or instead of company upgrade, you choose skill upgrades, which allows learning industry specific skills
          9. Or instead a management upgrade, which allows you to hire other actors to work for you
          10. Or instead a scientist/engineer upgrade, which allows you to research new technologies
+         11. Study points - earned through clicker as well.
+         12. you can spend study points to complete new upgrades, write a book/teach your knowledge others, read a book to complete a skill study
       7. + Save system - store simulation and account state in a file/localstorage
          1. + Autosave
          2. + Manual load/save
-         3. + Reset
+         3. Reset
       8. Offline simulation/time skip/+ speedup
       9. Multiplayer - play in the same session as other players
          1. Centralized state and simulation on a server
@@ -78,7 +83,9 @@
    14. Products and marketing
    15. Unique products - rare, limited, exclusive, etc
    16. insider trading
-3. Extend economy tab with ui for:
+   17. Expiration of products/value decline over time
+3. New game+ - you can make children and continue playing with them. Implies family progression
+4. Extend economy tab with ui for:
    1. inventory of resources
    2. production of raw resources
    3. crafting of resources
@@ -88,8 +95,8 @@
    7. Hiring other actors to work/supply resources/tech for you based on some contract
    8. Knowledge tree - learn technologies personally or through other recordings. Record learnings for sharing with other actors. Hire teachers
    9. infrastructure - automation, storage, logistics
-4. Implement trading platform functions like trading automation, scripts, auctions, arbitrary pairs.
-5. Implement an orchestrator/narrator - a system that create a world narrative, economic events, bot behavior, tracks player performance and adjusts game flow/simulations accordingly
-6. Endgame
+5. Implement trading platform functions like trading automation, scripts, auctions, arbitrary pairs.
+6. Implement an orchestrator/narrator - a system that create a world narrative, economic events, bot behavior, tracks player performance and adjusts game flow/simulations accordingly
+7. Endgame
    1. base - you gain enough to manipulate the market and trivially multiply your wealth
-7. Story mode?
+8. Story mode?
