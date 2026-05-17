@@ -4,7 +4,7 @@ import type { OrderBookHeatmapEntry, OrderBookHistogramEntry, PriceCandle } from
 import { Panel } from "../../ui-kit/Panel";
 import { Chart, type ChartViewport } from "../Chart";
 import { OrderBookHistogram } from "../OrderBookHistogram";
-import { gameSettings } from "./settings";
+import { settings } from "../../routes/game/state";
 
 type MarketBodyProps = {
   histogram: OrderBookHistogramEntry[] | null;
@@ -20,11 +20,11 @@ export const MarketBody: Component<MarketBodyProps> = (props) => {
       <div class="flex h-full min-h-0 gap-3">
         <Panel bodyClass="min-h-0 flex-1 p-0" class="min-w-0 flex-1">
           <Chart
-            candleInterval={gameSettings.candleInterval()}
+            candleInterval={settings.candleInterval()}
             class="h-full w-full bg-surface-primary"
             orderBookHeatmap={props.orderBookHeatmap}
             priceCandles={props.priceCandles}
-            showFrameRate={gameSettings.showFrameRate()}
+            showFrameRate={settings.showFrameRate()}
             viewport={props.viewport}
             onViewportChange={props.onViewportChange}
           />
@@ -34,10 +34,10 @@ export const MarketBody: Component<MarketBodyProps> = (props) => {
             <Panel bodyClass="min-h-0 flex-1 p-0" class="w-48 shrink-0" title={t("market.depth.title")}>
               <OrderBookHistogram
                 class="block h-full w-full"
-                cumulative={gameSettings.isHistogramCumulative()}
+                cumulative={settings.isHistogramCumulative()}
                 data={histogramData()}
-                normalization={gameSettings.histogramNormalization()}
-                windowFraction={gameSettings.histogramWindowFraction()}
+                normalization={settings.histogramNormalization()}
+                windowFraction={settings.histogramWindowFraction()}
               />
             </Panel>
           )}

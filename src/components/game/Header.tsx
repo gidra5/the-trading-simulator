@@ -6,7 +6,7 @@ import { Field } from "../../ui-kit/Field";
 import { Popover } from "../../ui-kit/Popover";
 import { Range } from "../../ui-kit/Range";
 import { Radio } from "../../ui-kit/Radio";
-import { gameSettings } from "./settings";
+import { settings } from "../../routes/game/state";
 
 type HeaderProps = {
   activeTab: Tab;
@@ -25,7 +25,7 @@ export const Header: Component<HeaderProps> = (props) => {
   const [isSpeedOpen, setIsSpeedOpen] = createSignal(false);
   const tabs = createMemo(() => mainTabValues.map((value) => ({ value: value as Tab, label: t(`tabs.${value}`) })));
   const speedLabel = createMemo(() =>
-    gameSettings.isSimulationPaused() ? t("header.paused") : `${gameSettings.simulationSpeed()}x`,
+    settings.isSimulationPaused() ? t("header.paused") : `${settings.simulationSpeed()}x`,
   );
 
   return (
@@ -61,41 +61,37 @@ export const Header: Component<HeaderProps> = (props) => {
             <p class="font-body-primary-xs-semi text-text-secondary uppercase">{t("header.mixer")}</p>
             <Field class={mixerFieldClass} label={t("settings.audio.master")}>
               <div class="flex items-center gap-2">
-                <span class="font-mono-primary-xs-rg text-text-primary">
-                  {Math.round(gameSettings.masterVolume())}%
-                </span>
+                <span class="font-mono-primary-xs-rg text-text-primary">{Math.round(settings.masterVolume())}%</span>
                 <Range
                   class={mixerRangeClass}
                   max={100}
                   min={0}
-                  value={gameSettings.masterVolume()}
-                  onChange={gameSettings.setMasterVolume}
+                  value={settings.masterVolume()}
+                  onChange={settings.setMasterVolume}
                 />
               </div>
             </Field>
             <Field class={mixerFieldClass} label={t("settings.audio.music")}>
               <div class="flex items-center gap-2">
-                <span class="font-mono-primary-xs-rg text-text-primary">{Math.round(gameSettings.musicVolume())}%</span>
+                <span class="font-mono-primary-xs-rg text-text-primary">{Math.round(settings.musicVolume())}%</span>
                 <Range
                   class={mixerRangeClass}
                   max={100}
                   min={0}
-                  value={gameSettings.musicVolume()}
-                  onChange={gameSettings.setMusicVolume}
+                  value={settings.musicVolume()}
+                  onChange={settings.setMusicVolume}
                 />
               </div>
             </Field>
             <Field class={mixerFieldClass} label={t("settings.audio.effects")}>
               <div class="flex items-center gap-2">
-                <span class="font-mono-primary-xs-rg text-text-primary">
-                  {Math.round(gameSettings.effectsVolume())}%
-                </span>
+                <span class="font-mono-primary-xs-rg text-text-primary">{Math.round(settings.effectsVolume())}%</span>
                 <Range
                   class={mixerRangeClass}
                   max={100}
                   min={0}
-                  value={gameSettings.effectsVolume()}
-                  onChange={gameSettings.setEffectsVolume}
+                  value={settings.effectsVolume()}
+                  onChange={settings.setEffectsVolume}
                 />
               </div>
             </Field>
@@ -120,28 +116,28 @@ export const Header: Component<HeaderProps> = (props) => {
           <div class="grid gap-2">
             <p class="font-body-primary-xs-semi text-text-secondary uppercase">{t("header.speed")}</p>
             <Button
-              active={gameSettings.isSimulationPaused()}
+              active={settings.isSimulationPaused()}
               size="sm"
-              variant={gameSettings.isSimulationPaused() ? "primary" : "secondary"}
-              onClick={() => gameSettings.setIsSimulationPaused(!gameSettings.isSimulationPaused())}
+              variant={settings.isSimulationPaused() ? "primary" : "secondary"}
+              onClick={() => settings.setIsSimulationPaused(!settings.isSimulationPaused())}
             >
               <Show
                 fallback={<Pause aria-hidden="true" class="h-4 w-4" strokeWidth={1.8} />}
-                when={gameSettings.isSimulationPaused()}
+                when={settings.isSimulationPaused()}
               >
                 <Play aria-hidden="true" class="h-4 w-4" strokeWidth={1.8} />
               </Show>
-              <span>{gameSettings.isSimulationPaused() ? t("header.resume") : t("header.pause")}</span>
+              <span>{settings.isSimulationPaused() ? t("header.resume") : t("header.pause")}</span>
             </Button>
             <div class="grid grid-cols-4 gap-2">
               <For each={simulationSpeedOptions}>
                 {(speed) => (
                   <Button
-                    active={gameSettings.simulationSpeed() === speed}
+                    active={settings.simulationSpeed() === speed}
                     size="sm"
-                    variant={gameSettings.simulationSpeed() === speed ? "primary" : "ghost"}
+                    variant={settings.simulationSpeed() === speed ? "primary" : "ghost"}
                     onClick={() => {
-                      gameSettings.setSimulationSpeed(speed);
+                      settings.setSimulationSpeed(speed);
                       setIsSpeedOpen(false);
                     }}
                   >

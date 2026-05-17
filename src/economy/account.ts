@@ -36,38 +36,36 @@ type AccountStateOptions = {
   maintenanceMargin: Accessor<number>;
 };
 
-export const createOrderHistory = (time: Accessor<number>) => {
-  let nextEntryId = 0;
-  const [entries, setEntries] = createSignal<OrderHistoryEntry[]>([]);
+ const createOrderHistory = (time: Accessor<number>) => {
+   let nextEntryId = 0;
+   const [entries, setEntries] = createSignal<OrderHistoryEntry[]>([]);
 
-  const record = (entry: Omit<OrderHistoryEntry, "id" | "timestamp">): void => {
-    const historyEntry = { ...entry, id: nextEntryId++, timestamp: time() };
-    setEntries((current) => [historyEntry, ...current]);
-  };
+   const record = (entry: Omit<OrderHistoryEntry, "id" | "timestamp">): void => {
+     const historyEntry = { ...entry, id: nextEntryId++, timestamp: time() };
+     setEntries((current) => [historyEntry, ...current]);
+   };
 
-  return {
-    entries,
-    submitted: (entry: Omit<OrderHistoryEntry, "id" | "timestamp" | "kind" | "cost">): void =>
-      record({ ...entry, kind: "submitted", cost: 0 }),
-    partialFill: (entry: Omit<OrderHistoryEntry, "id" | "timestamp" | "kind">): void =>
-      record({ ...entry, kind: "partial-fill" }),
-    filled: (entry: Omit<OrderHistoryEntry, "id" | "timestamp" | "kind">): void => record({ ...entry, kind: "filled" }),
-    canceled: (entry: Omit<OrderHistoryEntry, "id" | "timestamp" | "kind" | "cost">): void =>
-      record({ ...entry, kind: "canceled", cost: 0 }),
-    liquidation: (entry: Omit<OrderHistoryEntry, "id" | "timestamp" | "kind">): void =>
-      record({ ...entry, kind: "liquidation" }),
-  };
-};
+   return {
+     entries,
+     submitted: (entry: Omit<OrderHistoryEntry, "id" | "timestamp" | "kind" | "cost">): void =>
+       record({ ...entry, kind: "submitted", cost: 0 }),
+     partialFill: (entry: Omit<OrderHistoryEntry, "id" | "timestamp" | "kind">): void =>
+       record({ ...entry, kind: "partial-fill" }),
+     filled: (entry: Omit<OrderHistoryEntry, "id" | "timestamp" | "kind">): void =>
+       record({ ...entry, kind: "filled" }),
+     canceled: (entry: Omit<OrderHistoryEntry, "id" | "timestamp" | "kind" | "cost">): void =>
+       record({ ...entry, kind: "canceled", cost: 0 }),
+     liquidation: (entry: Omit<OrderHistoryEntry, "id" | "timestamp" | "kind">): void =>
+       record({ ...entry, kind: "liquidation" }),
+   };
+ };
 
-export const createAccountState = (options: AccountStateOptions) => {
+export const createAccount = (options: AccountStateOptions) => {
   const market = options.market;
   const timeState = options.time;
   const id = nextAccountId++;
   const orderHistory = createOrderHistory(timeState.time);
-  const [portfolio, setPortfolio] = createSignal<Portfolio>({
-    Money: 100_000,
-    Stock: 0,
-  });
+  const [portfolio, setPortfolio] = createSignal<Portfolio>({ Money: 0, Stock: 0 });
   const [activeOrders, setActiveOrders] = createSignal<PendingOrder[]>([]);
   let isLiquidating = false;
 

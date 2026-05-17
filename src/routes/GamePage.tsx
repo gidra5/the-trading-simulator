@@ -1,7 +1,6 @@
 import { createEffect, createMemo, createSignal, Match, onCleanup, onMount, Switch } from "solid-js";
-import { createAccountState } from "../economy/account";
 import type { MarketState, OrderSide, PriceCandle } from "../market/index";
-import { market, simulation, time } from "./game/state";
+import { actor, market, settings as gameSettings, simulation, time } from "./game/state";
 import type { ChartViewport } from "../components/Chart";
 import { AccountBody } from "../components/game/AccountBody";
 import { AccountSidebar } from "../components/game/AccountSidebar";
@@ -11,7 +10,6 @@ import { Footer } from "../components/game/Footer";
 import { Header, type Tab } from "../components/game/Header";
 import { MarketBody } from "../components/game/MarketBody";
 import { MarketSidebar } from "../components/game/MarketSidebar";
-import { gameSettings } from "../components/game/settings";
 import { SettingsBody } from "../components/game/SettingsBody";
 import { SettingsSidebar } from "../components/game/SettingsSidebar";
 import type { OrderKind } from "../components/game/types";
@@ -20,33 +18,17 @@ import { createThrottledMemo } from "../utils";
 const pollingInterval = 200;
 export const tabValues = ["market", "account", "economy", "settings"] as const;
 
-const createAccountGameState = (market: MarketState) => {
-  const [feeRate] = createSignal(0.0001);
-  const [debtCapitalizationRate] = createSignal(0.00001);
-  const [maintenanceMargin] = createSignal(0.05);
-  const account = createAccountState({
-    market,
-    time: time,
-    feeRate,
-    debtCapitalizationRate,
-    maintenanceMargin,
-  });
-
-  const orderHistory = createMemo(() => account.orderHistory().filter((entry) => entry.kind !== "liquidation"));
-  const liquidations = createMemo(() => account.orderHistory().filter((entry) => entry.kind === "liquidation"));
+const createAccountGameState = () => {
+  const orderHistory = createMemo(() => actor.account.orderHistory().filter((entry) => entry.kind !== "liquidation"));
+  const liquidations = createMemo(() => actor.account.orderHistory().filter((entry) => entry.kind === "liquidation"));
 
   return {
-    account,
     orderHistory,
     liquidations,
   };
 };
 
-const createMarketGameState = (options: {
-  account: ReturnType<typeof createAccountGameState>["account"];
-  market: MarketState;
-  startTime: number;
-}) => {
+const createMarketGameState = (options: { market: MarketState; startTime: number }) => {
   const priceSpread = createThrottledMemo(options.market.marketPriceSpread, pollingInterval);
 
   const [orderSide, setOrderSide] = createSignal<OrderSide>("buy");
@@ -148,13 +130,13 @@ const createMarketGameState = (options: {
     if (!Number.isFinite(size) || size <= 0) return;
 
     if (orderKind() === "market") {
-      options.account.placeMarketOrder(orderSide(), size);
+      actor.account.placeMarketOrder(orderSide(), size);
       return;
     }
 
     const price = Number(orderPrice());
     if (!Number.isFinite(price) || price <= 0) return;
-    options.account.placeLimitOrder(orderSide(), price, size);
+    actor.account.placeLimitOrder(orderSide(), price, size);
   };
 
   return {
@@ -176,21 +158,21 @@ const createMarketGameState = (options: {
   };
 };
 
-const createEconomyGameState = (account: ReturnType<typeof createAccountGameState>["account"]) => {
+const createEconomyGameState = () => {
   const [clickValue, setClickValue] = createSignal(25);
   const [upgradeLevel, setUpgradeLevel] = createSignal(0);
   const upgradeCost = createMemo(() => Math.round(500 * 1.2 ** upgradeLevel()));
   const nextClickValue = createMemo(() => clickValue() + 25 + upgradeLevel() * 5);
-  const canBuyUpgrade = createMemo(() => account.portfolio().Money >= upgradeCost());
+  const canBuyUpgrade = createMemo(() => actor.account.portfolio().Money >= upgradeCost());
 
   const earnMoney = (): void => {
-    account.addMoney(clickValue());
+    actor.account.addMoney(clickValue());
   };
 
   const buyClickUpgrade = (): void => {
     if (!canBuyUpgrade()) return;
 
-    account.addMoney(-upgradeCost());
+    actor.account.addMoney(-upgradeCost());
     setClickValue(nextClickValue());
     setUpgradeLevel((current) => current + 1);
   };
@@ -205,16 +187,16 @@ const createEconomyGameState = (account: ReturnType<typeof createAccountGameStat
   };
 };
 
-const createAccountTelemetryState = (account: ReturnType<typeof createAccountGameState>["account"]) => {
+const createAccountTelemetryState = () => {
   let previousSample = {
-    cash: account.portfolio().Money,
-    netWorth: account.netWorth(),
+    cash: actor.account.portfolio().Money,
+    netWorth: actor.account.netWorth(),
     time: time.time(),
   };
   const [cashPerMinute, setCashPerMinute] = createSignal(0);
 
   createEffect(() => {
-    const sample = { cash: account.portfolio().Money, netWorth: account.netWorth(), time: time.time() };
+    const sample = { cash: actor.account.portfolio().Money, netWorth: actor.account.netWorth(), time: time.time() };
     const elapsed = sample.time - previousSample.time;
 
     if (elapsed <= 0) {
@@ -235,11 +217,10 @@ const createAccountTelemetryState = (account: ReturnType<typeof createAccountGam
 export default function GamePage() {
   const startTime = time.time();
   const [activeTab, setActiveTab] = createSignal<Tab>("market");
-  const [accountName, setAccountName] = createSignal(""); // todo: prompt user for name on first load
-  const accountState = createAccountGameState(market);
-  const marketState = createMarketGameState({ account: accountState.account, market, startTime });
-  const economy = createEconomyGameState(accountState.account);
-  const accountTelemetry = createAccountTelemetryState(accountState.account);
+  const accountState = createAccountGameState();
+  const marketState = createMarketGameState({ market, startTime });
+  const economy = createEconomyGameState();
+  const accountTelemetry = createAccountTelemetryState();
 
   onMount(() => {
     let previousTimestamp = performance.now();
@@ -280,7 +261,7 @@ export default function GamePage() {
               />
             </Match>
             <Match when={activeTab() === "account"}>
-              <AccountBody account={accountState.account} />
+              <AccountBody account={actor.account} />
             </Match>
             <Match when={activeTab() === "economy"}>
               <EconomyBody clickValue={economy.clickValue()} onEarnMoney={economy.earnMoney} />
@@ -294,7 +275,7 @@ export default function GamePage() {
           <Switch>
             <Match when={activeTab() === "market"}>
               <MarketSidebar
-                account={accountState.account}
+                account={actor.account}
                 orderKind={marketState.orderKind()}
                 orderPrice={marketState.orderPrice()}
                 orderSide={marketState.orderSide()}
@@ -326,8 +307,8 @@ export default function GamePage() {
       </div>
 
       <Footer
-        account={accountState.account}
-        accountName={accountName()}
+        account={actor.account}
+        accountName={actor.meta.name()}
         autosaveStatus={gameSettings.autosaveStatus}
         cashPerMinute={accountTelemetry.cashPerMinute()}
         priceSpread={marketState.priceSpread}

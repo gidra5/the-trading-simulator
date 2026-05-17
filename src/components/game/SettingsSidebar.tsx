@@ -1,24 +1,22 @@
 import type { Component } from "solid-js";
 import { locale, t } from "../../i18n/game";
+import { settings } from "../../routes/game/state";
 import { Panel } from "../../ui-kit/Panel";
-import { gameSettings } from "./settings";
 
 export const SettingsSidebar: Component = () => {
   const status = (enabled: boolean): string => (enabled ? t("common.on") : t("common.off"));
 
+  // todo: show useful metrics maybe?
   return (
     <div class="grid gap-3 p-3">
       <Panel title={t("settings.panels.runtime")}>
         <div class="grid gap-2">
-          <SideValue label={t("settings.display.heatmap")} value={status(gameSettings.isHeatmapEnabled())} />
-          <SideValue label={t("settings.display.histogram")} value={status(gameSettings.isHistogramEnabled())} />
-          <SideValue label={t("settings.performance.fps")} value={status(gameSettings.showFrameRate())} />
+          <SideValue label={t("settings.display.heatmap")} value={status(settings.isHeatmapEnabled())} />
+          <SideValue label={t("settings.display.histogram")} value={status(settings.isHistogramEnabled())} />
+          <SideValue label={t("settings.performance.fps")} value={status(settings.showFrameRate())} />
           <SideValue label={t("settings.language.label")} value={t(`settings.language.${locale()}`)} />
-          <SideValue
-            label={t("settings.features.advancedOrders")}
-            value={status(gameSettings.advancedOrdersEnabled())}
-          />
-          <SideValue label={t("settings.features.newsEvents")} value={status(gameSettings.newsEventsEnabled())} />
+          <SideValue label={t("settings.features.advancedOrders")} value={status(settings.advancedOrdersEnabled())} />
+          <SideValue label={t("settings.features.newsEvents")} value={status(settings.newsEventsEnabled())} />
         </div>
       </Panel>
     </div>

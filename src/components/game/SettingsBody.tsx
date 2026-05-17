@@ -2,7 +2,7 @@ import clsx from "clsx";
 import { Download, Upload } from "lucide-solid";
 import { createMemo, createSignal, For, type Component } from "solid-js";
 import { locales, locale, setLocale, t, type Locale } from "../../i18n/game";
-import { market } from "../../routes/game/state";
+import { market, settings } from "../../routes/game/state";
 import { encodings, type StoreEncoding, type StoreKind } from "../../storage/interface";
 import type { SaveFileStoreEntry, SaveFileStoreStatus } from "../../storage/persistence";
 import { Button } from "../../ui-kit/Button";
@@ -14,7 +14,6 @@ import { formatStorageBytes } from "../../utils";
 import type { AutosaveStatusReason } from "./autosaveStatus";
 import { Checkbox } from "../../ui-kit/Checkbox";
 import { HistogramNormalization } from "../OrderBookHistogram";
-import { gameSettings } from "./settings";
 
 const isLocale = (value: string): value is Locale => locales.includes(value as Locale);
 const checkboxFieldClass = "flex items-center justify-between gap-3";
@@ -132,8 +131,8 @@ const autosaveEntryStoreState = (entry: SaveFileStoreEntry<unknown>): string =>
 const errorMessage = (error: unknown): string => (error instanceof Error ? error.message : "Unknown error");
 
 export const SettingsBody: Component = () => {
-  const [candleIntervalInput, setCandleIntervalInput] = createSignal(String(gameSettings.candleInterval() / 1_000));
-  const [histogramWindowInput, setHistogramWindowInput] = createSignal(String(gameSettings.histogramWindowFraction()));
+  const [candleIntervalInput, setCandleIntervalInput] = createSignal(String(settings.candleInterval() / 1_000));
+  const [histogramWindowInput, setHistogramWindowInput] = createSignal(String(settings.histogramWindowFraction()));
   const [deltaSnapshotInput, setDeltaSnapshotInput] = createSignal(String(market.deltaSnapshotInterval()));
   const [fanoutInput, setFanoutInput] = createSignal(String(market.fanout()));
   const [levelsInput, setLevelsInput] = createSignal(String(market.levels()));
@@ -151,14 +150,14 @@ export const SettingsBody: Component = () => {
     { value: "opfs", label: t("autosave.store.opfs") },
     { value: "file-system", label: t("autosave.store.fileSystem") },
   ]);
-  const autosaveStatusEntry = () => gameSettings.autosaveStatus().entry;
+  const autosaveStatusEntry = () => settings.autosaveStatus().entry;
   const autosaveStatusStore = () => {
     const entry = autosaveStatusEntry();
 
     return entry ? autosaveStoreLabel(entry.kind) : t("autosave.store.manual");
   };
-  const autosaveStatusDetails = () => autosaveStatusCopy(gameSettings.autosaveStatus().reason, autosaveStatusStore());
-  const autosaveStatusClass = () => autosaveStatusToneClass(gameSettings.autosaveStatus().reason);
+  const autosaveStatusDetails = () => autosaveStatusCopy(settings.autosaveStatus().reason, autosaveStatusStore());
+  const autosaveStatusClass = () => autosaveStatusToneClass(settings.autosaveStatus().reason);
 
   const updatePositiveNumberInput = (
     value: string,
@@ -195,7 +194,7 @@ export const SettingsBody: Component = () => {
 
   const updateCandleIntervalInput = (value: string): void => {
     updatePositiveNumberInput(value, setCandleIntervalInput, (next) =>
-      gameSettings.setCandleInterval(Math.round(next * 1_000)),
+      settings.setCandleInterval(Math.round(next * 1_000)),
     );
   };
 
@@ -208,7 +207,7 @@ export const SettingsBody: Component = () => {
   };
 
   const updateHistogramWindowInput = (value: string): void => {
-    updateNonNegativeNumberInput(value, setHistogramWindowInput, gameSettings.setHistogramWindowFraction);
+    updateNonNegativeNumberInput(value, setHistogramWindowInput, settings.setHistogramWindowFraction);
   };
 
   const updateLevelsInput = (value: string): void => {
@@ -252,28 +251,28 @@ export const SettingsBody: Component = () => {
           <div class="grid gap-3">
             <Field class={checkboxFieldClass} label={t("settings.display.heatmap")}>
               <Checkbox
-                checked={gameSettings.isHeatmapEnabled()}
-                onInput={(event) => gameSettings.setIsHeatmapEnabled(event.currentTarget.checked)}
+                checked={settings.isHeatmapEnabled()}
+                onInput={(event) => settings.setIsHeatmapEnabled(event.currentTarget.checked)}
               />
             </Field>
             <Field class={checkboxFieldClass} label={t("settings.display.histogram")}>
               <Checkbox
-                checked={gameSettings.isHistogramEnabled()}
-                onInput={(event) => gameSettings.setIsHistogramEnabled(event.currentTarget.checked)}
+                checked={settings.isHistogramEnabled()}
+                onInput={(event) => settings.setIsHistogramEnabled(event.currentTarget.checked)}
               />
             </Field>
             <Field class={checkboxFieldClass} label={t("settings.display.cumulativeHistogram")}>
               <Checkbox
-                checked={gameSettings.isHistogramCumulative()}
-                onInput={(event) => gameSettings.setIsHistogramCumulative(event.currentTarget.checked)}
+                checked={settings.isHistogramCumulative()}
+                onInput={(event) => settings.setIsHistogramCumulative(event.currentTarget.checked)}
               />
             </Field>
             <Field label={t("settings.display.histogramNormalization")}>
               <Select
                 options={normalizationOptions()}
-                value={gameSettings.histogramNormalization()}
+                value={settings.histogramNormalization()}
                 onChange={(event) =>
-                  gameSettings.setHistogramNormalization(event.currentTarget.value as HistogramNormalization)
+                  settings.setHistogramNormalization(event.currentTarget.value as HistogramNormalization)
                 }
               />
             </Field>
@@ -286,7 +285,7 @@ export const SettingsBody: Component = () => {
             </Field>
             <Field label={t("settings.display.histogramWindowFraction")}>
               <TextInput
-                disabled={gameSettings.isHistogramCumulative()}
+                disabled={settings.isHistogramCumulative()}
                 inputMode="decimal"
                 value={histogramWindowInput()}
                 onInput={(event) => updateHistogramWindowInput(event.currentTarget.value)}
@@ -299,8 +298,8 @@ export const SettingsBody: Component = () => {
           <div class="grid gap-3">
             <Field class={checkboxFieldClass} label={t("settings.performance.fpsCounter")}>
               <Checkbox
-                checked={gameSettings.showFrameRate()}
-                onInput={(event) => gameSettings.setShowFrameRate(event.currentTarget.checked)}
+                checked={settings.showFrameRate()}
+                onInput={(event) => settings.setShowFrameRate(event.currentTarget.checked)}
               />
             </Field>
             <Field label={t("settings.performance.deltaSnapshotInterval")}>
@@ -332,32 +331,32 @@ export const SettingsBody: Component = () => {
             <div class="grid grid-cols-2 gap-3">
               <Field class={checkboxFieldClass} label={t("settings.features.autosave")}>
                 <Checkbox
-                  checked={gameSettings.autosaveEnabled()}
-                  onInput={(event) => gameSettings.setAutosaveEnabled(event.currentTarget.checked)}
+                  checked={settings.autosaveEnabled()}
+                  onInput={(event) => settings.setAutosaveEnabled(event.currentTarget.checked)}
                 />
               </Field>
               <Field label={t("settings.autosave.storage")}>
                 <Select
                   options={autosaveStorageOptions()}
-                  value={gameSettings.autosaveStorePreference() ?? "auto"}
+                  value={settings.autosaveStorePreference() ?? "auto"}
                   onChange={(event) =>
-                    gameSettings.setAutosaveStorePreference(parseAutosavePreference(event.currentTarget.value))
+                    settings.setAutosaveStorePreference(parseAutosavePreference(event.currentTarget.value))
                   }
                 />
               </Field>
               <Field label={t("settings.autosave.fileName")}>
                 <TextInput
-                  value={gameSettings.autosaveFileName()}
-                  onInput={(event) => gameSettings.setAutosaveFileName(event.currentTarget.value)}
+                  value={settings.autosaveFileName()}
+                  onInput={(event) => settings.setAutosaveFileName(event.currentTarget.value)}
                 />
               </Field>
               <Field label={t("settings.autosave.encoding")}>
                 <Select
                   options={autosaveEncodingOptions()}
-                  value={gameSettings.autosaveEncoding()}
+                  value={settings.autosaveEncoding()}
                   onChange={(event) => {
                     if (isStoreEncoding(event.currentTarget.value)) {
-                      gameSettings.setAutosaveEncoding(event.currentTarget.value);
+                      settings.setAutosaveEncoding(event.currentTarget.value);
                     }
                   }}
                 />
@@ -376,14 +375,12 @@ export const SettingsBody: Component = () => {
             </div>
 
             <div class="grid grid-cols-[repeat(auto-fit,minmax(14rem,1fr))] gap-3">
-              <For each={gameSettings.autosaveStores()}>
+              <For each={settings.autosaveStores()}>
                 {(entry) => (
                   <div
                     class={clsx(
                       "grid gap-2 rounded border bg-surface-secondary p-3",
-                      gameSettings.autosaveActiveStore()?.kind === entry.kind
-                        ? "border-accent-primary"
-                        : "border-border",
+                      settings.autosaveActiveStore()?.kind === entry.kind ? "border-accent-primary" : "border-border",
                     )}
                   >
                     <div class="flex items-center justify-between gap-3">
@@ -445,14 +442,14 @@ export const SettingsBody: Component = () => {
           <div class="grid gap-3">
             <Field class={checkboxFieldClass} label={t("settings.features.advancedOrders")}>
               <Checkbox
-                checked={gameSettings.advancedOrdersEnabled()}
-                onInput={(event) => gameSettings.setAdvancedOrdersEnabled(event.currentTarget.checked)}
+                checked={settings.advancedOrdersEnabled()}
+                onInput={(event) => settings.setAdvancedOrdersEnabled(event.currentTarget.checked)}
               />
             </Field>
             <Field class={checkboxFieldClass} label={t("settings.features.newsEvents")}>
               <Checkbox
-                checked={gameSettings.newsEventsEnabled()}
-                onInput={(event) => gameSettings.setNewsEventsEnabled(event.currentTarget.checked)}
+                checked={settings.newsEventsEnabled()}
+                onInput={(event) => settings.setNewsEventsEnabled(event.currentTarget.checked)}
               />
             </Field>
           </div>
