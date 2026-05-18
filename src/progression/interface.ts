@@ -2,24 +2,16 @@ import { batch, createMemo, createSignal } from "solid-js";
 import {
   ProgressionMetric,
   ProgressionNode,
-  ProgressionResource,
   type ProgressionGraph,
   type ProgressionMetrics,
   type ProgressionNodeData,
-  type ProgressionResources,
 } from "./data";
 import { assert } from "../utils";
+import { Resource, resourceValues, type InventoryState } from "../economy/inventory";
 
 // nodes that have all their progression node requirements fulfilled
 export type ProgressionFrontierNode = ProgressionNode;
 export type ProgressionFrontier = Array<ProgressionFrontierNode>;
-
-// todo: inventory instead of pure resources
-export type Progression = {
-  frontier: ProgressionFrontier;
-  metrics: ProgressionMetrics;
-  resources: ProgressionResources;
-};
 
 // complete - the node is already completed
 // available - the node is available for completion
@@ -38,22 +30,13 @@ const getInitialFrontier = (graph: ProgressionGraph): ProgressionFrontier => {
   }) as ProgressionNode[];
 };
 
-const getInitialProgression = (graph: ProgressionGraph): Progression => {
-  return {
-    frontier: getInitialFrontier(graph),
-    metrics: { [ProgressionMetric.Handwork]: 0 },
-    resources: { [ProgressionResource.Capital]: 0 },
-  };
-};
+const metricValues = Object.values(ProgressionMetric) as ProgressionMetric[];
 
-export const createProgression = (graph: ProgressionGraph) => {
+export const createProgression = (graph: ProgressionGraph, inventory: InventoryState) => {
   const [frontier, setFrontier] = createSignal<ProgressionFrontier>(getInitialFrontier(graph));
   const [metrics, setMetrics] = createSignal<ProgressionMetrics>({ [ProgressionMetric.Handwork]: 0 });
-  const [resources, setResources] = createSignal<ProgressionResources>({ [ProgressionResource.Capital]: 0 });
 
   const nodes = Object.keys(graph) as ProgressionFrontierNode[];
-  const _metrics = Object.keys(metrics()) as ProgressionMetric[];
-  const _resources = Object.keys(resources()) as ProgressionResource[];
 
   const compareNodeWithFrontier = (node: ProgressionFrontierNode, currentFrontier: ProgressionFrontier): number => {
     if (currentFrontier.includes(node)) return 0;
@@ -80,8 +63,8 @@ export const createProgression = (graph: ProgressionGraph) => {
     return metrics()[metric] >= value;
   };
 
-  const isAffordable = (resource: ProgressionResource, price: number) => {
-    return resources()[resource] >= price;
+  const isAffordable = (resource: Resource, price: number) => {
+    return inventory.resources()[resource] >= price;
   };
 
   const advanceFrontier = (node: ProgressionFrontierNode) => {
@@ -93,7 +76,7 @@ export const createProgression = (graph: ProgressionGraph) => {
 
     batch(() => {
       const prices = graph[node].prices;
-      for (const resource of _resources) removeResource(resource, prices[resource] ?? 0);
+      for (const resource of resourceValues) inventory.removeResource(resource, prices[resource] ?? 0);
 
       setFrontier(nextFrontier);
     });
@@ -105,24 +88,18 @@ export const createProgression = (graph: ProgressionGraph) => {
     const graphNode = graph[node];
     assert(graphNode.requirements.every(isComplete));
 
-    const areMilestonesReached = _metrics.every((metric) =>
+    const areMilestonesReached = metricValues.every((metric) =>
       isMilestoneReached(metric, graphNode.milestones[metric] ?? 0),
     );
-    const arePricesAffordable = _resources.every((resource) => isAffordable(resource, graphNode.prices[resource] ?? 0));
+    const arePricesAffordable = resourceValues.every((resource) =>
+      isAffordable(resource, graphNode.prices[resource] ?? 0),
+    );
 
     return areMilestonesReached && arePricesAffordable;
   };
 
   const addMetric = (metric: ProgressionMetric, value: number) => {
     setMetrics((current) => ({ ...current, [metric]: value }));
-  };
-
-  const addResource = (resource: ProgressionResource, value: number) => {
-    setResources((current) => ({ ...current, [resource]: value }));
-  };
-
-  const removeResource = (resource: ProgressionResource, value: number) => {
-    setResources((current) => ({ ...current, [resource]: current[resource] - value }));
   };
 
   const tierListState = createMemo<{ list: ProgressionTierList; frontier: ProgressionFrontier }>(
@@ -150,10 +127,7 @@ export const createProgression = (graph: ProgressionGraph) => {
 
     frontier,
     metrics,
-    resources,
     addMetric,
-    addResource,
-    removeResource,
 
     tierList,
     advanceFrontier,

@@ -3,15 +3,15 @@ import { t } from "../i18n/game";
 import type {
   ProgressionMetrics,
   ProgressionNode as ProgressionNodeType,
-  ProgressionResources,
 } from "../progression/data";
+import type { Inventory } from "../economy/inventory";
 import type { ProgressionTierList as ProgressionTierListType } from "../progression/interface";
 import { ProgressionNode } from "./ProgressionNode";
 import { Collapse } from "../ui-kit/Collapse";
 
 type ProgressionTierListProps = {
   metrics: ProgressionMetrics;
-  resources: ProgressionResources;
+  resources: Inventory;
   tierList: ProgressionTierListType;
   isComplete: (node: ProgressionNodeType) => boolean;
   onComplete: (node: ProgressionNodeType) => void;

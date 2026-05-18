@@ -118,7 +118,7 @@ export const dict = {
   "progression.node.title.Trading": "Trading",
   "progression.node.title.TradingAdvanced": "Advanced Trading",
   "progression.node.title.TradingLeverage": "Trading Leverage",
-  "progression.resource.Capital": "Capital {{ value }} / {{ total }}",
+  "progression.resource.Money": "Money {{ value }} / {{ total }}",
   "progression.price.title": "Price",
   "progression.tier": "Tier {{ tier }}",
   "progression.tierList.title": "Progression Tier List",

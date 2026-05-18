@@ -1,3 +1,5 @@
+import { Resource } from "../economy/inventory";
+
 export enum ProgressionNode {
   Handwork = "Handwork",
   HandworkProficiency = "HandworkProficiency",
@@ -13,15 +15,10 @@ export enum ProgressionMetric {
   Handwork = "Handwork",
 }
 
-export enum ProgressionResource {
-  Capital = "Capital",
-}
-
 export type ProgressionGraph = Record<ProgressionNode, ProgressionNodeData>;
-export type ProgressionPrice = Partial<Record<ProgressionResource, number>>;
+export type ProgressionPrice = Partial<Record<Resource, number>>;
 export type ProgressionMilestone = Partial<Record<ProgressionMetric, number>>;
 export type ProgressionMetrics = Record<ProgressionMetric, number>;
-export type ProgressionResources = Record<ProgressionResource, number>;
 
 export type ProgressionNodeData = {
   requirements: ProgressionNode[];
@@ -33,13 +30,13 @@ export const progressionGraph: ProgressionGraph = {
   [ProgressionNode.Handwork]: {
     requirements: [],
     milestones: {},
-    prices: { [ProgressionResource.Capital]: 5 },
+    prices: { [Resource.Money]: 5 },
   },
 
   [ProgressionNode.HandworkProficiency]: {
     requirements: [ProgressionNode.Handwork],
     milestones: { [ProgressionMetric.Handwork]: 50 },
-    prices: { [ProgressionResource.Capital]: 10 },
+    prices: { [Resource.Money]: 10 },
   },
 
   [ProgressionNode.Hardworking]: {
@@ -63,12 +60,12 @@ export const progressionGraph: ProgressionGraph = {
   [ProgressionNode.TradingAdvanced]: {
     requirements: [ProgressionNode.Trading],
     milestones: {},
-    prices: { [ProgressionResource.Capital]: 20 },
+    prices: { [Resource.Money]: 20 },
   },
 
   [ProgressionNode.TradingLeverage]: {
     requirements: [ProgressionNode.TradingAdvanced],
     milestones: { [ProgressionMetric.Handwork]: 500 },
-    prices: { [ProgressionResource.Capital]: 30 },
+    prices: { [Resource.Money]: 30 },
   },
 };

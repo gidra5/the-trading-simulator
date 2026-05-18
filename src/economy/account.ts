@@ -60,6 +60,7 @@ type AccountStateOptions = {
    };
  };
 
+export type Account = ReturnType<typeof createAccount>;
 export const createAccount = (options: AccountStateOptions) => {
   const market = options.market;
   const timeState = options.time;

@@ -32,7 +32,7 @@ export const EconomySidebar = () => {
     <div class="flex flex-col gap-6 p-4 border-border border-solid border-l border-y-0 border-r-0 h-full">
       <ProgressionFrontierPicker
         metrics={actor.progression.metrics()}
-        resources={actor.progression.resources()}
+        resources={actor.inventory.resources()}
         frontierNodes={pickerNodes()}
         onShuffle={() => setPickerNodes(samplePickerNodes())}
         onComplete={(node) => actor.progression.advanceFrontier(node)}
@@ -53,7 +53,7 @@ export const EconomySidebar = () => {
       />
       <ProgressionTierList
         metrics={actor.progression.metrics()}
-        resources={actor.progression.resources()}
+        resources={actor.inventory.resources()}
         tierList={actor.progression.tierList()}
         isComplete={(node) => actor.progression.isComplete(node)}
         onComplete={(node) => actor.progression.advanceFrontier(node)}

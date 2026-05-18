@@ -3,8 +3,8 @@ import { t } from "../i18n/game";
 import type {
   ProgressionMetrics,
   ProgressionNode as ProgressionNodeType,
-  ProgressionResources,
 } from "../progression/data";
+import type { Inventory } from "../economy/inventory";
 import { ProgressionNode } from "./ProgressionNode";
 import type { ProgressionTierNodeData } from "../progression/interface";
 import { Shuffle } from "lucide-solid";
@@ -12,7 +12,7 @@ import { Button } from "../ui-kit/Button";
 
 type ProgressionFrontierPickerProps = {
   metrics: ProgressionMetrics;
-  resources: ProgressionResources;
+  resources: Inventory;
   frontierNodes: ProgressionTierNodeData[];
   onShuffle: () => void;
   onComplete: (node: ProgressionNodeType) => void;

@@ -6,16 +6,15 @@ import type {
   ProgressionMilestone,
   ProgressionNode as ProgressionNodeType,
   ProgressionPrice,
-  ProgressionResource,
-  ProgressionResources,
 } from "../progression/data";
+import type { Inventory, Resource } from "../economy/inventory";
 import { Check, RotateCcw, X } from "lucide-solid";
 import { Button } from "../ui-kit/Button";
 
 type ProgressionNodeProps = {
   node: ProgressionNodeType;
   metrics: ProgressionMetrics;
-  resources: ProgressionResources;
+  resources: Inventory;
   milestones: ProgressionMilestone;
   prices: ProgressionPrice;
   isComplete: boolean;
@@ -25,7 +24,7 @@ type ProgressionNodeProps = {
 
 export const ProgressionNode: Component<ProgressionNodeProps> = (props) => {
   const milestones = () => Object.keys(props.milestones) as ProgressionMetric[];
-  const resources = () => Object.keys(props.prices) as ProgressionResource[];
+  const resources = () => Object.keys(props.prices) as Resource[];
   const available = () =>
     milestones().every((metric) => props.metrics[metric] >= props.milestones[metric]!) &&
     resources().every((resource) => props.resources[resource] >= props.prices[resource]!);

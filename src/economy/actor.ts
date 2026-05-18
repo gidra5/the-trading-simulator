@@ -5,6 +5,7 @@ import { createProgression } from "../progression/interface";
 import type { ProgressionGraph } from "../progression/data";
 import { createAccount } from "./account";
 import { createNeeds, type Needs } from "./needs";
+import { createInventory } from "./inventory";
 
 let nextActorId = 0;
 
@@ -29,8 +30,9 @@ type ActorOptions = {
 
 export const createActor = (options: ActorOptions) => {
   const id = nextActorId++;
-  const progression = createProgression(options.progressionGraph);
+  const inventory = createInventory();
   const account = createAccount(options);
+  const progression = createProgression(options.progressionGraph, inventory);
   const needs = createNeeds({
     dt: options.time.dt,
     decayRates: options.needsDecayRates,
@@ -39,5 +41,5 @@ export const createActor = (options: ActorOptions) => {
   const [name, setName] = createSignal(options.name);
   const meta: ActorMeta = { id, name, setName, birthDate: options.time.time() };
 
-  return { progression, account, needs, meta };
+  return { progression, inventory, account, needs, meta };
 };

@@ -1,4 +1,4 @@
-import type { createAccount } from "../../economy/account";
+import type { Account } from "../../economy/account";
 import type { OrderSide } from "../../market";
 
 export const orderSideValues = ["buy", "sell"] as const satisfies readonly OrderSide[];
@@ -6,5 +6,5 @@ export const orderSideValues = ["buy", "sell"] as const satisfies readonly Order
 export const orderKindValues = ["market", "limit"] as const;
 export type OrderKind = (typeof orderKindValues)[number];
 
-export type AccountState = ReturnType<typeof createAccount>;
+export type AccountState = Account;
 export type OrderHistoryEntry = ReturnType<AccountState["orderHistory"]>[number];
