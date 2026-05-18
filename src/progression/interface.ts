@@ -34,7 +34,11 @@ const metricValues = Object.values(ProgressionMetric) as ProgressionMetric[];
 
 export const createProgression = (graph: ProgressionGraph, inventory: InventoryState) => {
   const [frontier, setFrontier] = createSignal<ProgressionFrontier>(getInitialFrontier(graph));
-  const [metrics, setMetrics] = createSignal<ProgressionMetrics>({ [ProgressionMetric.Handwork]: 0 });
+  const [metrics, setMetrics] = createSignal<ProgressionMetrics>({
+    [ProgressionMetric.Handwork]: 0,
+    [ProgressionMetric.LeveragedTime]: 0,
+    [ProgressionMetric.Trades]: 0,
+  });
   const [scheduledNodes, setScheduledNodes] = createSignal<ProgressionFrontierNode[]>([]);
 
   const nodes = Object.keys(graph) as ProgressionFrontierNode[];
@@ -119,7 +123,7 @@ export const createProgression = (graph: ProgressionGraph, inventory: InventoryS
   });
 
   const addMetric = (metric: ProgressionMetric, value: number) => {
-    setMetrics((current) => ({ ...current, [metric]: value }));
+    setMetrics((current) => ({ ...current, [metric]: current[metric] + value }));
   };
 
   const tierListState = createMemo<{ list: ProgressionTierList; frontier: ProgressionFrontier }>(
