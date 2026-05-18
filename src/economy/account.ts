@@ -1,6 +1,9 @@
-import { createEffect, createSignal, untrack, type Accessor } from "solid-js";
+import { createEffect, createMemo, createSignal, untrack, type Accessor } from "solid-js";
 import { type MarketState, type OrderSide } from "../market";
+import { oppositeSide } from "../market/order";
 import { type SimulationTimeState } from "../simulation/time";
+import type { ProgressionState } from "../progression/interface";
+import { ProgressionMetric, ProgressionNode } from "../progression/data";
 
 let nextAccountId = 0;
 
@@ -29,6 +32,7 @@ type OrderHistoryEntry = {
 };
 
 type AccountStateOptions = {
+  progression: ProgressionState;
   market: MarketState;
   time: SimulationTimeState;
   feeRate: Accessor<number>;
@@ -36,29 +40,28 @@ type AccountStateOptions = {
   maintenanceMargin: Accessor<number>;
 };
 
- const createOrderHistory = (time: Accessor<number>) => {
-   let nextEntryId = 0;
-   const [entries, setEntries] = createSignal<OrderHistoryEntry[]>([]);
+const createOrderHistory = (time: Accessor<number>) => {
+  let nextEntryId = 0;
+  const [entries, setEntries] = createSignal<OrderHistoryEntry[]>([]);
 
-   const record = (entry: Omit<OrderHistoryEntry, "id" | "timestamp">): void => {
-     const historyEntry = { ...entry, id: nextEntryId++, timestamp: time() };
-     setEntries((current) => [historyEntry, ...current]);
-   };
+  const record = (entry: Omit<OrderHistoryEntry, "id" | "timestamp">): void => {
+    const historyEntry = { ...entry, id: nextEntryId++, timestamp: time() };
+    setEntries((current) => [historyEntry, ...current]);
+  };
 
-   return {
-     entries,
-     submitted: (entry: Omit<OrderHistoryEntry, "id" | "timestamp" | "kind" | "cost">): void =>
-       record({ ...entry, kind: "submitted", cost: 0 }),
-     partialFill: (entry: Omit<OrderHistoryEntry, "id" | "timestamp" | "kind">): void =>
-       record({ ...entry, kind: "partial-fill" }),
-     filled: (entry: Omit<OrderHistoryEntry, "id" | "timestamp" | "kind">): void =>
-       record({ ...entry, kind: "filled" }),
-     canceled: (entry: Omit<OrderHistoryEntry, "id" | "timestamp" | "kind" | "cost">): void =>
-       record({ ...entry, kind: "canceled", cost: 0 }),
-     liquidation: (entry: Omit<OrderHistoryEntry, "id" | "timestamp" | "kind">): void =>
-       record({ ...entry, kind: "liquidation" }),
-   };
- };
+  return {
+    entries,
+    submitted: (entry: Omit<OrderHistoryEntry, "id" | "timestamp" | "kind" | "cost">): void =>
+      record({ ...entry, kind: "submitted", cost: 0 }),
+    partialFill: (entry: Omit<OrderHistoryEntry, "id" | "timestamp" | "kind">): void =>
+      record({ ...entry, kind: "partial-fill" }),
+    filled: (entry: Omit<OrderHistoryEntry, "id" | "timestamp" | "kind">): void => record({ ...entry, kind: "filled" }),
+    canceled: (entry: Omit<OrderHistoryEntry, "id" | "timestamp" | "kind" | "cost">): void =>
+      record({ ...entry, kind: "canceled", cost: 0 }),
+    liquidation: (entry: Omit<OrderHistoryEntry, "id" | "timestamp" | "kind">): void =>
+      record({ ...entry, kind: "liquidation" }),
+  };
+};
 
 export type Account = ReturnType<typeof createAccount>;
 export const createAccount = (options: AccountStateOptions) => {
@@ -68,6 +71,19 @@ export const createAccount = (options: AccountStateOptions) => {
   const orderHistory = createOrderHistory(timeState.time);
   const [portfolio, setPortfolio] = createSignal<Portfolio>({ Money: 0, Stock: 0 });
   const [activeOrders, setActiveOrders] = createSignal<PendingOrder[]>([]);
+  const reservedPortfolio = createMemo(() => {
+    const reserved = { Money: 0, Stock: 0 };
+
+    for (const order of activeOrders()) {
+      if (order.side === "buy") reserved.Money -= order.price * order.size;
+      else reserved.Stock -= order.size;
+    }
+    return reserved;
+  });
+  const availablePortfolio = () => ({
+    Money: portfolio().Money - reservedPortfolio().Money,
+    Stock: portfolio().Stock - reservedPortfolio().Stock,
+  });
   let isLiquidating = false;
 
   const owned = () => ({
@@ -87,6 +103,25 @@ export const createAccount = (options: AccountStateOptions) => {
     return -portfolio().Money / (portfolio().Stock * (1 - options.maintenanceMargin() * Math.sign(portfolio().Stock)));
   };
 
+  const gates = {
+    liquidationHistory: () => options.progression.isComplete(ProgressionNode.LiquidationJournaling),
+    orderHistory: () => options.progression.isComplete(ProgressionNode.Journaling),
+    debt: () => options.progression.isComplete(ProgressionNode.TradingLeverage),
+    limitOrders: () => options.progression.isComplete(ProgressionNode.TradingAdvanced),
+  };
+
+  const tracking = {
+    trade: () => options.progression.addMetric(ProgressionMetric.Trades, 1),
+    liquidation: (dt: number) => options.progression.addMetric(ProgressionMetric.LeveragedTime, dt),
+  };
+
+  createEffect(() => {
+    if (portfolio().Money < 0 || portfolio().Stock < 0) {
+      const dt = options.time.dt();
+      tracking.liquidation(dt);
+    }
+  });
+
   const updatePortfolio = (size: number, moneyDelta: number): void => {
     setPortfolio((current) => ({
       Stock: current.Stock + size,
@@ -96,6 +131,45 @@ export const createAccount = (options: AccountStateOptions) => {
 
   const addMoney = (amount: number): void => {
     updatePortfolio(0, amount);
+  };
+
+  const trackOrderHistory = (record: () => void): void => {
+    if (gates.orderHistory()) record();
+  };
+
+  const trackLiquidationHistory = (entry: Omit<OrderHistoryEntry, "id" | "timestamp" | "kind">): void => {
+    if (gates.liquidationHistory()) orderHistory.liquidation(entry);
+  };
+
+  const estimateOrderCost = (side: OrderSide, size: number, price?: number): number => {
+    let cost = 0;
+    let fulfilled = 0;
+    const orders = market.orderBook()[oppositeSide(side)];
+    let orderIndex = orders.length - 1;
+
+    while (fulfilled < size) {
+      const order = orders[orderIndex];
+      if (!order) return cost;
+      if (price !== undefined && side === "buy" && order.price > price) return cost;
+      if (price !== undefined && side === "sell" && order.price < price) return cost;
+
+      const sizeToFulfill = Math.min(order.size, size - fulfilled);
+      fulfilled += sizeToFulfill;
+      cost += order.price * sizeToFulfill;
+      orderIndex -= 1;
+    }
+
+    return cost;
+  };
+
+  const canPlaceOrder = (side: OrderSide, size: number, price?: number): boolean => {
+    if (gates.debt()) return true;
+
+    const available = availablePortfolio();
+    if (side === "sell") return available.Stock >= size;
+
+    const cost = price === undefined ? estimateOrderCost(side, size) : price * size;
+    return available.Money >= cost;
   };
 
   const applyFill = (side: OrderSide, fulfilled: number, cost: number): void => {
@@ -108,38 +182,51 @@ export const createAccount = (options: AccountStateOptions) => {
   const cancelActiveOrder = (order: PendingOrder): void => {
     market.cancelOrder(order.id, order.side);
     setActiveOrders((current) => current.filter((pending) => pending.id !== order.id));
-    orderHistory.canceled({
-      orderId: order.id,
-      side: order.side,
-      size: order.size,
-      price: order.price,
-    });
+    trackOrderHistory(() =>
+      orderHistory.canceled({
+        orderId: order.id,
+        side: order.side,
+        size: order.size,
+        price: order.price,
+      }),
+    );
+  };
+
+  const trackActiveOrder = (order: PendingOrder): void => {
+    setActiveOrders((current) => (current.some((pending) => pending.id === order.id) ? current : [...current, order]));
   };
 
   const placeMarketOrder = (side: OrderSide, size: number): void => {
     if (size <= 0) return;
+    if (!canPlaceOrder(side, size)) return;
 
     const result = market.takeOrder(side, size);
     applyFill(side, result.fulfilled, result.cost);
     if (result.fulfilled > 0) {
-      orderHistory.filled({
-        orderId: result.id,
-        side,
-        size: result.fulfilled,
-        price: result.cost / result.fulfilled,
-        cost: result.cost,
-      });
+      tracking.trade();
+      trackOrderHistory(() =>
+        orderHistory.filled({
+          orderId: result.id,
+          side,
+          size: result.fulfilled,
+          price: result.cost / result.fulfilled,
+          cost: result.cost,
+        }),
+      );
     }
   };
 
   const placeLimitOrder = (side: OrderSide, price: number, size: number): void => {
     if (price <= 0 || size <= 0) return;
+    if (!gates.limitOrders()) return;
+    if (!canPlaceOrder(side, size, price)) return;
 
     const result = market.makeOrder(side, { price, size });
 
     applyFill(side, result.fulfilled, result.cost);
-    orderHistory.submitted({ orderId: result.order.id, side, size, price });
+    trackOrderHistory(() => orderHistory.submitted({ orderId: result.order.id, side, size, price }));
     if (result.fulfilled > 0) {
+      tracking.trade();
       const entry = {
         orderId: result.order.id,
         side,
@@ -147,22 +234,30 @@ export const createAccount = (options: AccountStateOptions) => {
         price: result.cost / result.fulfilled,
         cost: result.cost,
       };
-      if (result.order.size > 0) orderHistory.partialFill(entry);
-      else orderHistory.filled(entry);
+      if (result.order.size > 0) trackOrderHistory(() => orderHistory.partialFill(entry));
+      else trackOrderHistory(() => orderHistory.filled(entry));
     }
     if (result.order.size === 0) return;
 
+    trackActiveOrder({
+      id: result.order.id,
+      side,
+      price,
+      initialSize: size,
+      size: result.order.size,
+      createdAt: timeState.time(),
+    });
+
     market.subscribeToOrder(result.order.id, (change) => {
       if (change.kind === "add") {
-        const order = {
+        trackActiveOrder({
           id: result.order.id,
           side,
           price,
           initialSize: size,
-          size: result.order.size,
+          size: change.order.size,
           createdAt: timeState.time(),
-        };
-        setActiveOrders((current) => [...current, order]);
+        });
         return;
       }
 
@@ -173,26 +268,32 @@ export const createAccount = (options: AccountStateOptions) => {
         const cost = filled * change.order.price;
         setActiveOrders((current) => current.filter((order) => order.id !== change.order.id));
         applyFill(change.side, change.order.size, cost);
-        orderHistory.filled({
-          orderId: change.order.id,
-          side: change.side,
-          size: change.order.size,
-          price: change.order.price,
-          cost,
-        });
+        tracking.trade();
+        trackOrderHistory(() =>
+          orderHistory.filled({
+            orderId: change.order.id,
+            side: change.side,
+            size: change.order.size,
+            price: change.order.price,
+            cost,
+          }),
+        );
         return;
       }
 
       const filled = change.prevSize - change.order.size;
       const cost = filled * change.order.price;
       applyFill(pending.side, filled, cost);
-      orderHistory.partialFill({
-        orderId: change.order.id,
-        side: change.side,
-        size: filled,
-        price: change.order.price,
-        cost,
-      });
+      tracking.trade();
+      trackOrderHistory(() =>
+        orderHistory.partialFill({
+          orderId: change.order.id,
+          side: change.side,
+          size: filled,
+          price: change.order.price,
+          cost,
+        }),
+      );
 
       setActiveOrders((current) =>
         current.map((order) => (order.id === pending.id ? { ...order, size: change.order.size } : order)),
@@ -225,7 +326,7 @@ export const createAccount = (options: AccountStateOptions) => {
         const result = market.takeOrder("sell", current.Stock);
         applyFill("sell", result.fulfilled, result.cost);
         if (result.fulfilled > 0) {
-          orderHistory.liquidation({
+          trackLiquidationHistory({
             orderId: result.id,
             side: "sell",
             size: result.fulfilled,
@@ -242,7 +343,7 @@ export const createAccount = (options: AccountStateOptions) => {
         const result = market.takeOrder("buy", buySize);
         applyFill("buy", result.fulfilled, result.cost);
         if (result.fulfilled > 0) {
-          orderHistory.liquidation({
+          trackLiquidationHistory({
             orderId: result.id,
             side: "buy",
             size: result.fulfilled,
@@ -273,6 +374,11 @@ export const createAccount = (options: AccountStateOptions) => {
       const exit = ((sign + 1) / 2) * spread.buy + ((sign - 1) / 2) * spread.sell;
       return exit < sign * liquidation;
     };
+
+    if (!gates.debt()) {
+      repayDebtWithMarketOrders();
+      return;
+    }
 
     if (shouldLiquidate()) liquidate();
   });

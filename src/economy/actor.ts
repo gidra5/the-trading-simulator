@@ -31,8 +31,8 @@ type ActorOptions = {
 export const createActor = (options: ActorOptions) => {
   const id = nextActorId++;
   const inventory = createInventory();
-  const account = createAccount(options);
   const progression = createProgression(options.progressionGraph, inventory);
+  const account = createAccount({ ...options, progression });
   const needs = createNeeds({
     dt: options.time.dt,
     decayRates: options.needsDecayRates,

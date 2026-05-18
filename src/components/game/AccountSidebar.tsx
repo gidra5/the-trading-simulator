@@ -1,5 +1,7 @@
 import { For, Show, type Component } from "solid-js";
 import { t } from "../../i18n/game";
+import { ProgressionNode } from "../../progression/data";
+import { actor } from "../../routes/game/state";
 import { Panel } from "../../ui-kit/Panel";
 import { formatNumber } from "../../utils";
 import { digits, formatAmount } from "./format";
@@ -11,14 +13,23 @@ type AccountSidebarProps = {
 };
 
 export const AccountSidebar: Component<AccountSidebarProps> = (props) => {
+  const gates = {
+    liquidations: () => actor.progression.isComplete(ProgressionNode.LiquidationJournaling),
+    orderHistory: () => actor.progression.isComplete(ProgressionNode.Journaling),
+  };
+
   return (
     <div class="grid gap-3 p-3">
-      <Panel bodyClass="p-0" title={t("account.sidebar.ordersHistory")}>
-        <HistoryList entries={props.orderHistory} />
-      </Panel>
-      <Panel bodyClass="p-0" title={t("account.sidebar.liquidations")}>
-        <HistoryList entries={props.liquidations} />
-      </Panel>
+      <Show when={gates.orderHistory()}>
+        <Panel bodyClass="p-0" title={t("account.sidebar.ordersHistory")}>
+          <HistoryList entries={props.orderHistory} />
+        </Panel>
+      </Show>
+      <Show when={gates.liquidations()}>
+        <Panel bodyClass="p-0" title={t("account.sidebar.liquidations")}>
+          <HistoryList entries={props.liquidations} />
+        </Panel>
+      </Show>
     </div>
   );
 };

@@ -32,6 +32,7 @@ const getInitialFrontier = (graph: ProgressionGraph): ProgressionFrontier => {
 
 const metricValues = Object.values(ProgressionMetric) as ProgressionMetric[];
 
+export type ProgressionState = ReturnType<typeof createProgression>;
 export const createProgression = (graph: ProgressionGraph, inventory: InventoryState) => {
   const [frontier, setFrontier] = createSignal<ProgressionFrontier>(getInitialFrontier(graph));
   const [metrics, setMetrics] = createSignal<ProgressionMetrics>({

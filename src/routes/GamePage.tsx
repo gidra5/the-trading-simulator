@@ -1,5 +1,16 @@
-import { createEffect, createMemo, createSignal, Match, onCleanup, onMount, Switch } from "solid-js";
-import type { MarketState, OrderSide, PriceCandle } from "../market/index";
+import {
+  batch,
+  createEffect,
+  createMemo,
+  createSignal,
+  Match,
+  onCleanup,
+  onMount,
+  Switch,
+  untrack,
+  type Accessor,
+} from "solid-js";
+import type { MarketState, PriceCandle } from "../market/index";
 import { actor, market, settings as gameSettings, simulation, time } from "./game/state";
 import type { ChartViewport } from "../components/Chart";
 import { AccountBody } from "../components/game/AccountBody";
@@ -12,11 +23,14 @@ import { MarketBody } from "../components/game/MarketBody";
 import { MarketSidebar } from "../components/game/MarketSidebar";
 import { SettingsBody } from "../components/game/SettingsBody";
 import { SettingsSidebar } from "../components/game/SettingsSidebar";
-import type { OrderKind } from "../components/game/types";
+import { ProgressionMetric, ProgressionNode } from "../progression/data";
+import type { ProgressionState } from "../progression/interface";
 import { createThrottledMemo } from "../utils";
 
 const pollingInterval = 200;
-export const tabValues = ["market", "account", "economy", "settings"] as const;
+const initialClickValue = 0.05;
+const handworkClickValue = 1;
+const autoClickInterval = 1_000;
 
 const createAccountGameState = () => {
   const orderHistory = createMemo(() => actor.account.orderHistory().filter((entry) => entry.kind !== "liquidation"));
@@ -30,11 +44,6 @@ const createAccountGameState = () => {
 
 const createMarketGameState = (options: { market: MarketState; startTime: number }) => {
   const priceSpread = createThrottledMemo(options.market.marketPriceSpread, pollingInterval);
-
-  const [orderSide, setOrderSide] = createSignal<OrderSide>("buy");
-  const [orderKind, setOrderKind] = createSignal<OrderKind>("market");
-  const [orderPrice, setOrderPrice] = createSignal("1.001000");
-  const [orderSize, setOrderSize] = createSignal("100");
 
   const [viewport, setViewport] = createSignal<ChartViewport>({
     time: [options.startTime, options.startTime + 1 * 60 * 1000],
@@ -125,65 +134,58 @@ const createMarketGameState = (options: { market: MarketState; startTime: number
     });
   };
 
-  const placeOrder = (): void => {
-    const size = Number(orderSize());
-    if (!Number.isFinite(size) || size <= 0) return;
-
-    if (orderKind() === "market") {
-      actor.account.placeMarketOrder(orderSide(), size);
-      return;
-    }
-
-    const price = Number(orderPrice());
-    if (!Number.isFinite(price) || price <= 0) return;
-    actor.account.placeLimitOrder(orderSide(), price, size);
-  };
-
   return {
     candles,
     heatmap,
     histogram,
-    orderKind,
-    orderPrice,
-    orderSide,
-    orderSize,
-    placeOrder,
     priceSpread,
-    setOrderKind,
-    setOrderPrice,
-    setOrderSide,
-    setOrderSize,
     updateViewport,
     viewport,
   };
 };
 
-const createEconomyGameState = () => {
-  const [clickValue, setClickValue] = createSignal(25);
-  const [upgradeLevel, setUpgradeLevel] = createSignal(0);
-  const upgradeCost = createMemo(() => Math.round(500 * 1.2 ** upgradeLevel()));
-  const nextClickValue = createMemo(() => clickValue() + 25 + upgradeLevel() * 5);
-  const canBuyUpgrade = createMemo(() => actor.account.portfolio().Money >= upgradeCost());
+const createEconomyGameState = (options: { isActive: Accessor<boolean> }) => {
+  let autoClickElapsed = 0;
+  let previousAutoClickSample = time.time();
+  const gates = {
+    active: options.isActive,
+    automatedWork: () => actor.progression.isComplete(ProgressionNode.Habits),
+    handwork: () => actor.progression.isComplete(ProgressionNode.Handwork),
+  };
+  const tracking = {
+    work: (clicks: number): void => actor.progression.addMetric(ProgressionMetric.Handwork, clicks),
+  };
+  const clickValue = createMemo(() => (gates.handwork() ? handworkClickValue : initialClickValue));
 
-  const earnMoney = (): void => {
-    actor.account.addMoney(clickValue());
+  const earnMoney = (clicks: number): void => {
+    const value = clickValue() * clicks;
+    batch(() => {
+      actor.account.addMoney(value);
+      tracking.work(clicks);
+    });
   };
 
-  const buyClickUpgrade = (): void => {
-    if (!canBuyUpgrade()) return;
+  createEffect(() => {
+    const now = time.time();
+    const elapsed = now - previousAutoClickSample;
+    previousAutoClickSample = now;
 
-    actor.account.addMoney(-upgradeCost());
-    setClickValue(nextClickValue());
-    setUpgradeLevel((current) => current + 1);
-  };
+    if (!gates.active() || !gates.automatedWork()) {
+      autoClickElapsed = 0;
+      return;
+    }
+
+    autoClickElapsed += elapsed;
+    const clicks = Math.floor(autoClickElapsed / autoClickInterval);
+    if (clicks <= 0) return;
+
+    autoClickElapsed -= clicks * autoClickInterval;
+    untrack(() => earnMoney(clicks));
+  });
 
   return {
-    buyClickUpgrade,
-    canBuyUpgrade,
     clickValue,
-    earnMoney,
-    nextClickValue,
-    upgradeCost,
+    earnMoney: () => earnMoney(1),
   };
 };
 
@@ -216,11 +218,21 @@ const createAccountTelemetryState = () => {
 
 export default function GamePage() {
   const startTime = time.time();
-  const [activeTab, setActiveTab] = createSignal<Tab>("market");
+  const [activeTab, setActiveTab] = createSignal<Tab>("economy");
+  const gates = {
+    market: () => actor.progression.isComplete(ProgressionNode.Trading),
+  };
+  const mainTabs = createMemo<readonly Tab[]>(() => (gates.market() ? ["market", "economy"] : ["economy"]));
   const accountState = createAccountGameState();
   const marketState = createMarketGameState({ market, startTime });
-  const economy = createEconomyGameState();
+  const economy = createEconomyGameState({
+    isActive: () => activeTab() === "economy",
+  });
   const accountTelemetry = createAccountTelemetryState();
+
+  createEffect(() => {
+    if (activeTab() === "market" && !gates.market()) setActiveTab("economy");
+  });
 
   onMount(() => {
     let previousTimestamp = performance.now();
@@ -246,7 +258,7 @@ export default function GamePage() {
 
   return (
     <div class="font-body-primary-base-rg flex h-screen min-h-[680px] w-full flex-col overflow-hidden bg-surface-body text-text-primary">
-      <Header activeTab={activeTab()} tabs={tabValues} onTabChange={setActiveTab} />
+      <Header activeTab={activeTab()} tabs={mainTabs()} onTabChange={setActiveTab} />
 
       <div class="flex min-h-0 flex-1">
         <main class="min-w-0 flex-1">
@@ -261,7 +273,7 @@ export default function GamePage() {
               />
             </Match>
             <Match when={activeTab() === "account"}>
-              <AccountBody account={actor.account} />
+              <AccountBody />
             </Match>
             <Match when={activeTab() === "economy"}>
               <EconomyBody clickValue={economy.clickValue()} onEarnMoney={economy.earnMoney} />
@@ -274,18 +286,7 @@ export default function GamePage() {
         <aside class="w-[360px] shrink-0 overflow-auto bg-surface-primary">
           <Switch>
             <Match when={activeTab() === "market"}>
-              <MarketSidebar
-                account={actor.account}
-                orderKind={marketState.orderKind()}
-                orderPrice={marketState.orderPrice()}
-                orderSide={marketState.orderSide()}
-                orderSize={marketState.orderSize()}
-                onOrderKindChange={marketState.setOrderKind}
-                onOrderPriceChange={marketState.setOrderPrice}
-                onOrderSideChange={marketState.setOrderSide}
-                onOrderSizeChange={marketState.setOrderSize}
-                onPlaceOrder={marketState.placeOrder}
-              />
+              <MarketSidebar />
             </Match>
             <Match when={activeTab() === "account"}>
               <AccountSidebar liquidations={accountState.liquidations()} orderHistory={accountState.orderHistory()} />
@@ -301,8 +302,6 @@ export default function GamePage() {
       </div>
 
       <Footer
-        account={actor.account}
-        accountName={actor.meta.name()}
         autosaveStatus={gameSettings.autosaveStatus}
         cashPerMinute={accountTelemetry.cashPerMinute()}
         priceSpread={marketState.priceSpread}

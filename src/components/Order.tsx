@@ -1,6 +1,9 @@
 import { createSignal, For, Show, type Component } from "solid-js";
 import { assets, createAccount } from "../economy/account";
+import { createInventory, Resource } from "../economy/inventory";
 import type { MarketState } from "../market";
+import { progressionGraph, ProgressionMetric, ProgressionNode } from "../progression/data";
+import { createProgression } from "../progression/interface";
 import type { SimulationTimeState } from "../simulation/time";
 
 export const digits = 6;
@@ -23,11 +26,36 @@ type OrderProps = {
   time: SimulationTimeState;
 };
 
+const createUnlockedProgression = () => {
+  const inventory = createInventory();
+  const progression = createProgression(progressionGraph, inventory);
+
+  inventory.addResource(Resource.Money, 10_000);
+  progression.addMetric(ProgressionMetric.Handwork, 10_000);
+  progression.addMetric(ProgressionMetric.Trades, 10_000);
+  progression.addMetric(ProgressionMetric.LeveragedTime, 10 * 60 * 1000);
+
+  for (const node of [
+    ProgressionNode.Handwork,
+    ProgressionNode.Trading,
+    ProgressionNode.Journaling,
+    ProgressionNode.TradingAdvanced,
+    ProgressionNode.TradingLeverage,
+    ProgressionNode.LiquidationJournaling,
+  ]) {
+    progression.advanceFrontier(node);
+  }
+
+  return progression;
+};
+
 export const Order: Component<OrderProps> = (props) => {
   const [feeRate, setFeeRate] = createSignal(0.0001);
   const [debtCapitalizationRate, setDebtCapitalizationRate] = createSignal(0.00001);
   const [maintenanceMargin, setMaintenanceMargin] = createSignal(0);
+  const progression = createUnlockedProgression();
   const account = createAccount({
+    progression,
     market: props.market,
     time: props.time,
     feeRate,

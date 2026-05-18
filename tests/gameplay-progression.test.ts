@@ -3,25 +3,17 @@ import { expect, test } from "vitest";
 import { createActor } from "../src/economy/actor";
 import { createAccount } from "../src/economy/account";
 import { createMarketState } from "../src/market";
-import { progressionGraph, ProgressionMetric, ProgressionNode } from "../src/progression/data";
+import { progressionGraph, ProgressionMetric, ProgressionNode, type ProgressionMetrics } from "../src/progression/data";
+import type { ProgressionState } from "../src/progression/interface";
 import { createSimulationTimeState } from "../src/simulation/time";
 
-const createTestAccount = (options?: {
-  canTrackLiquidationHistory?: () => boolean;
-  canTrackOrderHistory?: () => boolean;
-  canUseDebt?: () => boolean;
-  canUseLimitOrders?: () => boolean;
-  onTrade?: () => void;
-}) => {
+const createTestAccount = (options?: { completedNodes?: ProgressionNode[] }) => {
   return createRoot(() => {
     const time = createSimulationTimeState();
     const market = createMarketState({ time: time.time });
+    const { progression, setNodeComplete } = createTestProgression(options?.completedNodes);
     const account = createAccount({
-      canTrackLiquidationHistory: options?.canTrackLiquidationHistory ?? (() => false),
-      canTrackOrderHistory: options?.canTrackOrderHistory ?? (() => false),
-      canUseDebt: options?.canUseDebt ?? (() => false),
-      canUseLimitOrders: options?.canUseLimitOrders ?? (() => false),
-      onTrade: options?.onTrade ?? (() => {}),
+      progression,
       market,
       time,
       debtCapitalizationRate: () => 0,
@@ -29,8 +21,39 @@ const createTestAccount = (options?: {
       maintenanceMargin: () => 0.05,
     });
 
-    return { account, market, time };
+    return { account, market, progression, setNodeComplete, time };
   });
+};
+
+const createTestProgression = (completedNodes: ProgressionNode[] = []) => {
+  const [completed, setCompleted] = createSignal(new Set(completedNodes));
+  const [metrics, setMetrics] = createSignal<ProgressionMetrics>({
+    [ProgressionMetric.Handwork]: 0,
+    [ProgressionMetric.LeveragedTime]: 0,
+    [ProgressionMetric.Trades]: 0,
+  });
+  const setNodeComplete = (node: ProgressionNode, isComplete: boolean): void => {
+    setCompleted((current) => {
+      const next = new Set(current);
+      if (isComplete) next.add(node);
+      else next.delete(node);
+      return next;
+    });
+  };
+  const progression = {
+    graph: progressionGraph,
+    frontier: () => [],
+    metrics,
+    addMetric: (metric, value) => setMetrics((current) => ({ ...current, [metric]: current[metric] + value })),
+    tierList: () => [],
+    advanceFrontier: (node) => setNodeComplete(node, true),
+    getScheduledNodeOrder: () => undefined,
+    getStatus: (node) => (completed().has(node) ? "complete" : "inaccessible"),
+    isComplete: (node) => completed().has(node),
+    toggleScheduledNode: () => {},
+  } satisfies ProgressionState;
+
+  return { progression, setNodeComplete };
 };
 
 test("actor progression capital follows account net worth", () => {
@@ -74,7 +97,7 @@ test("account cannot borrow before debt is enabled", () => {
 });
 
 test("account can borrow after debt is enabled", () => {
-  const { account } = createTestAccount({ canUseDebt: () => true });
+  const { account } = createTestAccount({ completedNodes: [ProgressionNode.TradingLeverage] });
   account.addMoney(0.5);
 
   account.placeMarketOrder("buy", 1);
@@ -84,56 +107,43 @@ test("account can borrow after debt is enabled", () => {
 });
 
 test("account only tracks order history after journaling is enabled", () => {
-  const [canTrackOrderHistory, setCanTrackOrderHistory] = createSignal(false);
-  let trades = 0;
-  const { account } = createTestAccount({
-    canTrackOrderHistory,
-    onTrade: () => {
-      trades += 1;
-    },
-  });
+  const { account, progression, setNodeComplete } = createTestAccount();
   account.addMoney(3);
 
   account.placeMarketOrder("buy", 1);
-  setCanTrackOrderHistory(true);
+  setNodeComplete(ProgressionNode.Journaling, true);
   account.placeMarketOrder("buy", 1);
 
-  expect(trades).toBe(2);
+  expect(progression.metrics().Trades).toBe(2);
   expect(account.orderHistory()).toHaveLength(1);
   expect(account.orderHistory()[0]?.kind).toBe("filled");
 });
 
 test("account only places limit orders after advanced trading is enabled", () => {
-  const [canUseLimitOrders, setCanUseLimitOrders] = createSignal(false);
-  const { account } = createTestAccount({ canUseLimitOrders });
+  const { account, setNodeComplete } = createTestAccount();
   account.addMoney(2);
 
   account.placeLimitOrder("buy", 0.5, 1);
-  setCanUseLimitOrders(true);
+  setNodeComplete(ProgressionNode.TradingAdvanced, true);
   account.placeLimitOrder("buy", 0.5, 1);
 
   expect(account.activeOrders()).toHaveLength(1);
 });
 
 test("account only tracks liquidation history after liquidation journaling is enabled", () => {
-  const [canUseDebt, setCanUseDebt] = createSignal(true);
-  const [canTrackLiquidationHistory, setCanTrackLiquidationHistory] = createSignal(false);
-  const { account, time } = createTestAccount({
-    canTrackLiquidationHistory,
-    canUseDebt,
-  });
+  const { account, setNodeComplete, time } = createTestAccount({ completedNodes: [ProgressionNode.TradingLeverage] });
   account.addMoney(0.5);
   account.placeMarketOrder("buy", 1);
-  setCanUseDebt(false);
+  setNodeComplete(ProgressionNode.TradingLeverage, false);
   time.advance(1);
 
   expect(account.orderHistory().filter((entry) => entry.kind === "liquidation")).toHaveLength(0);
 
   account.addMoney(0.5);
-  setCanUseDebt(true);
+  setNodeComplete(ProgressionNode.TradingLeverage, true);
   account.placeMarketOrder("buy", 1);
-  setCanTrackLiquidationHistory(true);
-  setCanUseDebt(false);
+  setNodeComplete(ProgressionNode.LiquidationJournaling, true);
+  setNodeComplete(ProgressionNode.TradingLeverage, false);
   time.advance(1);
 
   expect(account.orderHistory().filter((entry) => entry.kind === "liquidation")).toHaveLength(1);
