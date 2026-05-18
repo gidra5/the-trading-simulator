@@ -1,4 +1,5 @@
 import { createEffect, createMemo, createSignal, For, Show, type Component } from "solid-js";
+import { Resource } from "../../economy/inventory";
 import { t } from "../../i18n/game";
 import type { OrderSide } from "../../market";
 import { Button } from "../../ui-kit/Button";
@@ -7,7 +8,7 @@ import { Panel } from "../../ui-kit/Panel";
 import { Radio } from "../../ui-kit/Radio";
 import { TextInput } from "../../ui-kit/TextInput";
 import { formatNumber } from "../../utils";
-import { digits, formatAmount } from "./format";
+import { digits, formatAmount, formatMoney } from "./format";
 import { orderKindValues, orderSideValues, type OrderKind } from "./types";
 import { actor } from "../../routes/game/state";
 import { ProgressionNode } from "../../progression/data";
@@ -21,6 +22,7 @@ export const MarketSidebar: Component = () => {
   const [orderKind, setOrderKind] = createSignal<OrderKind>("market");
   const [orderPrice, setOrderPrice] = createSignal("1.001000");
   const [orderSize, setOrderSize] = createSignal("100");
+  const [transferAmount, setTransferAmount] = createSignal("100");
   const orderSideTabs = createMemo(() => orderSideValues.map((value) => ({ value, label: t(`order.side.${value}`) })));
   const orderKindTabs = createMemo(() =>
     orderKindValues
@@ -42,6 +44,27 @@ export const MarketSidebar: Component = () => {
     actor.account.placeLimitOrder(orderSide(), price, size);
   };
 
+  const parsedTransferAmount = (): number => {
+    const amount = Number(transferAmount());
+    return Number.isFinite(amount) && amount > 0 ? amount : 0;
+  };
+
+  const depositMoney = (): void => {
+    const amount = Math.min(parsedTransferAmount(), actor.inventory.resources().Money);
+    if (amount <= 0) return;
+
+    actor.inventory.removeResource(Resource.Money, amount);
+    actor.account.addMoney(amount);
+  };
+
+  const withdrawMoney = (): void => {
+    const amount = Math.min(parsedTransferAmount(), Math.max(0, actor.account.portfolio().Money));
+    if (amount <= 0) return;
+
+    actor.account.addMoney(-amount);
+    actor.inventory.addResource(Resource.Money, amount);
+  };
+
   createEffect(() => {
     if (orderKind() === "limit" && !gates.limitOrders()) setOrderKind("market");
   });
@@ -51,7 +74,9 @@ export const MarketSidebar: Component = () => {
       <Panel title={t("market.order.placement")}>
         <div class="grid gap-3">
           <Radio class="w-full" options={orderSideTabs()} value={orderSide()} onChange={setOrderSide} />
-          <Radio class="w-full" options={orderKindTabs()} value={orderKind()} onChange={setOrderKind} />
+          <Show when={gates.limitOrders()}>
+            <Radio class="w-full" options={orderKindTabs()} value={orderKind()} onChange={setOrderKind} />
+          </Show>
           <Show when={orderKind() === "limit"}>
             <Field label={t("market.order.limitPrice")}>
               <TextInput
@@ -71,6 +96,36 @@ export const MarketSidebar: Component = () => {
           <Button variant="primary" onClick={placeOrder}>
             {t("market.order.place")}
           </Button>
+        </div>
+      </Panel>
+
+      <Panel title={t("market.transfer.title")}>
+        <div class="grid gap-3">
+          <div class="grid grid-cols-2 gap-3">
+            <div class="grid gap-1">
+              <span class="font-body-primary-xs-rg text-text-secondary">{t("market.transfer.inventory")}</span>
+              <span class="font-mono-primary-sm-rg text-text-primary">
+                {formatMoney(actor.inventory.resources().Money)}
+              </span>
+            </div>
+            <div class="grid gap-1">
+              <span class="font-body-primary-xs-rg text-text-secondary">{t("market.transfer.account")}</span>
+              <span class="font-mono-primary-sm-rg text-text-primary">
+                {formatMoney(actor.account.portfolio().Money)}
+              </span>
+            </div>
+          </div>
+          <Field label={t("market.transfer.amount")}>
+            <TextInput
+              inputMode="decimal"
+              value={transferAmount()}
+              onInput={(event) => setTransferAmount(event.currentTarget.value)}
+            />
+          </Field>
+          <div class="grid grid-cols-2 gap-2">
+            <Button onClick={depositMoney}>{t("market.transfer.deposit")}</Button>
+            <Button onClick={withdrawMoney}>{t("market.transfer.withdraw")}</Button>
+          </div>
         </div>
       </Panel>
 

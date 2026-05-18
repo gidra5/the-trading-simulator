@@ -23,8 +23,8 @@ import { MarketBody } from "../components/game/MarketBody";
 import { MarketSidebar } from "../components/game/MarketSidebar";
 import { SettingsBody } from "../components/game/SettingsBody";
 import { SettingsSidebar } from "../components/game/SettingsSidebar";
+import { Resource } from "../economy/inventory";
 import { ProgressionMetric, ProgressionNode } from "../progression/data";
-import type { ProgressionState } from "../progression/interface";
 import { createThrottledMemo } from "../utils";
 
 const pollingInterval = 200;
@@ -160,7 +160,7 @@ const createEconomyGameState = (options: { isActive: Accessor<boolean> }) => {
   const earnMoney = (clicks: number): void => {
     const value = clickValue() * clicks;
     batch(() => {
-      actor.account.addMoney(value);
+      actor.inventory.addResource(Resource.Money, value);
       tracking.work(clicks);
     });
   };
@@ -191,14 +191,14 @@ const createEconomyGameState = (options: { isActive: Accessor<boolean> }) => {
 
 const createAccountTelemetryState = () => {
   let previousSample = {
-    cash: actor.account.portfolio().Money,
+    cash: actor.inventory.resources().Money,
     netWorth: actor.account.netWorth(),
     time: time.time(),
   };
   const [cashPerMinute, setCashPerMinute] = createSignal(0);
 
   createEffect(() => {
-    const sample = { cash: actor.account.portfolio().Money, netWorth: actor.account.netWorth(), time: time.time() };
+    const sample = { cash: actor.inventory.resources().Money, netWorth: actor.account.netWorth(), time: time.time() };
     const elapsed = sample.time - previousSample.time;
 
     if (elapsed <= 0) {
