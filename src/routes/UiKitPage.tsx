@@ -18,6 +18,7 @@ import { createWebFileSystemStore, webFileSystemDirectory } from "../storage/web
 import { encodings, extensions, mimeTypes, type Store, type StoreEncoding, type StoreKind } from "../storage/interface";
 import { t } from "../i18n/game";
 import { Button } from "../ui-kit/Button";
+import { Collapse } from "../ui-kit/Collapse";
 import { Field } from "../ui-kit/Field";
 import { Metric } from "../ui-kit/Metric";
 import { Panel } from "../ui-kit/Panel";
@@ -135,6 +136,24 @@ const iconSamples: readonly { Icon: LucideIcon; label: string; toneClass: string
   { Icon: Wallet, label: "Wallet", toneClass: "text-text-primary" },
   { Icon: CircleDollarSign, label: "Capital", toneClass: "text-accent-secondary" },
   { Icon: Settings, label: "Settings", toneClass: "text-text-secondary" },
+] as const;
+
+const collapseSamples = [
+  {
+    value: "market",
+    title: "Market tools",
+    content: "Compact controls for switching charts, heatmaps, and live order book views.",
+  },
+  {
+    value: "risk",
+    title: "Risk checks",
+    content: "Account summaries keep available cash, exposure, leverage, and liquidation state nearby.",
+  },
+  {
+    value: "storage",
+    title: "Storage flow",
+    content: "Save stores can resolve automatically or target a specific browser storage backend.",
+  },
 ] as const;
 
 const saveStorageOptions: readonly { label: string; value: StoreKind }[] = [
@@ -601,6 +620,12 @@ export default function UiKitPage() {
           <Panel title="Controls">
             <div class="grid gap-4">
               <Radio options={kitTabs} value={activeTab()} onChange={setActiveTab} />
+
+              <div class="grid gap-2">
+                <For each={collapseSamples}>
+                  {(sample) => <Collapse title={sample.title}>{sample.content}</Collapse>}
+                </For>
+              </div>
 
               <div class="flex flex-row gap-2">
                 <Link>Link</Link>

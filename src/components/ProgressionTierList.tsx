@@ -7,6 +7,7 @@ import type {
 } from "../progression/data";
 import type { ProgressionTierList as ProgressionTierListType } from "../progression/interface";
 import { ProgressionNode } from "./ProgressionNode";
+import { Collapse } from "../ui-kit/Collapse";
 
 type ProgressionTierListProps = {
   metrics: ProgressionMetrics;
@@ -30,26 +31,25 @@ export const ProgressionTierList: Component<ProgressionTierListProps> = (props) 
         <div class="flex flex-col gap-2">
           <For each={props.tierList}>
             {(tier, index) => (
-              <div class="flex flex-col gap-2">
-                <span class="font-title-primary-base-rg text-text-primary">
-                  {t(`progression.tier`, { tier: index() })}
-                </span>
-                <For each={tier}>
-                  {(node) => (
-                    <div class="flex flex-row gap-1">
-                      <ProgressionNode
-                        node={node.node}
-                        metrics={props.metrics}
-                        resources={props.resources}
-                        milestones={node.milestones}
-                        prices={node.prices}
-                        isComplete={props.isComplete(node.node)}
-                        onComplete={() => props.onComplete(node.node)}
-                      />
-                    </div>
-                  )}
-                </For>
-              </div>
+              <Collapse title={t(`progression.tier`, { tier: index() })} open={index() === props.tierList.length - 1}>
+                <div class="flex flex-col gap-2">
+                  <For each={tier}>
+                    {(node) => (
+                      <div class="flex flex-row gap-1">
+                        <ProgressionNode
+                          node={node.node}
+                          metrics={props.metrics}
+                          resources={props.resources}
+                          milestones={node.milestones}
+                          prices={node.prices}
+                          isComplete={props.isComplete(node.node)}
+                          onComplete={() => props.onComplete(node.node)}
+                        />
+                      </div>
+                    )}
+                  </For>
+                </div>
+              </Collapse>
             )}
           </For>
         </div>
