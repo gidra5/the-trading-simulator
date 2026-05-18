@@ -14,9 +14,11 @@ type ProgressionFrontierPickerProps = {
   metrics: ProgressionMetrics;
   resources: Inventory;
   frontierNodes: ProgressionTierNodeData[];
+  getScheduledOrder: (node: ProgressionNodeType) => number | undefined;
   onShuffle: () => void;
   onComplete: (node: ProgressionNodeType) => void;
   onRefresh: (index: number) => void;
+  onToggleSchedule: (node: ProgressionNodeType) => void;
 };
 
 export const ProgressionFrontierPicker: Component<ProgressionFrontierPickerProps> = (props) => {
@@ -44,8 +46,10 @@ export const ProgressionFrontierPicker: Component<ProgressionFrontierPickerProps
                 milestones={node.milestones}
                 prices={node.prices}
                 isComplete={false}
+                scheduledOrder={props.getScheduledOrder(node.node)}
                 onComplete={() => props.onComplete(node.node)}
                 onRefresh={() => props.onRefresh(index())}
+                onToggleSchedule={() => props.onToggleSchedule(node.node)}
               />
             )}
           </For>

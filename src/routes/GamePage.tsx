@@ -246,7 +246,7 @@ export default function GamePage() {
 
   return (
     <div class="font-body-primary-base-rg flex h-screen min-h-[680px] w-full flex-col overflow-hidden bg-surface-body text-text-primary">
-      <Header tabs={["market", "economy"]} activeTab={activeTab()} onTabChange={setActiveTab} />
+      <Header activeTab={activeTab()} tabs={tabValues} onTabChange={setActiveTab} />
 
       <div class="flex min-h-0 flex-1">
         <main class="min-w-0 flex-1">

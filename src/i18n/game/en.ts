@@ -120,6 +120,8 @@ export const dict = {
   "progression.node.title.TradingLeverage": "Trading Leverage",
   "progression.resource.Money": "Money {{ value }} / {{ total }}",
   "progression.price.title": "Price",
+  "progression.schedule.add": "Add to upgrade queue",
+  "progression.schedule.position": "Queued upgrade #{{ order }}",
   "progression.tier": "Tier {{ tier }}",
   "progression.tierList.title": "Progression Tier List",
   "progression.tierList.description": "Shows a random selection of skills available for completion.",

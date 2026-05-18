@@ -34,8 +34,10 @@ export const EconomySidebar = () => {
         metrics={actor.progression.metrics()}
         resources={actor.inventory.resources()}
         frontierNodes={pickerNodes()}
+        getScheduledOrder={(node) => actor.progression.getScheduledNodeOrder(node)}
         onShuffle={() => setPickerNodes(samplePickerNodes())}
         onComplete={(node) => actor.progression.advanceFrontier(node)}
+        onToggleSchedule={(node) => actor.progression.toggleScheduledNode(node)}
         onRefresh={(idx) =>
           setPickerNodes((current) => {
             if (actor.progression.frontier().length <= settings.frontierPickerSize()) return current;
@@ -55,8 +57,10 @@ export const EconomySidebar = () => {
         metrics={actor.progression.metrics()}
         resources={actor.inventory.resources()}
         tierList={actor.progression.tierList()}
+        getScheduledOrder={(node) => actor.progression.getScheduledNodeOrder(node)}
         isComplete={(node) => actor.progression.isComplete(node)}
         onComplete={(node) => actor.progression.advanceFrontier(node)}
+        onToggleSchedule={(node) => actor.progression.toggleScheduledNode(node)}
       />
     </div>
   );

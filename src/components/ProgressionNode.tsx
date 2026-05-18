@@ -8,7 +8,7 @@ import type {
   ProgressionPrice,
 } from "../progression/data";
 import type { Inventory, Resource } from "../economy/inventory";
-import { Check, RotateCcw, X } from "lucide-solid";
+import { Check, ListEnd, RotateCcw, X } from "lucide-solid";
 import { Button } from "../ui-kit/Button";
 
 type ProgressionNodeProps = {
@@ -18,8 +18,10 @@ type ProgressionNodeProps = {
   milestones: ProgressionMilestone;
   prices: ProgressionPrice;
   isComplete: boolean;
+  scheduledOrder?: number;
   onRefresh?: () => void;
   onComplete?: () => void;
+  onToggleSchedule?: () => void;
 };
 
 export const ProgressionNode: Component<ProgressionNodeProps> = (props) => {
@@ -28,6 +30,10 @@ export const ProgressionNode: Component<ProgressionNodeProps> = (props) => {
   const available = () =>
     milestones().every((metric) => props.metrics[metric] >= props.milestones[metric]!) &&
     resources().every((resource) => props.resources[resource] >= props.prices[resource]!);
+  const scheduleTitle = () =>
+    props.scheduledOrder === undefined
+      ? t("progression.schedule.add")
+      : t("progression.schedule.position", { order: props.scheduledOrder });
   return (
     <div class="p-2 w-full rounded-md flex flex-col gap-4 bg-surface-secondary">
       <div class="flex flex-col gap-1">
@@ -35,6 +41,23 @@ export const ProgressionNode: Component<ProgressionNodeProps> = (props) => {
           <span class="font-title-primary-xs-rg text-text-primary">{t(`progression.node.title.${props.node}`)}</span>
 
           <div class="flex flex-row gap-1">
+            <Show when={props.onToggleSchedule && !props.isComplete}>
+              <Button
+                active={props.scheduledOrder !== undefined}
+                aria-label={scheduleTitle()}
+                title={scheduleTitle()}
+                variant="icon"
+                onClick={props.onToggleSchedule}
+                size="sm"
+              >
+                <Show
+                  when={props.scheduledOrder !== undefined}
+                  fallback={<ListEnd aria-hidden="true" class="h-4 w-4" strokeWidth={1.8} />}
+                >
+                  <span class="font-mono-primary-xs-semi text-accent-primary">{props.scheduledOrder}</span>
+                </Show>
+              </Button>
+            </Show>
             <Show when={props.onRefresh}>
               <Button variant="icon" onClick={props.onRefresh} size="sm">
                 <RotateCcw aria-hidden="true" class="h-4 w-4" strokeWidth={1.8} />

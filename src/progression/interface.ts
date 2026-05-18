@@ -1,4 +1,4 @@
-import { batch, createMemo, createSignal } from "solid-js";
+import { batch, createEffect, createMemo, createSignal } from "solid-js";
 import {
   ProgressionMetric,
   ProgressionNode,
@@ -35,6 +35,7 @@ const metricValues = Object.values(ProgressionMetric) as ProgressionMetric[];
 export const createProgression = (graph: ProgressionGraph, inventory: InventoryState) => {
   const [frontier, setFrontier] = createSignal<ProgressionFrontier>(getInitialFrontier(graph));
   const [metrics, setMetrics] = createSignal<ProgressionMetrics>({ [ProgressionMetric.Handwork]: 0 });
+  const [scheduledNodes, setScheduledNodes] = createSignal<ProgressionFrontierNode[]>([]);
 
   const nodes = Object.keys(graph) as ProgressionFrontierNode[];
 
@@ -98,6 +99,25 @@ export const createProgression = (graph: ProgressionGraph, inventory: InventoryS
     return areMilestonesReached && arePricesAffordable;
   };
 
+  const toggleScheduledNode = (node: ProgressionFrontierNode) => {
+    setScheduledNodes((current) =>
+      current.includes(node) ? current.filter((scheduledNode) => scheduledNode !== node) : [...current, node],
+    );
+  };
+
+  const getScheduledNodeOrder = (node: ProgressionFrontierNode) => {
+    const index = scheduledNodes().indexOf(node);
+    return index === -1 ? undefined : index + 1;
+  };
+
+  createEffect(() => {
+    for (const node of scheduledNodes()) {
+      if (!isAvailable(node)) break;
+      advanceFrontier(node);
+      toggleScheduledNode(node);
+    }
+  });
+
   const addMetric = (metric: ProgressionMetric, value: number) => {
     setMetrics((current) => ({ ...current, [metric]: value }));
   };
@@ -131,7 +151,9 @@ export const createProgression = (graph: ProgressionGraph, inventory: InventoryS
 
     tierList,
     advanceFrontier,
+    getScheduledNodeOrder,
     getStatus,
     isComplete,
+    toggleScheduledNode,
   };
 };

@@ -1,9 +1,6 @@
 import { For, Show, type Component } from "solid-js";
 import { t } from "../i18n/game";
-import type {
-  ProgressionMetrics,
-  ProgressionNode as ProgressionNodeType,
-} from "../progression/data";
+import type { ProgressionMetrics, ProgressionNode as ProgressionNodeType } from "../progression/data";
 import type { Inventory } from "../economy/inventory";
 import type { ProgressionTierList as ProgressionTierListType } from "../progression/interface";
 import { ProgressionNode } from "./ProgressionNode";
@@ -13,8 +10,10 @@ type ProgressionTierListProps = {
   metrics: ProgressionMetrics;
   resources: Inventory;
   tierList: ProgressionTierListType;
+  getScheduledOrder: (node: ProgressionNodeType) => number | undefined;
   isComplete: (node: ProgressionNodeType) => boolean;
   onComplete: (node: ProgressionNodeType) => void;
+  onToggleSchedule: (node: ProgressionNodeType) => void;
 };
 
 export const ProgressionTierList: Component<ProgressionTierListProps> = (props) => {
@@ -44,6 +43,8 @@ export const ProgressionTierList: Component<ProgressionTierListProps> = (props) 
                           prices={node.prices}
                           isComplete={props.isComplete(node.node)}
                           onComplete={() => props.onComplete(node.node)}
+                          scheduledOrder={props.getScheduledOrder(node.node)}
+                          onToggleSchedule={() => props.onToggleSchedule(node.node)}
                         />
                       </div>
                     )}
