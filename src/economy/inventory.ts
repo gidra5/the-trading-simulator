@@ -12,7 +12,7 @@ export const createInventory = () => {
   const [resources, setResources] = createSignal<Inventory>({ [Resource.Money]: 0 });
 
   const addResource = (resource: Resource, value: number) => {
-    setResources((current) => ({ ...current, [resource]: value }));
+    setResources((current) => ({ ...current, [resource]: current[resource] + value }));
   };
 
   const removeResource = (resource: Resource, value: number) => {
