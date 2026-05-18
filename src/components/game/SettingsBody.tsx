@@ -2,7 +2,7 @@ import clsx from "clsx";
 import { Download, Upload } from "lucide-solid";
 import { createMemo, createSignal, For, type Component } from "solid-js";
 import { locales, locale, setLocale, t, type Locale } from "../../i18n/game";
-import { market, settings } from "../../routes/game/state";
+import { settings } from "../../routes/game/state";
 import { encodings, type StoreEncoding, type StoreKind } from "../../storage/interface";
 import type { SaveFileStoreEntry, SaveFileStoreStatus } from "../../storage/persistence";
 import { Button } from "../../ui-kit/Button";
@@ -136,9 +136,9 @@ const errorMessage = (error: unknown): string => (error instanceof Error ? error
 export const SettingsBody: Component = () => {
   const [candleIntervalInput, setCandleIntervalInput] = createSignal(String(settings.candleInterval() / 1_000));
   const [histogramWindowInput, setHistogramWindowInput] = createSignal(String(settings.histogramWindowFraction()));
-  const [deltaSnapshotInput, setDeltaSnapshotInput] = createSignal(String(market.deltaSnapshotInterval()));
-  const [fanoutInput, setFanoutInput] = createSignal(String(market.fanout()));
-  const [levelsInput, setLevelsInput] = createSignal(String(market.levels()));
+  const [deltaSnapshotInput, setDeltaSnapshotInput] = createSignal(String(settings.deltaSnapshotInterval()));
+  const [fanoutInput, setFanoutInput] = createSignal(String(settings.orderBookFanout()));
+  const [levelsInput, setLevelsInput] = createSignal(String(settings.orderBookLevels()));
   const [settingsTransferStatus, setSettingsTransferStatus] = createSignal("");
   const languageOptions = createMemo(() => locales.map((value) => ({ value, label: t(`settings.language.${value}`) })));
   const normalizationOptions = createMemo(() => [
@@ -202,11 +202,11 @@ export const SettingsBody: Component = () => {
   };
 
   const updateDeltaSnapshotInput = (value: string): void => {
-    updatePositiveIntegerInput(value, setDeltaSnapshotInput, market.setDeltaSnapshotInterval);
+    updatePositiveIntegerInput(value, setDeltaSnapshotInput, settings.setDeltaSnapshotInterval);
   };
 
   const updateFanoutInput = (value: string): void => {
-    updatePositiveIntegerInput(value, setFanoutInput, market.setFanout);
+    updatePositiveIntegerInput(value, setFanoutInput, settings.setOrderBookFanout);
   };
 
   const updateHistogramWindowInput = (value: string): void => {
@@ -214,7 +214,7 @@ export const SettingsBody: Component = () => {
   };
 
   const updateLevelsInput = (value: string): void => {
-    updatePositiveIntegerInput(value, setLevelsInput, market.setLevels);
+    updatePositiveIntegerInput(value, setLevelsInput, settings.setOrderBookLevels);
   };
 
   const exportSettings = async (): Promise<void> => {

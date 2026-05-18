@@ -8,6 +8,13 @@ type AutosaveStorePreference = Exclude<StoreKind, "manual"> | null;
 
 // todo: lifetime for history - store at most last time interval of size N
 export const createSettings = () => {
+  const [cancellationCandidatesCount, setCancellationCandidatesCount] = createSignal(64);
+  const [deltaSnapshotInterval, setDeltaSnapshotInterval] = createSignal(100);
+  const [orderBookFanout, setOrderBookFanout] = createSignal(5);
+  const [orderBookLevels, setOrderBookLevels] = createSignal(5);
+  const [seed, setSeed] = createSignal(Math.random());
+  const [histogramPriceReference, setHistogramPriceReference] = createSignal(1);
+  const [histogramFanout, setHistogramFanout] = createSignal(5);
   const [frontierPickerSize, setFrontierPickerSize] = createSignal(3);
   const [candleInterval, setCandleInterval] = createSignal(1_000);
   const [isHeatmapEnabled, setIsHeatmapEnabled] = createSignal(false);
@@ -47,6 +54,11 @@ export const createSettings = () => {
   );
 
   return {
+    deltaSnapshotInterval,
+    orderBookFanout,
+    orderBookLevels,
+    histogramPriceReference,
+    histogramFanout,
     frontierPickerSize,
     advancedOrdersEnabled,
     autosaveActiveStore: autosaveFileStore.active,
@@ -67,6 +79,16 @@ export const createSettings = () => {
     masterVolume,
     musicVolume,
     newsEventsEnabled,
+    showFrameRate,
+    simulationSpeed,
+    seed,
+    cancellationCandidatesCount,
+
+    setDeltaSnapshotInterval,
+    setOrderBookFanout,
+    setOrderBookLevels,
+    setHistogramPriceReference,
+    setHistogramFanout,
     setAdvancedOrdersEnabled,
     setAutosaveEncoding,
     setAutosaveEnabled,
@@ -85,7 +107,8 @@ export const createSettings = () => {
     setNewsEventsEnabled,
     setShowFrameRate,
     setSimulationSpeed,
-    showFrameRate,
-    simulationSpeed,
+    setSeed,
+    setFrontierPickerSize,
+    setCancellationCandidatesCount,
   };
 };

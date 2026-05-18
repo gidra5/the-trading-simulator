@@ -28,6 +28,12 @@ type ActorOptions = {
   needsBase: Accessor<Needs>;
 };
 
+// TODO: depend on recent returns for buy/sell with two "populations" of trend following and contrarians
+// TODO: make depend on spread, book depth, volatlity, uncertainty.
+// TODO: simulate order spitting for large ones
+// TODO: stop loss, take profit liquidation simulations
+// TODO: increase size if many wins for one actor, decrease for losses (or vice versa, depending on the gamblingness?)
+// TODO: delays in price reaction
 export const createActor = (options: ActorOptions) => {
   const id = nextActorId++;
   const inventory = createInventory();

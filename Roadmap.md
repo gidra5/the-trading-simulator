@@ -6,11 +6,11 @@
          2. + inputs - number, select, text, textarea, checkbox, range, switch/tab/radio
          3. Chart - line, bar, pie, donut, etc
          4. table
-         5. accordion
+         5. + accordion/collapsible
          6. skill tree
             1. graph view
-            2. tier list view
-            3. frontier sample picker
+            2. + tier list view
+            3. + frontier sample picker
          7. + dividers
          8. + palette - colors, gradients
          9.  + typography - headings, text, code, links
@@ -19,7 +19,7 @@
          12. themes - light, dark, system
          13. + intl
          14. + svg icons set https://lucide.dev/icons/categories#tools
-         15. Assets - images, fonts, music, sounds, etc
+         15. Assets - images, + fonts, music, sounds, etc
          16. animations
       2. setup keyboard shortcuts in the ui for all actions per tab
       3. Create a new page with a proper game ui with 4 tabs:
@@ -30,17 +30,17 @@
          5. desktop first, mobile second, but not neglected
       4. + The layout is header/body[main/sidebar]/footer
       5. setup survival mechanics
-         1. hunger
-         2. sleep
-         3. health
-         4. stress
+         1. + hunger
+         2. + sleep
+         3. + health
+         4. + stress
          5. time management - time to sleep, time to eat, time to work, time to heal
          6. money spending - need to buy food (lower hunger, stress), commodities (lower stress, better sleep, food), medicine (increase health), different quality
       6. Setup progression
-         1. Start with market tab disabled and with economy tab active initially
-         2. allow user to buy upgrade to enable market tab
+         1. + Start with market tab disabled and with economy tab active initially
+         2. + allow user to buy upgrade to enable market tab
          3. at money milestones suggest perks (limited or permanent)
-         4. next user can buy upgrade to enable borrowing
+         4. + next user can buy upgrade to enable borrowing
          5. the limit orders are initially limited to small amount like 2, then can buy by one them, doubling every 10 buys. Whe hit 100 per buy, allow to buy unlimited
          6. next major upgrade is companies, which unlocks creating a (private) company and interact with other companies
          7. next major upgrade is public companies with investments.
@@ -50,7 +50,7 @@
          11. Study points - earned through clicker as well.
          12. you can spend study points to complete new upgrades, write a book/teach your knowledge others, read a book to complete a skill study
       7. + Save system - store simulation and account state in a file/localstorage
-         1. + Autosave
+         1. Autosave
          2. + Manual load/save
          3. Reset
       8. Offline simulation/time skip/+ speedup
@@ -66,8 +66,26 @@
          2. Setup conversion targets - discord, email, twitter, reddit, steam, patreon, yt, devlog?, etc
          3. Advertise/sell this version
          4. Collect analytics on what features were used and how often, what progress do players make, how often they return back and how many players in total visited https://docs.umami.is/docs/install
-2. Implement economy simulation
-   1. Resources
+2. Full progression system
+  1. at some milestones suggest random perks (limited or permanent)
+  2. core directions of progression are:
+     1. Trading
+     2. Investment
+     3. Handwork
+     4. Management
+     5. Science
+     6. Engineering
+     7. Personal development
+  3. the limit orders are initially limited to small amount like 2, then can buy by one them, doubling every 10 buys. Whe hit 100 per buy, allow to buy unlimited
+  4. next major upgrade is companies, which unlocks creating a (private) company and interact with other companies
+  5. next major upgrade is public companies with investments.
+  6. Or instead of company upgrade, you choose skill upgrades, which allows learning industry specific skills
+  7. Or instead a management upgrade, which allows you to hire other actors to work for you
+  8.  Or instead a scientist/engineer upgrade, which allows you to research new technologies
+  9.  Study points - earned through clicker as well.
+  10. you can spend study points to complete new upgrades, write a book/teach your knowledge others, read a book to complete a skill study
+3. Implement economy simulation
+   1. + Resources
    2. Recipes
    3. Exchanges
    4. Regulators, taxes, banks, governments, laws
@@ -84,8 +102,8 @@
    15. Unique products - rare, limited, exclusive, etc
    16. insider trading
    17. Expiration of products/value decline over time
-3. New game+ - you can make children and continue playing with them. Implies family progression
-4. Extend economy tab with ui for:
+4. New game+ - you can make children and continue playing with them. Implies family progression
+5. Extend economy tab with ui for:
    1. inventory of resources
    2. production of raw resources
    3. crafting of resources
@@ -95,8 +113,8 @@
    7. Hiring other actors to work/supply resources/tech for you based on some contract
    8. Knowledge tree - learn technologies personally or through other recordings. Record learnings for sharing with other actors. Hire teachers
    9. infrastructure - automation, storage, logistics
-5. Implement trading platform functions like trading automation, scripts, auctions, arbitrary pairs.
-6. Implement an orchestrator/narrator - a system that create a world narrative, economic events, bot behavior, tracks player performance and adjusts game flow/simulations accordingly
-7. Endgame
+6. Implement trading platform functions like trading automation, scripts, auctions, arbitrary pairs.
+7. Implement an orchestrator/narrator - a system that create a world narrative, economic events, bot behavior, tracks player performance and adjusts game flow/simulations accordingly
+8. Endgame
    1. base - you gain enough to manipulate the market and trivially multiply your wealth
-8. Story mode?
+9. Story mode?

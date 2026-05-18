@@ -1,13 +1,21 @@
 import { Show, createSignal, onCleanup, onMount, type Component } from "solid-js";
 import type { MarketState, PriceCandle } from "../market/index";
 import { OrderBookHistogram, HistogramNormalization } from "./OrderBookHistogram";
-import { simulationTickTime, type TradingSimulation } from "../simulation/index";
+import { defaultMarketBehaviorSettings, simulationTickTime, type TradingSimulation } from "../simulation/index";
 import type { SimulationTimeState } from "../simulation/time";
 import { Chart, type ChartViewport } from "./Chart";
-import { ChartSettings } from "./ChartSettings";
+import { ChartSettings, type OrderBookAccelerationSettings } from "./ChartSettings";
 import { MarketSettings } from "./MarketSettings";
 import { createThrottledMemo, formatNumber } from "../utils";
 import { digits, Order } from "./Order";
+import {
+  cloneMarketBehaviorSettings,
+  type MarketBehaviorSettings,
+  type MarketEventSetting,
+  type OrderPriceDistribution,
+  type OrderSizeDistribution,
+  type SimulationEventSettingGroup,
+} from "../simulation/types";
 
 const pollingInterval = 200;
 const showFrameRate = true;
@@ -15,11 +23,31 @@ type SettingsTab = "chart" | "market";
 
 export type MarketChartProps = {
   market: MarketState;
+  orderBookAcceleration: OrderBookAccelerationSettings;
   simulation: TradingSimulation;
   time: SimulationTimeState;
 };
+type ScalarMarketBehaviorSetting = Exclude<keyof MarketBehaviorSettings, "excitementHalfLife" | "branchingRatio">;
 
 export const MarketChart: Component<MarketChartProps> = (props) => {
+  const [marketParameters, setMarketParameters] = createSignal(defaultMarketBehaviorSettings);
+  const [orderPriceDistribution, setOrderPriceDistribution] = createSignal<OrderPriceDistribution>("power-law");
+  const [orderSizeDistribution, setOrderSizeDistribution] = createSignal<OrderSizeDistribution>("power-law");
+  const getMarketBehaviorSettings = (): MarketBehaviorSettings => cloneMarketBehaviorSettings(marketParameters());
+  const setMarketBehaviorSetting = (key: ScalarMarketBehaviorSetting, value: number): void => {
+    setMarketParameters((current) => ({ ...current, [key]: value }));
+  };
+  const setMarketBehaviorEventSetting = (
+    group: SimulationEventSettingGroup,
+    eventType: MarketEventSetting,
+    value: number,
+  ): void => {
+    setMarketParameters((current) => ({
+      ...current,
+      [group]: { ...current[group], [eventType]: value },
+    }));
+  };
+
   const startTime = props.time.time();
   const priceSpread = createThrottledMemo(props.market.marketPriceSpread, pollingInterval);
   const [activeSettingsTab, setActiveSettingsTab] = createSignal<SettingsTab>("chart");
@@ -180,11 +208,21 @@ export const MarketChart: Component<MarketChartProps> = (props) => {
               setHistogramNormalization={setHistogramNormalization}
               histogramWindowFraction={histogramWindowFraction}
               setHistogramWindowFraction={setHistogramWindowFraction}
-              market={props.market}
+              orderBookAcceleration={props.orderBookAcceleration}
             />
           </Show>
           <Show when={activeSettingsTab() === "market"}>
-            <MarketSettings simulation={props.simulation} />
+            <MarketSettings
+              controller={{
+                getMarketBehaviorSettings,
+                setMarketBehaviorSetting,
+                setMarketBehaviorEventSetting,
+                getOrderPriceDistribution: orderPriceDistribution,
+                getOrderSizeDistribution: orderSizeDistribution,
+                setOrderPriceDistribution,
+                setOrderSizeDistribution,
+              }}
+            />
           </Show>
         </div>
       </div>

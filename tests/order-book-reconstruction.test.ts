@@ -1,6 +1,6 @@
 import { afterAll, expect, test, vi } from "vitest";
 import fc from "fast-check";
-import { createRoot } from "solid-js";
+import { createRoot, createSignal, type Setter } from "solid-js";
 import type { MarketState } from "../src/market/index";
 import type { SimulationTimeState } from "../src/simulation/time";
 
@@ -27,7 +27,13 @@ const loadMarket = async (settings: {
   interval?: number;
   fanout?: number;
   levels: number;
-}): Promise<{ market: MarketState; clock: SimulationTimeState }> => {
+}): Promise<{
+  clock: SimulationTimeState;
+  market: MarketState;
+  setDeltaSnapshotInterval: Setter<number>;
+  setFanout: Setter<number>;
+  setLevels: Setter<number>;
+}> => {
   vi.restoreAllMocks();
   vi.resetModules();
 
@@ -36,12 +42,21 @@ const loadMarket = async (settings: {
     import("../src/simulation/time"),
   ]);
   const clock = createSimulationTimeState();
-  const market = createRoot(() => createMarketState({ time: clock.time }));
-  market.setDeltaSnapshotInterval(settings.interval ?? 2);
-  market.setFanout(settings.fanout ?? 2);
-  market.setLevels(settings.levels);
+  return createRoot(() => {
+    const [deltaSnapshotInterval, setDeltaSnapshotInterval] = createSignal(settings.interval ?? 2);
+    const [fanout, setFanout] = createSignal(settings.fanout ?? 2);
+    const [levels, setLevels] = createSignal(settings.levels);
+    const market = createMarketState({
+      time: clock.time,
+      deltaSnapshotInterval,
+      histogramFanout: () => 5,
+      histogramPriceReference: () => 1,
+      orderBookFanout: fanout,
+      orderBookLevels: levels,
+    });
 
-  return { market, clock };
+    return { clock, market, setDeltaSnapshotInterval, setFanout, setLevels };
+  });
 };
 
 const operationArbitrary: fc.Arbitrary<Operation> = fc.oneof(
@@ -161,7 +176,11 @@ test("market reconstructs every recorded revision for fuzzed change sequences", 
 });
 
 test("market reconstructs recorded revisions after delta hierarchy changes", async () => {
-  const { market, clock } = await loadMarket({ interval: 2, fanout: 2, levels: 2 });
+  const { market, clock, setDeltaSnapshotInterval, setFanout, setLevels } = await loadMarket({
+    interval: 2,
+    fanout: 2,
+    levels: 2,
+  });
   const recordedBooks = new Map<number, ReturnType<typeof market.orderBook>>();
 
   for (let index = 0; index < 12; index += 1) {
@@ -173,9 +192,9 @@ test("market reconstructs recorded revisions after delta hierarchy changes", asy
     recordedBooks.set(market.getOrderBookHistoryStats().revision, structuredClone(market.orderBook()));
   }
 
-  market.setDeltaSnapshotInterval(3);
-  market.setFanout(3);
-  market.setLevels(3);
+  setDeltaSnapshotInterval(3);
+  setFanout(3);
+  setLevels(3);
 
   for (const [revision, recordedBook] of recordedBooks) {
     expect(market.reconstruct(revision), `revision ${revision}`).toEqual(recordedBook);

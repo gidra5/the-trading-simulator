@@ -2,15 +2,26 @@ import { createRoot, createSignal } from "solid-js";
 import { expect, test } from "vitest";
 import { createActor } from "../src/economy/actor";
 import { createAccount } from "../src/economy/account";
+import { Resource } from "../src/economy/inventory";
 import { createMarketState } from "../src/market";
 import { progressionGraph, ProgressionMetric, ProgressionNode, type ProgressionMetrics } from "../src/progression/data";
 import type { ProgressionState } from "../src/progression/interface";
 import { createSimulationTimeState } from "../src/simulation/time";
 
+const createTestMarket = (time: ReturnType<typeof createSimulationTimeState>) =>
+  createMarketState({
+    time: time.time,
+    deltaSnapshotInterval: () => 100,
+    histogramFanout: () => 5,
+    histogramPriceReference: () => 1,
+    orderBookFanout: () => 5,
+    orderBookLevels: () => 5,
+  });
+
 const createTestAccount = (options?: { completedNodes?: ProgressionNode[] }) => {
   return createRoot(() => {
     const time = createSimulationTimeState();
-    const market = createMarketState({ time: time.time });
+    const market = createTestMarket(time);
     const { progression, setNodeComplete } = createTestProgression(options?.completedNodes);
     const account = createAccount({
       progression,
@@ -50,16 +61,17 @@ const createTestProgression = (completedNodes: ProgressionNode[] = []) => {
     getScheduledNodeOrder: () => undefined,
     getStatus: (node) => (completed().has(node) ? "complete" : "inaccessible"),
     isComplete: (node) => completed().has(node),
+    scheduleNodeFirst: () => {},
     toggleScheduledNode: () => {},
   } satisfies ProgressionState;
 
   return { progression, setNodeComplete };
 };
 
-test("actor progression capital follows account net worth", () => {
+test("actor progression spends inventory money", () => {
   const actor = createRoot(() => {
     const time = createSimulationTimeState();
-    const market = createMarketState({ time: time.time });
+    const market = createTestMarket(time);
 
     return createActor({
       name: "Test",
@@ -74,17 +86,17 @@ test("actor progression capital follows account net worth", () => {
     });
   });
 
-  const handworkPrice = progressionGraph[ProgressionNode.Handwork].prices.Capital!;
-  actor.account.addMoney(handworkPrice);
+  const handworkPrice = progressionGraph[ProgressionNode.Handwork].prices[Resource.Money]!;
+  actor.inventory.addResource(Resource.Money, handworkPrice);
   actor.progression.addMetric(ProgressionMetric.Handwork, 3);
 
   expect(actor.progression.metrics().Handwork).toBe(3);
-  expect(actor.progression.resources().Capital).toBe(handworkPrice);
+  expect(actor.inventory.resources().Money).toBe(handworkPrice);
 
   actor.progression.advanceFrontier(ProgressionNode.Handwork);
 
   expect(actor.account.netWorth()).toBe(0);
-  expect(actor.progression.resources().Capital).toBe(0);
+  expect(actor.inventory.resources().Money).toBe(0);
 });
 
 test("account cannot borrow before debt is enabled", () => {

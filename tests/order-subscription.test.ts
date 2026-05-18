@@ -11,7 +11,16 @@ const loadMarket = async (): Promise<MarketState> => {
     import("../src/simulation/time"),
   ]);
   const clock = createSimulationTimeState();
-  return createRoot(() => createMarketState({ time: clock.time }));
+  return createRoot(() =>
+    createMarketState({
+      time: clock.time,
+      deltaSnapshotInterval: () => 100,
+      histogramFanout: () => 5,
+      histogramPriceReference: () => 1,
+      orderBookFanout: () => 5,
+      orderBookLevels: () => 5,
+    }),
+  );
 };
 
 afterAll(() => {

@@ -1,35 +1,41 @@
 import { type MarketState, type OrderSide } from "../market/index";
 import type { PriceSpread } from "../market/orderBook";
-import {
-  sampleBernoulli,
-  sampleExponential,
-  sampleLogNormal,
-  sampleNormal,
-  samplePowerLaw,
-  sampleUniform,
-  sampleUniformInteger,
-} from "../distributions";
-import { clamp, sigmoid } from "../utils";
+import { sampleBernoulli, sampleUniform, sampleUniformInteger } from "../distributions";
+import { assert, clamp, sigmoid } from "../utils";
 import { type SimulationTimeState } from "./time";
-import {
-  type MarketBehaviorSettings,
-  type OrderPriceDistribution,
-  type OrderSizeDistribution,
-  type PriceAnchorWindow,
-  type RestingOrder,
-} from "./types";
+import { type PriceAnchorWindow, type RestingOrder } from "./types";
+import { type Accessor } from "solid-js";
+
+// const createPriceAnchoringState = (intervals: Accessor<number[]>, history: Accessor<PriceHistoryEntry[]>) => {
+//   const intervalPriceAnchors = createMemo(() => {
+//     return intervals().map((interval) => {
+//       const min = createMemo(() => {
+//         const priceHistory = history();
+//       });
+//     });
+//   });
+// };
 
 type SimulationOrderPlacementOptions = {
-  getSettings: () => MarketBehaviorSettings;
-  getOrderPriceDistribution: () => OrderPriceDistribution;
-  getOrderSizeDistribution: () => OrderSizeDistribution;
   market: MarketState;
   time: SimulationTimeState;
+  anchoringIntervals: Accessor<number[]>;
+  sampleOrderDistance: () => number;
+  sampleOrderSize: () => number;
+  inSpreadReach: Accessor<number>;
+  nearSpreadSize: Accessor<number>;
+  inSpreadOrderProbability: Accessor<number>;
+  nearSpreadProbability: Accessor<number>;
+  anchorPreference: Accessor<number>;
+  liquidityWallAnchorPreference: Accessor<number>;
+  liquidityWallAnchorRange: Accessor<number>;
+  liquidityWallHistogramResolution: Accessor<number>;
+  roundPricePreference: Accessor<number>;
+  roundPriceAnchorMinMidDistance: Accessor<number>;
 };
 
-export const createSimulationOrderPlacementState = (options: SimulationOrderPlacementOptions) => {
-  const priceAnchorIntervals = [60_000, 600_000, 1_800_000, 3_600_000] as const;
-  const priceAnchorWindows: PriceAnchorWindow[] = priceAnchorIntervals.map((durationMs) => ({
+export const createOrderPlacementState = (options: SimulationOrderPlacementOptions) => {
+  const priceAnchorWindows: PriceAnchorWindow[] = options.anchoringIntervals().map((durationMs) => ({
     durationMs,
     highTimes: [],
     highPrices: [],
@@ -39,27 +45,11 @@ export const createSimulationOrderPlacementState = (options: SimulationOrderPlac
     lowOffset: 0,
   }));
 
-  const sampleOrderDistance = (distribution: OrderPriceDistribution, scale: number, tail: number): number => {
-    switch (distribution) {
-      case "uniform":
-        return sampleUniform(0, scale * 2);
-      case "abs-normal":
-        return Math.abs(sampleNormal(0, scale));
-      case "log-normal":
-        return sampleLogNormal(scale, tail);
-      case "power-law":
-        return scale * samplePowerLaw(tail);
-      case "exponential":
-        return sampleExponential(scale);
-    }
-  };
-
   const sampleInSpreadOrderPrice = (spread: PriceSpread, side: OrderSide): number => {
     const bestBid = spread.sell;
     const bestAsk = spread.buy;
 
-    const settings = options.getSettings();
-    const padding = (bestAsk - bestBid) * settings.inSpreadReach;
+    const padding = (bestAsk - bestBid) * options.inSpreadReach();
     const minPrice = side === "buy" ? bestBid + padding : bestBid;
     const maxPrice = side === "buy" ? bestAsk : bestAsk - padding;
 
@@ -71,31 +61,62 @@ export const createSimulationOrderPlacementState = (options: SimulationOrderPlac
     const bestAsk = spread.buy;
     const midPrice = (bestAsk + bestBid) / 2;
 
-    const settings = options.getSettings();
-    const padding = midPrice * settings.nearSpreadSize;
+    const padding = midPrice * options.nearSpreadSize();
     const minPrice = side === "buy" ? bestBid + padding : bestAsk;
     const maxPrice = side === "buy" ? bestBid : bestAsk - padding;
 
     return sampleUniform(minPrice, maxPrice);
   };
 
-  const sampleMakerOrderPrice = (side: OrderSide): number => {
-    const settings = options.getSettings();
-    let spread = options.market.marketPriceSpread();
-    spread = { buy: spread.buy * (1 - settings.nearSpreadSize), sell: spread.sell * (1 + settings.nearSpreadSize) };
-    const spreadSize = spread.buy - spread.sell;
-    const rate = 10 ** settings.inSpreadOrderProbability;
-    const inSpreadProb = 2 * sigmoid(spreadSize * rate) - 1;
-    if (sampleBernoulli(inSpreadProb)) return sampleInSpreadOrderPrice(spread, side);
-    if (sampleBernoulli(settings.nearSpreadProbability)) return sampleNearOrderPrice(spread, side);
-    const bestPrice = spread[side];
-    const jitter = sampleOrderDistance(
-      options.getOrderPriceDistribution(),
-      settings.orderSpread,
-      settings.orderPriceTail,
-    );
-    const direction = side === "buy" ? -1 : 1;
-    return bestPrice * (1 + jitter) ** direction;
+  const sampleOrderPrice = (side: OrderSide): number => {
+    const price = (() => {
+      let spread = options.market.marketPriceSpread();
+      const size = options.nearSpreadSize();
+      const nearSpread = { buy: spread.buy * (1 + size), sell: spread.sell * (1 - size) };
+      spread = nearSpread;
+      const spreadSize = spread.buy - spread.sell;
+      const rate = 10 ** options.inSpreadOrderProbability();
+      const inSpreadProb = 2 * sigmoid(spreadSize * rate) - 1;
+      if (sampleBernoulli(inSpreadProb)) return sampleInSpreadOrderPrice(spread, side);
+      if (sampleBernoulli(options.nearSpreadProbability())) return sampleNearOrderPrice(spread, side);
+      const bestPrice = spread[side];
+      const jitter = options.sampleOrderDistance();
+      const direction = side === "buy" ? -1 : 1;
+      return bestPrice * (1 + jitter) ** direction;
+    })();
+
+    const spread = options.market.marketPriceSpread();
+    updateRecentPriceAnchors(options.market.midPrice());
+
+    let adjustedPrice = price;
+
+    if (Math.random() < options.anchorPreference()) {
+      const anchor = sampleRecentHighLowAnchor(side);
+
+      if (anchor !== null) {
+        adjustedPrice += (anchor - adjustedPrice) * sampleUniform(0.15, 0.6);
+      }
+    }
+
+    if (Math.random() < options.liquidityWallAnchorPreference()) {
+      const anchor = sampleSupportResistanceAnchor(side, adjustedPrice, spread);
+
+      if (anchor !== null) {
+        adjustedPrice = anchor;
+      }
+    }
+
+    if (!isNearMidPrice(adjustedPrice, spread) && Math.random() < options.roundPricePreference()) {
+      const step = roundPriceStep(adjustedPrice);
+
+      if (step > 0) {
+        adjustedPrice = Math.round(adjustedPrice / step) * step;
+      }
+    }
+
+    return side === "buy"
+      ? clamp(adjustedPrice, Number.MIN_VALUE, spread.buy * (1 - Number.EPSILON))
+      : Math.max(adjustedPrice, spread.sell * (1 + Number.EPSILON));
   };
 
   const roundPriceStep = (price: number): number => {
@@ -114,7 +135,7 @@ export const createSimulationOrderPlacementState = (options: SimulationOrderPlac
 
     if (!Number.isFinite(price) || !Number.isFinite(midPrice) || midPrice <= 0) return false;
 
-    return Math.abs(price - midPrice) / midPrice <= options.getSettings().roundPriceAnchorMinMidDistance;
+    return Math.abs(price - midPrice) / midPrice <= options.roundPriceAnchorMinMidDistance();
   };
 
   const compactPricePoints = (times: number[], prices: number[], offset: number): number => {
@@ -143,10 +164,7 @@ export const createSimulationOrderPlacementState = (options: SimulationOrderPlac
     candidatePrice: number,
     spread: PriceSpread,
   ): number | null => {
-    const settings = options.getSettings();
     const currentPrice = (spread.buy + spread.sell) / 2;
-
-    if (!Number.isFinite(currentPrice) || currentPrice <= 0 || !Number.isFinite(candidatePrice)) return null;
 
     const priceMin = Math.min(spread.buy, spread.sell, candidatePrice);
     const priceMax = Math.max(spread.buy, spread.sell, candidatePrice);
@@ -156,7 +174,7 @@ export const createSimulationOrderPlacementState = (options: SimulationOrderPlac
     const { cellHeight, sizes } = options.market.getOrderBookHistogramSeries(
       {
         price: [rangeMin, rangeMax],
-        resolution: settings.liquidityWallHistogramResolution,
+        resolution: options.liquidityWallHistogramResolution(),
       },
       side,
     );
@@ -197,8 +215,8 @@ export const createSimulationOrderPlacementState = (options: SimulationOrderPlac
     if (closestDistance === Number.POSITIVE_INFINITY) return null;
 
     return side === "buy"
-      ? closestLevelPrice * sampleUniform(1, 1 + settings.liquidityWallAnchorRange)
-      : closestLevelPrice * sampleUniform(1 - settings.liquidityWallAnchorRange, 1);
+      ? closestLevelPrice * sampleUniform(1, 1 + options.liquidityWallAnchorRange())
+      : closestLevelPrice * sampleUniform(1 - options.liquidityWallAnchorRange(), 1);
   };
 
   const updateRecentPriceAnchors = (price = options.market.midPrice()): void => {
@@ -237,83 +255,19 @@ export const createSimulationOrderPlacementState = (options: SimulationOrderPlac
     }
   };
 
-  const applyOrderPricePsychology = (side: OrderSide, price: number): number => {
-    const settings = options.getSettings();
-
-    if (!Number.isFinite(price) || price <= 0) return price;
-
-    const spread = options.market.marketPriceSpread();
-    updateRecentPriceAnchors(options.market.midPrice());
-
-    let adjustedPrice = price;
-
-    if (Math.random() < settings.anchorPreference) {
-      const anchor = sampleRecentHighLowAnchor(side);
-
-      if (anchor !== null) {
-        adjustedPrice += (anchor - adjustedPrice) * sampleUniform(0.15, 0.6);
-      }
-    }
-
-    if (Math.random() < settings.liquidityWallAnchorPreference) {
-      const anchor = sampleSupportResistanceAnchor(side, adjustedPrice, spread);
-
-      if (anchor !== null) {
-        adjustedPrice = anchor;
-      }
-    }
-
-    if (!isNearMidPrice(adjustedPrice, spread) && Math.random() < settings.roundPricePreference) {
-      const step = roundPriceStep(adjustedPrice);
-
-      if (step > 0) {
-        adjustedPrice = Math.round(adjustedPrice / step) * step;
-      }
-    }
-
-    return side === "buy" ? clamp(adjustedPrice, Number.MIN_VALUE, spread.buy) : Math.max(adjustedPrice, spread.sell);
-  };
-
-  const sampleOrderSize = (): number => {
-    const settings = options.getSettings();
-
-    switch (options.getOrderSizeDistribution()) {
-      case "uniform":
-        return sampleUniform(0, settings.orderSizeScale * 2);
-      case "log-normal":
-        return sampleLogNormal(settings.orderSizeScale, settings.orderSizeTail);
-      case "power-law":
-        return settings.orderSizeScale * samplePowerLaw(settings.orderSizeTail);
-      case "exponential":
-        return sampleExponential(settings.orderSizeScale);
-    }
-  };
-
-  const simulateLimitOrderEvent = (side: OrderSide): RestingOrder | null => {
-    // TODO: depend on recent returns for buy/sell with two "populations" of trend following and contrarians
-    // TODO: fee (percent from what you buy) and slippage (difference between expected and actual)
-    // TODO: simulate account internal state (bounded balance)
-    // TODO: make depend on spread, book depth, volatlity, uncertainty.
-    // TODO: simulate order spitting for large ones
-    // TODO: stop loss, take profit liquidation simulations
-    // TODO: increase size if many wins for one actor, decrease for losses (or vice versa, depending on the gamblingness?)
-    // TODO: delays in price reaction
-    const size = sampleOrderSize();
-
-    // TODO: simulate initial interest
-    const price = applyOrderPricePsychology(side, sampleMakerOrderPrice(side));
+  const simulateLimitOrderEvent = (side: OrderSide): RestingOrder => {
+    const size = options.sampleOrderSize();
+    const price = sampleOrderPrice(side);
     const result = options.market.makeOrder(side, { price, size });
+    assert(result.order.size === size, "simulated pure market orders should not partially fill on post");
 
-    return result.order.size > 0
-      ? { id: result.order.id, side, price, size: result.order.size, createdAt: options.time.time() }
-      : null;
+    return { id: result.order.id, side, price, size: result.order.size, createdAt: options.time.time() };
   };
 
   return {
-    sampleOrderSize,
     simulateLimitOrderEvent,
     updateRecentPriceAnchors,
   };
 };
 
-export type SimulationOrderPlacementState = ReturnType<typeof createSimulationOrderPlacementState>;
+export type SimulationOrderPlacementState = ReturnType<typeof createOrderPlacementState>;

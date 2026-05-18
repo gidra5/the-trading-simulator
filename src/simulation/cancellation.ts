@@ -33,9 +33,9 @@ import { binarySearchIndex } from "../utils";
 export type CancellationOptions = {
   market: MarketState;
   time: SimulationTimeState;
-  candidatesCount: Accessor<number>;
   onCancel: (order: RestingOrder) => boolean;
 
+  candidatesCount: Accessor<number>;
   ageWeight: Accessor<number>;
   priceMovement: {
     weight: Accessor<number>;

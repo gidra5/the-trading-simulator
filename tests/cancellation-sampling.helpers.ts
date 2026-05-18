@@ -127,16 +127,32 @@ export const buildSamplingFixture = async (fixtureOptions: {
     }
   };
 
-  const [{ createTradingSimulationState }, cancellation, { createMarketState }, order, { createSimulationTimeState }] =
-    await Promise.all([
-      import("../src/simulation/index"),
-      import("../src/simulation/cancellation"),
-      import("../src/market"),
-      import("../src/market/order"),
-      import("../src/simulation/time"),
-    ]);
+  const [
+    { createTradingSimulationState },
+    cancellation,
+    { createMarketState },
+    order,
+    { createOrchestrator },
+    { createSimulationTimeState },
+  ] = await Promise.all([
+    import("../src/simulation/index"),
+    import("../src/simulation/cancellation"),
+    import("../src/market"),
+    import("../src/market/order"),
+    import("../src/simulation/orchestrator"),
+    import("../src/simulation/time"),
+  ]);
   const timeModule = createSimulationTimeState();
-  const actualMarket = createRoot(() => createMarketState({ time: timeModule.time }));
+  const actualMarket = createRoot(() =>
+    createMarketState({
+      time: timeModule.time,
+      deltaSnapshotInterval: () => 100,
+      histogramFanout: () => 5,
+      histogramPriceReference: () => 1,
+      orderBookFanout: () => 5,
+      orderBookLevels: () => 5,
+    }),
+  );
   const market: MarketState = {
     ...actualMarket,
     subscribeToOrder: (id: number, cb: (change: OrderBookChange) => void) => {
@@ -160,7 +176,14 @@ export const buildSamplingFixture = async (fixtureOptions: {
       };
     },
   };
-  const simulation = createTradingSimulationState({ market, time: timeModule });
+  const orchestrator = createOrchestrator();
+  const simulation = createTradingSimulationState({
+    cancellation: orchestrator.cancellation,
+    eventStream: orchestrator.eventStream,
+    market,
+    orderPlacement: orchestrator.orderPlacement,
+    time: timeModule,
+  });
 
   let orders: RestingOrder[] = [];
   let tick = 0;
@@ -182,7 +205,7 @@ export const buildSamplingFixture = async (fixtureOptions: {
     tick += 1;
   }
 
-  const settings = simulation.getMarketBehaviorSettings();
+  const settings = orchestrator.getMarketBehaviorSettings();
   timeModule.advance(settings.cancellationFarOrderMinAge + 1_000);
 
   orders = sides.flatMap((side) => simulation.getCancellationRestingOrders(side));

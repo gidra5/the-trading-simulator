@@ -5,10 +5,22 @@ import {
   type OrderPriceDistribution,
   type OrderSizeDistribution,
   type SimulationEventSettingGroup,
-  type TradingSimulation,
 } from "../simulation/index";
 
 type ScalarMarketBehaviorSetting = Exclude<keyof MarketBehaviorSettings, "excitementHalfLife" | "branchingRatio">;
+export type MarketSettingsController = {
+  getMarketBehaviorSettings: () => MarketBehaviorSettings;
+  getOrderPriceDistribution: () => OrderPriceDistribution;
+  getOrderSizeDistribution: () => OrderSizeDistribution;
+  setMarketBehaviorEventSetting: (
+    group: SimulationEventSettingGroup,
+    eventType: MarketEventSetting,
+    value: number,
+  ) => void;
+  setMarketBehaviorSetting: (key: ScalarMarketBehaviorSetting, value: number) => void;
+  setOrderPriceDistribution: (distribution: OrderPriceDistribution) => void;
+  setOrderSizeDistribution: (distribution: OrderSizeDistribution) => void;
+};
 type MarketNumberField = {
   key: ScalarMarketBehaviorSetting;
   label: string;
@@ -88,24 +100,24 @@ const cancellationFields: MarketNumberField[] = [
 ];
 
 export const MarketSettings: Component<{
-  simulation: TradingSimulation;
+  controller: MarketSettingsController;
 }> = (props) => {
-  const [marketSettings, setMarketSettings] = createSignal(props.simulation.getMarketBehaviorSettings());
+  const [marketSettings, setMarketSettings] = createSignal(props.controller.getMarketBehaviorSettings());
   const [selectedOrderPriceDistribution, setSelectedOrderPriceDistribution] = createSignal<OrderPriceDistribution>(
-    props.simulation.getOrderPriceDistribution(),
+    props.controller.getOrderPriceDistribution(),
   );
   const [selectedOrderSizeDistribution, setSelectedOrderSizeDistribution] = createSignal<OrderSizeDistribution>(
-    props.simulation.getOrderSizeDistribution(),
+    props.controller.getOrderSizeDistribution(),
   );
 
   const updateOrderPriceDistribution = (distribution: OrderPriceDistribution): void => {
     setSelectedOrderPriceDistribution(distribution);
-    props.simulation.setOrderPriceDistribution(distribution);
+    props.controller.setOrderPriceDistribution(distribution);
   };
 
   const updateOrderSizeDistribution = (distribution: OrderSizeDistribution): void => {
     setSelectedOrderSizeDistribution(distribution);
-    props.simulation.setOrderSizeDistribution(distribution);
+    props.controller.setOrderSizeDistribution(distribution);
   };
 
   const updateMarketSetting = (key: ScalarMarketBehaviorSetting, value: string): void => {
@@ -113,7 +125,7 @@ export const MarketSettings: Component<{
     if (!Number.isFinite(nextValue)) return;
 
     setMarketSettings((current) => ({ ...current, [key]: nextValue }));
-    props.simulation.setMarketBehaviorSetting(key, nextValue);
+    props.controller.setMarketBehaviorSetting(key, nextValue);
   };
 
   const updateEventSetting = (
@@ -128,7 +140,7 @@ export const MarketSettings: Component<{
       ...current,
       [group]: { ...current[group], [eventType]: nextValue },
     }));
-    props.simulation.setMarketBehaviorEventSetting(group, eventType, nextValue);
+    props.controller.setMarketBehaviorEventSetting(group, eventType, nextValue);
   };
 
   const NumberInput: Component<{

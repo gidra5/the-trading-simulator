@@ -5,12 +5,29 @@ import { createSimulationTimeState } from "../../simulation/time";
 import { createSettings } from "../../components/game/settings";
 import { createActor } from "../../economy/actor";
 import { progressionGraph } from "../../progression/data";
+import { createOrchestrator } from "../../simulation/orchestrator";
 
+// todo: economic simulation
+// TODO: an simulation orchestrator (simulate initial interest)
 // todo: snapshot/restore for all the state, including settings
 export const { time, market, simulation, actor, settings } = createRoot(() => {
+  const settings = createSettings();
   const time = createSimulationTimeState();
-  const market = createMarketState({ time: time.time });
-  const simulation = createTradingSimulationState({ market, time });
+  const market = createMarketState({
+    time: time.time,
+    deltaSnapshotInterval: settings.deltaSnapshotInterval,
+    orderBookFanout: settings.orderBookFanout,
+    orderBookLevels: settings.orderBookLevels,
+    histogramPriceReference: settings.histogramPriceReference,
+    histogramFanout: settings.histogramFanout,
+  });
+  const orchestrator = createOrchestrator();
+  const simulation = createTradingSimulationState({
+    market,
+    time,
+    ...orchestrator,
+    cancellation: { ...orchestrator.cancellation, candidatesCount: settings.cancellationCandidatesCount },
+  });
   const actor = createActor({
     name: "Player",
     market,
@@ -23,8 +40,6 @@ export const { time, market, simulation, actor, settings } = createRoot(() => {
     needsBase: () => ({ Food: 100, Sleep: 100, Health: 100, Stress: 100 }),
     needsDecayRates: () => ({ Food: 0.001, Sleep: 0.001, Health: 0.001, Stress: 0.001 }),
   });
-
-  const settings = createSettings();
 
   return { time, market, simulation, actor, settings };
 });

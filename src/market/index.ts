@@ -1,4 +1,4 @@
-import { createSignal, type Accessor } from "solid-js";
+import { type Accessor } from "solid-js";
 import { createHistogramState } from "./histogram";
 import {
   cloneOrder,
@@ -14,7 +14,6 @@ import {
   type OrderBookChange,
   type OrderBookHeatmapEntry,
   type OrderBookHeatmapRegion,
-  type PriceHistoryEntry,
 } from "./orderBook";
 import { binarySearchIndex } from "../utils";
 
@@ -37,16 +36,21 @@ export type PriceCandle = {
 
 type MarketStateOptions = {
   time: Accessor<number>;
+  deltaSnapshotInterval: Accessor<number>;
+  orderBookFanout: Accessor<number>;
+  orderBookLevels: Accessor<number>;
+  histogramPriceReference: Accessor<number>;
+  histogramFanout: Accessor<number>;
 };
 
 export const createMarketState = (options: MarketStateOptions) => {
-  const time = options.time;
-  const [deltaSnapshotInterval, setDeltaSnapshotInterval] = createSignal(100);
-  const [fanout, setFanout] = createSignal(5);
-  const [levels, setLevels] = createSignal(5);
   let nextOrderId = 0;
-
-  const orderBookState = createOrderBook({ deltaSnapshotInterval, fanout, levels, time });
+  const orderBookState = createOrderBook({
+    time: options.time,
+    deltaSnapshotInterval: options.deltaSnapshotInterval,
+    fanout: options.orderBookFanout,
+    levels: options.orderBookLevels,
+  });
 
   orderBookState.appendChange([
     { kind: "add", side: "buy", order: { id: -2, price: 0.999, size: 1e4 } },
@@ -56,8 +60,8 @@ export const createMarketState = (options: MarketStateOptions) => {
   const { subscribeToOrder } = createOrderSubscriptionState(orderBookState.latestOrderBookChange);
   const { getOrderBookHistogram, getOrderBookHistogramSeries, querySideVolumeInPriceRange } = createHistogramState({
     orderBookChangeset: () => orderBookState.latestOrderBookChange().changes,
-    priceReference: () => 1,
-    fanout: () => 2,
+    priceReference: options.histogramPriceReference,
+    fanout: options.histogramFanout,
   });
 
   const getOrderBookHistoryStats = (): {
@@ -95,7 +99,7 @@ export const createMarketState = (options: MarketStateOptions) => {
       }
     }
 
-    for (let level = 0; level <= levels(); level += 1) {
+    for (let level = 0; level <= options.orderBookLevels(); level += 1) {
       deltaSnapshotLevels[level] ??= 0;
     }
 
@@ -108,9 +112,9 @@ export const createMarketState = (options: MarketStateOptions) => {
       changes,
       revision: orderBookState.revision(),
       snapshotInterval: orderBookState.snapshotInterval(),
-      deltaSnapshotInterval: deltaSnapshotInterval(),
-      deltaSnapshotFanout: fanout(),
-      deltaSnapshotLevelCount: levels(),
+      deltaSnapshotInterval: options.deltaSnapshotInterval(),
+      deltaSnapshotFanout: options.orderBookFanout(),
+      deltaSnapshotLevelCount: options.orderBookLevels(),
     };
   };
 
@@ -177,7 +181,7 @@ export const createMarketState = (options: MarketStateOptions) => {
   const findOrderLocation = (id: number, side?: OrderSide): { side: OrderSide; index: number } | null => {
     const sides = side ? [side] : (["buy", "sell"] as const);
 
-    // todo: binary search, ids are sorted
+    // todo: binary search, prices and ids are sorted
     for (const candidateSide of sides) {
       const index = orderBookState.orderBook()[candidateSide].findIndex((order) => order.id === id);
       if (index !== -1) {
@@ -191,7 +195,6 @@ export const createMarketState = (options: MarketStateOptions) => {
   const hasOrder = (id: number, side?: OrderSide): boolean => findOrderLocation(id, side) !== null;
 
   // todo: seeding rng
-  // todo: economic simulation
   const makeOrder = (side: OrderSide, order: Order): MakeOrderResult => {
     const id = nextOrderId++;
     const result = takeOrder(side, order.size, order.price);
@@ -284,20 +287,14 @@ export const createMarketState = (options: MarketStateOptions) => {
   return {
     ...orderBookState,
     cancelOrder,
-    deltaSnapshotInterval,
-    fanout,
     getOrderBookHistogram,
     getOrderBookHistogramSeries,
     getOrderBookHistoryStats,
     getOrderBookRegion,
     hasOrder,
-    levels,
     makeOrder,
     priceHistoryCandle,
     querySideVolumeInPriceRange,
-    setDeltaSnapshotInterval,
-    setFanout,
-    setLevels,
     subscribeToOrder,
     takeOrder,
   };
