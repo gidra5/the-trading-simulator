@@ -32,6 +32,7 @@ export const Footer: Component<FooterProps> = (props) => {
   const autosaveTitle = () => autosaveStatusTitle(props.autosaveStatus().reason);
   const autosaveMessage = () => autosaveTooltipMessage(props.autosaveStatus().reason);
   const pairLabel = () => `${t(`asset.${selectedPair().buy}`)} / ${t(`asset.${selectedPair().sell}`)}`;
+  const totalNetWorth = createMemo(() => actor.inventory.resources().Money + actor.account.netWorth());
   const sellAssetBalance = createMemo(() => {
     const portfolio = actor.account.portfolio() as Record<string, number | undefined>;
     return portfolio[selectedPair().sell] ?? 0;
@@ -58,7 +59,7 @@ export const Footer: Component<FooterProps> = (props) => {
       <div class="flex shrink-0 items-center gap-2 h-full">
         <span>{actor.meta.name()}</span>
         <Divider />
-        <span>{t("account.footer.netWorth", { value: formatMoney(actor.account.netWorth()) })}</span>
+        <span>{t("account.footer.netWorth", { value: formatMoney(totalNetWorth()) })}</span>
         <Divider />
         <span>{t("account.footer.cashPerMinute", { value: formatMoney(props.cashPerMinute) })}</span>
       </div>
