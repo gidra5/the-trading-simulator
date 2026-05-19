@@ -55,14 +55,19 @@ const createTestProgression = (completedNodes: ProgressionNode[] = []) => {
     graph: progressionGraph,
     frontier: () => [],
     metrics,
+    scheduler: {
+      nodes: () => [],
+      getNodeOrder: () => undefined,
+      move: () => {},
+      scheduleFirst: () => {},
+      scheduleLast: () => {},
+      toggle: () => {},
+    },
     addMetric: (metric, value) => setMetrics((current) => ({ ...current, [metric]: current[metric] + value })),
     tierList: () => [],
     advanceFrontier: (node) => setNodeComplete(node, true),
-    getScheduledNodeOrder: () => undefined,
     getStatus: (node) => (completed().has(node) ? "complete" : "inaccessible"),
     isComplete: (node) => completed().has(node),
-    scheduleNodeFirst: () => {},
-    toggleScheduledNode: () => {},
   } satisfies ProgressionState;
 
   return { progression, setNodeComplete };

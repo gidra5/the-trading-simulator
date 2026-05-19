@@ -151,7 +151,6 @@ export const createOrchestrator = () => {
     }
   };
 
-
   const priceAnchorIntervals = [60_000, 600_000, 1_800_000, 3_600_000];
   return {
     cancellation: {
@@ -191,5 +190,6 @@ export const createOrchestrator = () => {
       publicInterest,
       excitationMatrix,
     },
+    marketParameters,
   };
 };

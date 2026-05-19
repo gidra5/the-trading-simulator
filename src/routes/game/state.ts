@@ -25,7 +25,8 @@ export const { time, market, simulation, actor, settings } = createRoot(() => {
   const simulation = createTradingSimulationState({
     market,
     time,
-    ...orchestrator,
+    eventStream: orchestrator.eventStream,
+    orderPlacement: orchestrator.orderPlacement,
     cancellation: { ...orchestrator.cancellation, candidatesCount: settings.cancellationCandidatesCount },
   });
   const actor = createActor({

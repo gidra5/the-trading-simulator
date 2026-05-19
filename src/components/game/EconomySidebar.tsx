@@ -1,5 +1,6 @@
 import { createEffect, createSignal } from "solid-js";
 import { ProgressionFrontierPicker } from "../ProgressionFrontierPicker";
+import { ProgressionScheduleQueue } from "../ProgressionScheduleQueue";
 import { ProgressionTierList } from "../ProgressionTierList";
 import { actor, settings } from "../../routes/game/state";
 import type { ProgressionTierNodeData } from "../../progression/interface";
@@ -34,10 +35,10 @@ export const EconomySidebar = () => {
         metrics={actor.progression.metrics()}
         resources={actor.inventory.resources()}
         frontierNodes={pickerNodes()}
-        getScheduledOrder={(node) => actor.progression.getScheduledNodeOrder(node)}
+        getScheduledOrder={(node) => actor.progression.scheduler.getNodeOrder(node)}
         onShuffle={() => setPickerNodes(samplePickerNodes())}
         onComplete={(node) => actor.progression.advanceFrontier(node)}
-        onToggleSchedule={(node) => actor.progression.toggleScheduledNode(node)}
+        onToggleSchedule={(node) => actor.progression.scheduler.toggle(node)}
         onRefresh={(idx) =>
           setPickerNodes((current) => {
             if (actor.progression.frontier().length <= settings.frontierPickerSize()) return current;
@@ -53,14 +54,21 @@ export const EconomySidebar = () => {
           })
         }
       />
+      <ProgressionScheduleQueue
+        nodes={actor.progression.scheduler.nodes()}
+        onMoveNode={(node, offset) => actor.progression.scheduler.move(node, offset)}
+        onScheduleFirst={(node) => actor.progression.scheduler.scheduleFirst(node)}
+        onScheduleLast={(node) => actor.progression.scheduler.scheduleLast(node)}
+        onRemoveNode={(node) => actor.progression.scheduler.toggle(node)}
+      />
       <ProgressionTierList
         metrics={actor.progression.metrics()}
         resources={actor.inventory.resources()}
         tierList={actor.progression.tierList()}
-        getScheduledOrder={(node) => actor.progression.getScheduledNodeOrder(node)}
+        getScheduledOrder={(node) => actor.progression.scheduler.getNodeOrder(node)}
         isComplete={(node) => actor.progression.isComplete(node)}
         onComplete={(node) => actor.progression.advanceFrontier(node)}
-        onToggleSchedule={(node) => actor.progression.toggleScheduledNode(node)}
+        onToggleSchedule={(node) => actor.progression.scheduler.toggle(node)}
       />
     </div>
   );

@@ -178,7 +178,7 @@ export const buildSamplingFixture = async (fixtureOptions: {
   };
   const orchestrator = createOrchestrator();
   const simulation = createTradingSimulationState({
-    cancellation: orchestrator.cancellation,
+    cancellation: { ...orchestrator.cancellation, candidatesCount: () => 64 },
     eventStream: orchestrator.eventStream,
     market,
     orderPlacement: orchestrator.orderPlacement,
@@ -205,7 +205,7 @@ export const buildSamplingFixture = async (fixtureOptions: {
     tick += 1;
   }
 
-  const settings = orchestrator.getMarketBehaviorSettings();
+  const settings = orchestrator.marketParameters();
   timeModule.advance(settings.cancellationFarOrderMinAge + 1_000);
 
   orders = sides.flatMap((side) => simulation.getCancellationRestingOrders(side));

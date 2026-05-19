@@ -32,6 +32,49 @@ const getInitialFrontier = (graph: ProgressionGraph): ProgressionFrontier => {
 
 const metricValues = Object.values(ProgressionMetric) as ProgressionMetric[];
 
+const createNodeScheduler = (onComplete: (node: ProgressionFrontierNode) => boolean) => {
+  const [nodes, setNodes] = createSignal<ProgressionFrontierNode[]>([]);
+  const toggle = (node: ProgressionFrontierNode) => {
+    setNodes((current) =>
+      current.includes(node) ? current.filter((scheduledNode) => scheduledNode !== node) : [...current, node],
+    );
+  };
+
+  const scheduleFirst = (node: ProgressionFrontierNode) => {
+    setNodes((current) => [node, ...current.filter((scheduledNode) => scheduledNode !== node)]);
+  };
+
+  const scheduleLast = (node: ProgressionFrontierNode) => {
+    setNodes((current) => [...current.filter((scheduledNode) => scheduledNode !== node), node]);
+  };
+
+  const move = (node: ProgressionFrontierNode, offset: -1 | 1) => {
+    setNodes((current) => {
+      const index = current.indexOf(node);
+      const nextIndex = index + offset;
+
+      if (index === -1 || nextIndex < 0 || nextIndex >= current.length) return current;
+
+      const next = [...current];
+      [next[index], next[nextIndex]] = [next[nextIndex], next[index]];
+      return next;
+    });
+  };
+
+  const getNodeOrder = (node: ProgressionFrontierNode) => {
+    const index = nodes().indexOf(node);
+    return index === -1 ? undefined : index + 1;
+  };
+
+  createEffect(() => {
+    for (const node of nodes()) {
+      if (!onComplete(node)) break;
+    }
+  });
+
+  return { nodes, getNodeOrder, move, scheduleFirst, scheduleLast, toggle };
+};
+
 export type ProgressionState = ReturnType<typeof createProgression>;
 export const createProgression = (graph: ProgressionGraph, inventory: InventoryState) => {
   const [frontier, setFrontier] = createSignal<ProgressionFrontier>(getInitialFrontier(graph));
@@ -40,7 +83,6 @@ export const createProgression = (graph: ProgressionGraph, inventory: InventoryS
     [ProgressionMetric.LeveragedTime]: 0,
     [ProgressionMetric.Trades]: 0,
   });
-  const [scheduledNodes, setScheduledNodes] = createSignal<ProgressionFrontierNode[]>([]);
 
   const nodes = Object.keys(graph) as ProgressionFrontierNode[];
 
@@ -104,23 +146,11 @@ export const createProgression = (graph: ProgressionGraph, inventory: InventoryS
     return areMilestonesReached && arePricesAffordable;
   };
 
-  const toggleScheduledNode = (node: ProgressionFrontierNode) => {
-    setScheduledNodes((current) =>
-      current.includes(node) ? current.filter((scheduledNode) => scheduledNode !== node) : [...current, node],
-    );
-  };
-
-  const getScheduledNodeOrder = (node: ProgressionFrontierNode) => {
-    const index = scheduledNodes().indexOf(node);
-    return index === -1 ? undefined : index + 1;
-  };
-
-  createEffect(() => {
-    for (const node of scheduledNodes()) {
-      if (!isAvailable(node)) break;
-      advanceFrontier(node);
-      toggleScheduledNode(node);
-    }
+  const scheduler = createNodeScheduler((node) => {
+    if (!isAvailable(node)) return false;
+    advanceFrontier(node);
+    scheduler.toggle(node);
+    return true;
   });
 
   const addMetric = (metric: ProgressionMetric, value: number) => {
@@ -152,13 +182,12 @@ export const createProgression = (graph: ProgressionGraph, inventory: InventoryS
 
     frontier,
     metrics,
+    scheduler,
     addMetric,
 
     tierList,
     advanceFrontier,
-    getScheduledNodeOrder,
     getStatus,
     isComplete,
-    toggleScheduledNode,
   };
 };

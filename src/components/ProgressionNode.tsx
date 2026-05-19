@@ -8,7 +8,7 @@ import type {
   ProgressionPrice,
 } from "../progression/data";
 import type { Inventory, Resource } from "../economy/inventory";
-import { Check, ListEnd, RotateCcw, X } from "lucide-solid";
+import { Check, ListEnd, ListStart, RotateCcw, X } from "lucide-solid";
 import { Button } from "../ui-kit/Button";
 
 type ProgressionNodeProps = {
@@ -21,6 +21,7 @@ type ProgressionNodeProps = {
   scheduledOrder?: number;
   onRefresh?: () => void;
   onComplete?: () => void;
+  onScheduleFirst?: () => void;
   onToggleSchedule?: () => void;
 };
 
@@ -34,6 +35,12 @@ export const ProgressionNode: Component<ProgressionNodeProps> = (props) => {
     props.scheduledOrder === undefined
       ? t("progression.schedule.add")
       : t("progression.schedule.position", { order: props.scheduledOrder });
+  const scheduleFirstTitle = () => {
+    if (props.scheduledOrder === 1) return t("progression.schedule.first");
+    if (props.scheduledOrder === undefined) return t("progression.schedule.addFirst");
+    return t("progression.schedule.moveFirst");
+  };
+  
   return (
     <div class="p-2 w-full rounded-md flex flex-col gap-4 bg-surface-secondary">
       <div class="flex flex-col gap-1">
@@ -41,6 +48,18 @@ export const ProgressionNode: Component<ProgressionNodeProps> = (props) => {
           <span class="font-title-primary-xs-rg text-text-primary">{t(`progression.node.title.${props.node}`)}</span>
 
           <div class="flex flex-row gap-1">
+            <Show when={props.onScheduleFirst && !props.isComplete}>
+              <Button
+                active={props.scheduledOrder !== 0}
+                aria-label={scheduleFirstTitle()}
+                title={scheduleFirstTitle()}
+                variant="icon"
+                onClick={props.onScheduleFirst}
+                size="sm"
+              >
+                <ListStart aria-hidden="true" class="h-4 w-4" strokeWidth={1.8} />
+              </Button>
+            </Show>
             <Show when={props.onToggleSchedule && !props.isComplete}>
               <Button
                 active={props.scheduledOrder !== undefined}
