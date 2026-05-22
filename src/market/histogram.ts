@@ -166,7 +166,7 @@ const createHistogramAccelerationStructure = (options: HistogramAccelerationStru
       if (!removedOrder || removedOrder.id !== id) return false;
 
       state.value.splice(index, 1);
-      state.volume -= removedOrder.size;
+      state.volume = state.value.reduce((sum, child) => sum + child.size, 0);
       return true;
     }
 
@@ -196,7 +196,7 @@ const createHistogramAccelerationStructure = (options: HistogramAccelerationStru
 
       state.value[index] = order;
       const delta = previousOrder.size - order.size;
-      state.volume -= delta;
+      state.volume = state.value.reduce((sum, child) => sum + child.size, 0);
 
       return delta;
     }
@@ -205,7 +205,7 @@ const createHistogramAccelerationStructure = (options: HistogramAccelerationStru
     const child = state.children[childIndex];
 
     const delta = partialFillOrder(child, logPrice, id, order);
-    state.volume -= delta;
+    state.volume = state.children.reduce((sum, child) => sum + child.volume, 0);
     return delta;
   };
 

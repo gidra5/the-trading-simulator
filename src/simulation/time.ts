@@ -1,10 +1,15 @@
-import { createMemo, createSignal } from "solid-js";
+import { batch, createSignal } from "solid-js";
 
 export const createSimulationTimeState = () => {
   const [dt, setDt] = createSignal(0, { equals: false, name: "time step" });
-  const time = createMemo<number>((time) => time + dt(), 0, { name: "clock" });
+  const [time, setTime] = createSignal(0, { equals: false, name: "clock" });
 
-  const advance = (dt: number) => setDt(dt);
+  const advance = (dt: number) => {
+    batch(() => {
+      setDt(dt);
+      setTime((time) => time + dt);
+    });
+  };
 
   return { dt, time, advance };
 };

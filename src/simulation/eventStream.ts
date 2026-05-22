@@ -1,10 +1,10 @@
 import { type Accessor } from "solid-js";
 import { sampleMultivariateHawkesProcessEventTypes } from "../distributions";
-import { eventVector, simulationEventTypes, type SimulationEventType } from "./types";
+import { eventVector, simulationEventTypes as events, type SimulationEventType } from "./types";
 import { assert } from "../utils";
 
 type SimulationExcitationOptions = {
-  publicInterest: Accessor<number[]>;
+  baselineActivity: Accessor<number[]>;
   excitementDecay: Accessor<number[]>;
   excitationMatrix: Accessor<number[][]>;
 };
@@ -21,15 +21,15 @@ export const createSimulationEventStream = (options: SimulationExcitationOptions
 
   const sampleEvents = (dt: number, handleEvent: (eventType: SimulationEventType, dt: number) => void) => {
     sampleMultivariateHawkesProcessEventTypes(
-      options.publicInterest(),
+      options.baselineActivity(),
       options.excitationMatrix(),
       options.excitementDecay(),
       dt,
       excitedInterest,
-      (eventTypeIndex, dt) => {
-        const eventType = simulationEventTypes[eventTypeIndex];
-        assert(eventType !== undefined);
-        handleEvent(eventType, dt);
+      (index, dt) => {
+        const event = events[index];
+        assert(event !== undefined);
+        handleEvent(event, dt);
       },
     );
   };

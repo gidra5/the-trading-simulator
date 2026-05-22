@@ -37,6 +37,7 @@ export const MarketBody: Component<MarketBodyProps> = (props) => {
                 cumulative={settings.isHistogramCumulative()}
                 data={histogramData()}
                 normalization={settings.histogramNormalization()}
+                priceRange={props.viewport.price}
                 windowFraction={settings.histogramWindowFraction()}
               />
             </Panel>

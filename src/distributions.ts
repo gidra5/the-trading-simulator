@@ -387,7 +387,7 @@ export const sampleMultivariateHawkesProcessEventTypes = (
       break;
     }
 
-    handleEventType(eventType, dt);
+    handleEventType(eventType, dt * 1000);
     const eventExcitation = excitationPerEvent[eventType];
     for (let index = 0; index < dimension; index += 1) {
       excitedRate[index] += eventExcitation[index];
