@@ -1,4 +1,4 @@
-import { createSignal, onCleanup, onMount, Show, type Component, type JSX } from "solid-js";
+import { createMemo, createSignal, For, onCleanup, onMount, Show, type Component, type JSX } from "solid-js";
 import type { OrderBookHeatmapEntry, PriceCandle } from "../market/index";
 import clsx from "clsx";
 import {
@@ -11,6 +11,7 @@ import {
   writeHeatmapTexture,
 } from "./chartUtils";
 import { createChartControls } from "./chartControls";
+import { formatNumber } from "../utils";
 
 export type ChartViewport = {
   time: [from: number, to: number];
@@ -37,12 +38,54 @@ const viewportMatches = (left: ChartViewport, right: ChartViewport): boolean =>
   left.resolution[0] === right.resolution[0] &&
   left.resolution[1] === right.resolution[1];
 
-// TODO: price/time marks
 // TODO: fixed candle interval relative to viewport
 // TODO: micro and macro candles to smoothly transition between scales
 // TODO: side panel with order book histogram
 // todo: crosshair
 // todo: drawing tools?
+type ChartMark = {
+  label: string;
+  position: number;
+};
+
+const markCount = 5;
+
+const buildLinearMarks = (range: [number, number], formatLabel: (value: number) => string): ChartMark[] => {
+  const span = range[1] - range[0];
+  if (!Number.isFinite(span) || span <= 0) return [];
+
+  return Array.from({ length: markCount }, (_, index) => {
+    const ratio = index / (markCount - 1);
+    const value = range[0] + span * ratio;
+
+    return {
+      label: formatLabel(value),
+      position: ratio,
+    };
+  });
+};
+
+const formatPriceMark = (value: number): string => {
+  const magnitude = Math.abs(value);
+  const digits = magnitude >= 100 ? 2 : magnitude >= 10 ? 3 : 4;
+  return formatNumber(value, digits);
+};
+
+const formatDuration = (milliseconds: number): string => {
+  const sign = milliseconds < 0 ? "-" : "";
+  const totalSeconds = Math.floor(Math.abs(milliseconds) / 1_000);
+  const seconds = totalSeconds % 60;
+  const totalMinutes = Math.floor(totalSeconds / 60);
+  const minutes = totalMinutes % 60;
+  const hours = Math.floor(totalMinutes / 60);
+
+  if (hours > 0) {
+    return `${sign}${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  }
+
+  return `${sign}${minutes}:${String(seconds).padStart(2, "0")}`;
+};
+
 export const Chart: Component<ChartProps> = (props) => {
   let container: HTMLDivElement | undefined;
   let canvas: HTMLCanvasElement | undefined;
@@ -58,6 +101,23 @@ export const Chart: Component<ChartProps> = (props) => {
   const [status, setStatus] = createSignal<string | null>(null);
   const [isDragging, setIsDragging] = createSignal(false);
   const [frameRate, setFrameRate] = createSignal<number | null>(null);
+  const priceMarks = createMemo(() => buildLinearMarks(props.viewport.price, formatPriceMark));
+  const timeMarks = createMemo(() => buildLinearMarks(props.viewport.time, formatDuration));
+  const latestPriceMark = createMemo(() => {
+    const latestCandle = props.priceCandles[props.priceCandles.length - 1];
+    if (!latestCandle) return null;
+
+    const priceSpan = props.viewport.price[1] - props.viewport.price[0];
+    if (!Number.isFinite(priceSpan) || priceSpan <= 0) return null;
+
+    const position = 1 - (latestCandle.close - props.viewport.price[0]) / priceSpan;
+    if (position < 0 || position > 1) return null;
+
+    return {
+      label: formatPriceMark(latestCandle.close),
+      position,
+    };
+  });
 
   const reportViewport = (viewport: Pick<ChartViewport, "time" | "price">) => {
     if (!canvas) {
@@ -150,9 +210,6 @@ export const Chart: Component<ChartProps> = (props) => {
       try {
         renderer = await initializeRenderer(canvas);
         setStatus(null);
-        void renderer.device.lost.then((info: GPUDeviceLostInfo) => {
-          setStatus(`WebGPU device was lost${info.message ? `: ${info.message}` : "."}`);
-        });
 
         const renderFrame = (timestamp: number) => {
           if (frameRateWindowStart === 0) {
@@ -210,6 +267,50 @@ export const Chart: Component<ChartProps> = (props) => {
         onPointerCancel={controls.handlePointerCancel}
         onWheel={controls.handleWheel}
       />
+      <svg class="pointer-events-none absolute inset-0 h-full w-full overflow-visible" aria-hidden="true">
+        <For each={priceMarks()}>
+          {(mark) => {
+            const y = `${(1 - mark.position) * 100}%`;
+
+            return (
+              <g>
+                <line x1="0" x2="100%" y1={y} y2={y} stroke="rgba(148, 163, 184, 0.16)" stroke-width="1" />
+                <text x="99%" y={y} dy="-4" text-anchor="end" class="fill-slate-400 font-mono text-[10px]">
+                  {mark.label}
+                </text>
+              </g>
+            );
+          }}
+        </For>
+        <For each={timeMarks()}>
+          {(mark) => {
+            const x = `${mark.position * 100}%`;
+
+            return (
+              <g>
+                <line x1={x} x2={x} y1="0" y2="100%" stroke="rgba(148, 163, 184, 0.12)" stroke-width="1" />
+                <text x={x} y="98%" text-anchor="middle" class="fill-slate-500 font-mono text-[10px]">
+                  {mark.label}
+                </text>
+              </g>
+            );
+          }}
+        </For>
+        <Show when={latestPriceMark()}>
+          {(mark) => {
+            const y = `${mark().position * 100}%`;
+
+            return (
+              <g>
+                <line x1="0" x2="100%" y1={y} y2={y} stroke="rgba(34, 211, 238, 0.58)" stroke-width="1" />
+                <text x="99%" y={y} dy="13" text-anchor="end" class="fill-cyan-200 font-mono text-[10px]">
+                  {mark().label}
+                </text>
+              </g>
+            );
+          }}
+        </Show>
+      </svg>
       <Show when={status()}>
         {(message) => (
           <div class="pointer-events-none absolute inset-x-4 bottom-4 rounded border border-amber-300/30 bg-black/40 px-3 py-2 font-mono text-xs text-amber-100 backdrop-blur">

@@ -12,6 +12,7 @@ type OrderBookHistogramProps = {
   style?: JSX.CSSProperties;
   cumulative: boolean;
   normalization: HistogramNormalization;
+  priceRange: [min: number, max: number];
   windowFraction: number;
 };
 
@@ -107,6 +108,105 @@ const averageSeriesOverWindow = (series: number[], windowSize: number, direction
 
 const getMaxSeriesValue = (series: number[]): number => {
   return series.reduce((maxValue, value) => Math.max(maxValue, value), 0);
+};
+
+const formatPriceMark = (value: number): string => {
+  const magnitude = Math.abs(value);
+  const digits = magnitude >= 100 ? 2 : magnitude >= 10 ? 3 : 4;
+  return value.toFixed(digits);
+};
+
+const formatSizeMark = (value: number): string => {
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}m`;
+  if (value >= 1_000) return `${(value / 1_000).toFixed(1)}k`;
+  if (value >= 100) return value.toFixed(0);
+  if (value >= 10) return value.toFixed(1);
+  return value.toFixed(2);
+};
+
+const denormalizeSize = (fraction: number, maxSize: number, normalization: HistogramNormalization): number => {
+  if (normalization === HistogramNormalization.Logarithmic) {
+    return Math.expm1(Math.log1p(maxSize) * fraction);
+  }
+
+  return maxSize * fraction;
+};
+
+const drawGridMarkings = (
+  context: CanvasRenderingContext2D,
+  options: {
+    baselineX: number;
+    graphWidth: number;
+    height: number;
+    priceRange: [min: number, max: number];
+    width: number;
+  },
+): void => {
+  context.save();
+  context.strokeStyle = "rgba(148, 163, 184, 0.12)";
+  context.lineWidth = 1;
+
+  for (const fraction of [0.25, 0.5, 0.75, 1]) {
+    const x = options.baselineX + options.graphWidth * fraction;
+    context.beginPath();
+    context.moveTo(x, 0);
+    context.lineTo(x, options.height);
+    context.stroke();
+  }
+
+  for (const fraction of [0, 0.25, 0.5, 0.75, 1]) {
+    const y = options.height * (1 - fraction);
+    context.beginPath();
+    context.moveTo(options.baselineX, y);
+    context.lineTo(options.width, y);
+    context.stroke();
+  }
+
+  context.restore();
+};
+
+const drawMarkingLabels = (
+  context: CanvasRenderingContext2D,
+  options: {
+    baselineX: number;
+    graphWidth: number;
+    height: number;
+    maxSize: number;
+    normalization: HistogramNormalization;
+    priceRange: [min: number, max: number];
+    width: number;
+  },
+): void => {
+  context.save();
+  context.font = '10px "SFMono-Regular", Consolas, "Liberation Mono", monospace';
+  context.fillStyle = "rgba(148, 163, 184, 0.72)";
+
+  if (options.maxSize > 0) {
+    context.textAlign = "center";
+    context.textBaseline = "bottom";
+
+    for (const fraction of [0.5, 1]) {
+      const x = options.baselineX + options.graphWidth * fraction;
+      const value = denormalizeSize(fraction, options.maxSize, options.normalization);
+      context.fillText(formatSizeMark(value), x, options.height - 4);
+    }
+  }
+
+  const [minPrice, maxPrice] = options.priceRange;
+  const priceSpan = maxPrice - minPrice;
+
+  context.textAlign = "right";
+  context.textBaseline = "middle";
+  const labelTop = Math.min(28, options.height / 2);
+  const labelBottom = Math.max(labelTop, options.height - 24);
+
+  for (const fraction of [0, 0.25, 0.5, 0.75, 1]) {
+    const y = Math.min(Math.max(options.height * (1 - fraction), labelTop), labelBottom);
+    const price = minPrice + priceSpan * fraction;
+    context.fillText(formatPriceMark(price), options.width - 8, y);
+  }
+
+  context.restore();
 };
 
 const buildCumulativeSeries = (data: OrderBookHistogramEntry[]) => {
@@ -305,6 +405,14 @@ export const OrderBookHistogram: Component<OrderBookHistogramProps> = (props) =>
     const baselineX = 14.5;
     const graphWidth = Math.max(width - baselineX - 12, 0);
 
+    drawGridMarkings(context, {
+      baselineX,
+      graphWidth,
+      height,
+      priceRange: props.priceRange,
+      width,
+    });
+
     drawArea(context, buySizes, {
       baselineX,
       connectEndToBaseline: true,
@@ -348,6 +456,16 @@ export const OrderBookHistogram: Component<OrderBookHistogramProps> = (props) =>
     context.fillStyle = "rgba(148, 163, 184, 0.72)";
     context.textAlign = "right";
     context.fillText(props.normalization === "logarithmic" ? "LOG" : "LIN", width - 8, 8);
+
+    drawMarkingLabels(context, {
+      baselineX,
+      graphWidth,
+      height,
+      maxSize,
+      normalization: props.normalization,
+      priceRange: props.priceRange,
+      width,
+    });
   });
 
   return <canvas ref={canvas} class={props.class} style={props.style} />;

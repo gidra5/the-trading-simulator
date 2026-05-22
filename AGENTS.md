@@ -12,6 +12,8 @@ defer optional parameters as high as possible in hierarchy
 if there is already a suitable utility function, use it
 
 You don't need to be extremely defensive. Choose simple implementations that are easy to understand instead of fool-proof solutions, we don't need it to be perfect. This will be eventually rewritten, so it should just have a clear intent.
+For example, don't write conditions like `Number.isFinite(priceSpan) && priceSpan > 0` just to validate data. Instead assume it is always passed valid, and use `assert` if you need to validate the data, instead of conditionals. 
+Dont make parameters optional, like `priceRange?: [min: number, max: number];`, unless you absolutely need to. Try to make the parameters required and update the calls to the function.
 
 For finite enum/union values that map directly to labels, add translation keys for every value and derive the key from the value instead of writing a label switch. Example: use `t(``progression.status.${state}``)` for a typed `ProgressionNodeStatus`, with matching `progression.status.*` entries in the dictionary.
 Only derive translation keys from closed, typed values controlled by the app. Do not interpolate arbitrary user input into translation keys.
