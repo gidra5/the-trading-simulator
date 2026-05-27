@@ -1,78 +1,96 @@
-import { afterEach, expect, test, vi } from "vitest";
-import {
-  buildSamplingFixture,
-  compareSamplers,
-  empiricalStateCancellationWeights,
-  getResampledApproximateWeightedCancellationOrders,
-  getWeightedCancellationOrders,
-  indexApproximateWeights,
-} from "./cancellation-sampling.helpers";
+import { expect, test } from "vitest";
+import type { OrderBookChange } from "../src/market/orderBook";
+import { createCancellationState } from "../src/simulation/cancellation";
+import type { RestingOrder } from "../src/simulation/types";
 
-const strictErrorMargin = 0.000_01;
-
-afterEach(() => {
-  vi.restoreAllMocks();
+const order = (id: number, side: RestingOrder["side"], price: number): RestingOrder => ({
+  id,
+  side,
+  price,
+  size: 1,
+  createdAt: 0,
 });
 
-test("precise cancellation sampler matches itself within the strict sampling diagnostics margin", async () => {
-  const { context, options, state } = await buildSamplingFixture({ ticks: 16 });
-  const preciseOrders = getWeightedCancellationOrders(state, options, context);
-  const diagnostics = compareSamplers(preciseOrders, preciseOrders);
+const ignoreOrderSubscription = (): void => {};
 
-  expect(diagnostics.totalVariationDistance).toBeLessThanOrEqual(strictErrorMargin);
-
-  for (const [feature, error] of Object.entries(diagnostics.featureErrors)) {
-    expect(error, feature).toBeLessThanOrEqual(strictErrorMargin);
-  }
-}, 30_000);
-
-test("index-based approximate sampler reports distribution and feature drift", async () => {
-  const { context, options, state } = await buildSamplingFixture({ ticks: 16 });
-  const preciseOrders = getWeightedCancellationOrders(state, options, context);
-  const estimatedApproximateWeights = indexApproximateWeights(preciseOrders);
-  const diagnostics = compareSamplers(preciseOrders, estimatedApproximateWeights);
-  const featureErrors = Object.values(diagnostics.featureErrors);
-
-  expect(diagnostics.totalVariationDistance).toBeGreaterThan(strictErrorMargin);
-  expect(featureErrors.every(Number.isFinite)).toBe(true);
-  expect(featureErrors.some((error) => error > strictErrorMargin)).toBe(true);
-}, 30_000);
-
-test("age-proposal approximate cancellation sampler reports accuracy and resampling diagnostics", async () => {
-  const { context, options, state } = await buildSamplingFixture({ ticks: 16 });
-  const preciseOrders = getWeightedCancellationOrders(state, options, context);
-  const approximate = getResampledApproximateWeightedCancellationOrders(state, options, context, {
-    candidateCount: 64,
-    sampleCount: 8192,
+test("cancellation returns false when there are no resting orders for the side", () => {
+  const canceledOrders: RestingOrder[] = [];
+  const state = createCancellationState({
+    sampleOrderIndex: () => 0,
+    onCancel: (canceledOrder) => {
+      canceledOrders.push(canceledOrder);
+      return true;
+    },
   });
-  const diagnostics = compareSamplers(preciseOrders, approximate.orders);
-  const featureErrors = Object.values(diagnostics.featureErrors);
 
-  expect(approximate.diagnostics.candidateCount).toBe(64);
-  expect(approximate.diagnostics.sampleCount).toBe(8192);
-  expect(approximate.diagnostics.uniqueCandidateCount).toBeGreaterThan(0);
-  expect(approximate.diagnostics.candidateCoverage).toBeGreaterThan(0.1);
-  expect(approximate.diagnostics.effectiveSampleSize).toBeGreaterThan(20);
-  expect(approximate.diagnostics.minWeightRatio).toBeGreaterThan(0);
-  expect(approximate.diagnostics.maxWeightRatio).toBeGreaterThanOrEqual(approximate.diagnostics.minWeightRatio);
-  expect(approximate.diagnostics.weightRatioSpread).toBeGreaterThanOrEqual(1);
-  expect(diagnostics.totalVariationDistance).toBeGreaterThan(strictErrorMargin);
-  expect(diagnostics.totalVariationDistance).toBeLessThanOrEqual(1);
-  expect(featureErrors.every(Number.isFinite)).toBe(true);
-  expect(featureErrors.some((error) => error > strictErrorMargin)).toBe(true);
-}, 30_000);
+  expect(state.simulate("buy")).toBe(false);
+  expect(canceledOrders).toEqual([]);
+});
 
-test("cancellation state simulate samples the expected weighted cancellation distribution", async () => {
-  const { context, options, sampleStateCancellation, state, orders } = await buildSamplingFixture({ ticks: 16 });
-  const preciseOrders = getWeightedCancellationOrders(state, options, context);
-  const sampleCount = Math.max(8192, orders.length * 8);
-  const stateEmpiricalOrders = empiricalStateCancellationWeights(preciseOrders, sampleCount, sampleStateCancellation);
-  const diagnostics = compareSamplers(preciseOrders, stateEmpiricalOrders);
-  const featureErrors = Object.values(diagnostics.featureErrors);
+test("cancellation samples a simple order index from price-sorted resting orders", () => {
+  const canceledOrders: RestingOrder[] = [];
+  const state = createCancellationState({
+    sampleOrderIndex: () => 1,
+    onCancel: (canceledOrder) => {
+      canceledOrders.push(canceledOrder);
+      return true;
+    },
+  });
 
-  expect(stateEmpiricalOrders.length).toBeGreaterThan(0);
-  expect(diagnostics.totalVariationDistance).toBeGreaterThan(strictErrorMargin);
-  expect(diagnostics.totalVariationDistance).toBeLessThan(0.15);
-  expect(featureErrors.every(Number.isFinite)).toBe(true);
-  expect(Math.max(...featureErrors)).toBeLessThanOrEqual(1);
-}, 30_000);
+  state.addOrder(order(1, "buy", 0.99), ignoreOrderSubscription);
+  state.addOrder(order(2, "buy", 0.97), ignoreOrderSubscription);
+  state.addOrder(order(3, "buy", 0.98), ignoreOrderSubscription);
+
+  expect(state.simulate("buy")).toBe(true);
+  expect(canceledOrders.map((canceledOrder) => canceledOrder.id)).toEqual([3]);
+  expect(state.getRestingOrders("buy").map((restingOrder) => restingOrder.id)).toEqual([2, 1]);
+});
+
+test("cancellation clamps sampled order indexes to the available orders", () => {
+  const canceledOrders: RestingOrder[] = [];
+  const state = createCancellationState({
+    sampleOrderIndex: () => 99,
+    onCancel: (canceledOrder) => {
+      canceledOrders.push(canceledOrder);
+      return true;
+    },
+  });
+
+  state.addOrder(order(1, "sell", 1.01), ignoreOrderSubscription);
+  state.addOrder(order(2, "sell", 1.02), ignoreOrderSubscription);
+
+  expect(state.simulate("sell")).toBe(true);
+  expect(canceledOrders.map((canceledOrder) => canceledOrder.id)).toEqual([2]);
+
+  const lowIndexState = createCancellationState({
+    sampleOrderIndex: () => -10,
+    onCancel: (canceledOrder) => {
+      canceledOrders.push(canceledOrder);
+      return true;
+    },
+  });
+
+  lowIndexState.addOrder(order(3, "sell", 1.01), ignoreOrderSubscription);
+  lowIndexState.addOrder(order(4, "sell", 1.02), ignoreOrderSubscription);
+
+  expect(lowIndexState.simulate("sell")).toBe(true);
+  expect(canceledOrders.map((canceledOrder) => canceledOrder.id)).toEqual([2, 3]);
+});
+
+test("cancellation removes subscribed orders that leave the market first", () => {
+  let onOrderChange: ((change: OrderBookChange) => void) | null = null;
+  const state = createCancellationState({
+    sampleOrderIndex: () => 0,
+    onCancel: () => true,
+  });
+  const restingOrder = order(1, "buy", 0.99);
+
+  state.addOrder(restingOrder, (_id, callback) => {
+    onOrderChange = callback;
+  });
+
+  onOrderChange?.({ kind: "remove", order: restingOrder, side: "buy" });
+
+  expect(state.getRestingOrders("buy")).toEqual([]);
+  expect(state.simulate("buy")).toBe(false);
+});

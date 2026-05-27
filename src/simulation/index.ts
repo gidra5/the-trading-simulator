@@ -1,20 +1,24 @@
 import { type Accessor } from "solid-js";
 import { type MarketState, type OrderSide } from "../market/index";
+import { assert } from "../utils";
 import { createCancellationState } from "./cancellation";
+import { createSimulationEventStream } from "./eventStream";
 import { createOrderPlacementState } from "./orderPlacement";
 import { type SimulationTimeState } from "./time";
-import { type RestingOrder, type SimulationEventType } from "./types";
-import { createSimulationEventStream } from "./eventStream";
-import { assert } from "../utils";
+import { type SimulationEventType } from "./types";
 
 export {
-  defaultMarketBehaviorSettings,
+  defaultMarketModelSettings,
   simulationTickTime,
-  type MarketBehaviorSettings,
+  type MarketModelSettings,
   type MarketEventSetting,
   type OrderPriceDistribution,
+  type OrderSelectionDistribution,
   type OrderSizeDistribution,
+  type SimulationEventType,
+  type SimulationExcitationMatrix,
   type SimulationEventSettingGroup,
+  type SimulationEventVector,
 } from "./types";
 
 type TradingSimulationOptions = {
@@ -22,39 +26,14 @@ type TradingSimulationOptions = {
   time: SimulationTimeState;
   cancellation: {
     candidatesCount: Accessor<number>;
-    ageWeight: Accessor<number>;
-    priceMovement: {
-      weight: Accessor<number>;
-      recencyDecay: Accessor<number>;
-    };
-    localVolume: {
-      weight: Accessor<number>;
-      ramp: Accessor<number>;
-    };
-    farOrder: {
-      weight: Accessor<number>;
-      minAge: Accessor<number>;
-      window: Accessor<number>;
-      ramp: Accessor<number>;
-    };
+    sampleOrderIndex: (orderCount: number) => number;
   };
   orderPlacement: {
-    anchoringIntervals: Accessor<number[]>;
     sampleOrderDistance: () => number;
     sampleOrderSize: () => number;
-    inSpreadReach: Accessor<number>;
-    nearSpreadSize: Accessor<number>;
-    inSpreadOrderProbability: Accessor<number>;
-    nearSpreadProbability: Accessor<number>;
-    anchorPreference: Accessor<number>;
-    liquidityWallAnchorPreference: Accessor<number>;
-    liquidityWallAnchorRange: Accessor<number>;
-    liquidityWallHistogramResolution: Accessor<number>;
-    roundPricePreference: Accessor<number>;
-    roundPriceAnchorMinMidDistance: Accessor<number>;
   };
   eventStream: {
-    publicInterest: Accessor<number[]>;
+    baselineActivity: Accessor<number[]>;
     excitementDecay: Accessor<number[]>;
     excitationMatrix: Accessor<number[][]>;
   };
@@ -66,7 +45,6 @@ export const createTradingSimulationState = (options: TradingSimulationOptions) 
   const eventStream = createSimulationEventStream(options.eventStream);
   const cancellation = createCancellationState({
     market: options.market,
-    time: options.time,
     onCancel: (order) => options.market.cancelOrder(order.id, order.side) !== null,
     ...options.cancellation,
   });
@@ -76,10 +54,6 @@ export const createTradingSimulationState = (options: TradingSimulationOptions) 
     time: options.time,
     ...options.orderPlacement,
   });
-
-  const getCancellationRestingOrders = (side: OrderSide): RestingOrder[] => {
-    return cancellation.getRestingOrders(side);
-  };
 
   const simulateLimitOrderEvent = (side: OrderSide): void => {
     const restingOrder = orderPlacement.simulateLimitOrderEvent(side);
@@ -105,8 +79,6 @@ export const createTradingSimulationState = (options: TradingSimulationOptions) 
         cancellation.simulate(side);
         break;
     }
-
-    orderPlacement.updateRecentPriceAnchors();
   };
 
   // TODO: separate economy simulation model to allow for news impacts
@@ -118,10 +90,16 @@ export const createTradingSimulationState = (options: TradingSimulationOptions) 
   // TODO: macro laws?
   // https://chatgpt.com/c/69e01063-a9c8-8390-a2db-4f314b4d59f1
   const tick = (dt: number): void => {
-    eventStream.sampleEvents(dt, simulateEvent);
+    let elapsed = 0;
+    eventStream.sampleEvents(dt, (eventType, eventDt) => {
+      elapsed += eventDt;
+      simulateEvent(eventType, eventDt);
+    });
+
+    if (elapsed < dt) options.time.advance(dt - elapsed);
   };
 
-  return { getCancellationRestingOrders, tick };
+  return { getCancellationRestingOrders: cancellation.getRestingOrders, tick };
 };
 
 export type TradingSimulation = ReturnType<typeof createTradingSimulationState>;

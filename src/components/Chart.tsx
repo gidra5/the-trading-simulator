@@ -41,39 +41,95 @@ const viewportMatches = (left: ChartViewport, right: ChartViewport): boolean =>
 // TODO: fixed candle interval relative to viewport
 // TODO: micro and macro candles to smoothly transition between scales
 // TODO: side panel with order book histogram
-// todo: crosshair
 // todo: drawing tools?
+// todo: smooth transition between scales
+// todo: move constants into settings
+// todo: review slop
 type ChartMark = {
   label: string;
   position: number;
 };
 
-const markCount = 5;
-
-const buildLinearMarks = (range: [number, number], formatLabel: (value: number) => string): ChartMark[] => {
-  const span = range[1] - range[0];
-  if (!Number.isFinite(span) || span <= 0) return [];
-
-  return Array.from({ length: markCount }, (_, index) => {
-    const ratio = index / (markCount - 1);
-    const value = range[0] + span * ratio;
-
-    return {
-      label: formatLabel(value),
-      position: ratio,
-    };
-  });
+type PointerPosition = {
+  x: number;
+  y: number;
 };
 
-const formatPriceMark = (value: number): string => {
+const maxMarkGapPx = 160;
+const priceMarkBaseInterval = 0.25;
+const timeMarkBaseInterval = 25_000;
+
+const getDivisibleIntervalAtOrBelow = (maximumInterval: number, baseInterval: number): number => {
+  if (maximumInterval <= 0) return baseInterval;
+
+  return baseInterval * 2 ** Math.floor(Math.log2(maximumInterval / baseInterval));
+};
+
+const getFixedMarkInterval = (range: [number, number], pixelSpan: number, baseInterval: number): number => {
+  const span = range[1] - range[0];
+  if (span <= 0 || pixelSpan <= 0) return baseInterval;
+
+  return getDivisibleIntervalAtOrBelow((span * maxMarkGapPx) / pixelSpan, baseInterval);
+};
+
+const normalizeMarkValue = (value: number, interval: number): number =>
+  Math.abs(value) < interval / 1_000 ? 0 : value;
+
+const buildFixedMarks = (
+  range: [number, number],
+  interval: number,
+  formatLabel: (value: number, interval: number) => string,
+): ChartMark[] => {
+  const span = range[1] - range[0];
+  if (span <= 0 || interval <= 0) return [];
+
+  const firstIndex = Math.ceil(range[0] / interval);
+  const lastIndex = Math.floor(range[1] / interval);
+  const marks: ChartMark[] = [];
+
+  for (let index = firstIndex; index <= lastIndex; index += 1) {
+    const value = normalizeMarkValue(index * interval, interval);
+
+    marks.push({
+      label: formatLabel(value, interval),
+      position: (value - range[0]) / span,
+    });
+  }
+
+  return marks;
+};
+
+const trimFixed = (value: string): string => (value.includes(".") ? value.replace(/\.?0+$/, "") : value);
+
+const getDecimalPlaces = (value: number): number => {
+  let digits = 0;
+  let scaledValue = value;
+
+  while (digits < 8 && Math.abs(Math.round(scaledValue) - scaledValue) > 0.000_000_01) {
+    scaledValue *= 10;
+    digits += 1;
+  }
+
+  return digits;
+};
+
+const formatPriceMark = (value: number, interval: number): string => {
   const magnitude = Math.abs(value);
-  const digits = magnitude >= 100 ? 2 : magnitude >= 10 ? 3 : 4;
+  const magnitudeDigits = magnitude >= 100 ? 2 : magnitude >= 10 ? 3 : 4;
+  const digits = Math.max(magnitudeDigits, getDecimalPlaces(interval));
   return formatNumber(value, digits);
 };
 
-const formatDuration = (milliseconds: number): string => {
+const formatDuration = (milliseconds: number, interval: number): string => {
   const sign = milliseconds < 0 ? "-" : "";
-  const totalSeconds = Math.floor(Math.abs(milliseconds) / 1_000);
+  const absoluteMilliseconds = Math.abs(milliseconds);
+
+  if (interval < 60_000) {
+    const digits = getDecimalPlaces(interval / 1_000);
+    return `${sign}${trimFixed((absoluteMilliseconds / 1_000).toFixed(digits))}s`;
+  }
+
+  const totalSeconds = Math.floor(absoluteMilliseconds / 1_000);
   const seconds = totalSeconds % 60;
   const totalMinutes = Math.floor(totalSeconds / 60);
   const minutes = totalMinutes % 60;
@@ -84,6 +140,18 @@ const formatDuration = (milliseconds: number): string => {
   }
 
   return `${sign}${minutes}:${String(seconds).padStart(2, "0")}`;
+};
+
+const formatCursorDuration = (milliseconds: number, interval: number): string => {
+  const sign = milliseconds < 0 ? "-" : "";
+  const absoluteMilliseconds = Math.abs(milliseconds);
+
+  if (interval < 60_000) {
+    const digits = getDecimalPlaces(interval / 1_000);
+    return `${sign}${(absoluteMilliseconds / 1_000).toFixed(digits)}s`;
+  }
+
+  return formatDuration(milliseconds, interval);
 };
 
 export const Chart: Component<ChartProps> = (props) => {
@@ -101,21 +169,52 @@ export const Chart: Component<ChartProps> = (props) => {
   const [status, setStatus] = createSignal<string | null>(null);
   const [isDragging, setIsDragging] = createSignal(false);
   const [frameRate, setFrameRate] = createSignal<number | null>(null);
-  const priceMarks = createMemo(() => buildLinearMarks(props.viewport.price, formatPriceMark));
-  const timeMarks = createMemo(() => buildLinearMarks(props.viewport.time, formatDuration));
+  const [pointerPosition, setPointerPosition] = createSignal<PointerPosition | null>(null);
+  const priceMarkInterval = createMemo(() =>
+    getFixedMarkInterval(props.viewport.price, props.viewport.resolution[1], priceMarkBaseInterval),
+  );
+  const timeMarkInterval = createMemo(() =>
+    getFixedMarkInterval(props.viewport.time, props.viewport.resolution[0], timeMarkBaseInterval),
+  );
+  const priceMarks = createMemo(() => buildFixedMarks(props.viewport.price, priceMarkInterval(), formatPriceMark));
+  const timeMarks = createMemo(() => buildFixedMarks(props.viewport.time, timeMarkInterval(), formatDuration));
   const latestPriceMark = createMemo(() => {
     const latestCandle = props.priceCandles[props.priceCandles.length - 1];
     if (!latestCandle) return null;
 
     const priceSpan = props.viewport.price[1] - props.viewport.price[0];
-    if (!Number.isFinite(priceSpan) || priceSpan <= 0) return null;
+    if (priceSpan <= 0) return null;
 
-    const position = 1 - (latestCandle.close - props.viewport.price[0]) / priceSpan;
+    const position = (latestCandle.close - props.viewport.price[0]) / priceSpan;
     if (position < 0 || position > 1) return null;
 
     return {
-      label: formatPriceMark(latestCandle.close),
+      label: formatPriceMark(latestCandle.close, priceMarkInterval()),
       position,
+    };
+  });
+  const pointerPriceMark = createMemo(() => {
+    const pointer = pointerPosition();
+    if (!pointer) return null;
+
+    const priceSpan = props.viewport.price[1] - props.viewport.price[0];
+    const price = props.viewport.price[0] + priceSpan * (1 - pointer.y);
+
+    return {
+      label: formatPriceMark(price, priceMarkInterval()),
+      position: 1 - pointer.y,
+    };
+  });
+  const pointerTimeMark = createMemo(() => {
+    const pointer = pointerPosition();
+    if (!pointer) return null;
+
+    const timeSpan = props.viewport.time[1] - props.viewport.time[0];
+    const time = props.viewport.time[0] + timeSpan * pointer.x;
+
+    return {
+      label: formatCursorDuration(time, timeMarkInterval()),
+      position: pointer.x,
     };
   });
 
@@ -147,6 +246,50 @@ export const Chart: Component<ChartProps> = (props) => {
     setDragging: setIsDragging,
     updateViewport,
   });
+
+  const readPointerPosition = (event: PointerEvent | WheelEvent): PointerPosition | null => {
+    if (!canvas) return null;
+
+    const rect = canvas.getBoundingClientRect();
+    const x = event.clientX - rect.left;
+    const y = event.clientY - rect.top;
+
+    if (x < 0 || y < 0 || x > rect.width || y > rect.height) return null;
+
+    return {
+      x: rect.width === 0 ? 0 : x / rect.width,
+      y: rect.height === 0 ? 0 : y / rect.height,
+    };
+  };
+
+  const updatePointerPosition = (event: PointerEvent | WheelEvent): void => {
+    setPointerPosition(readPointerPosition(event));
+  };
+
+  const handlePointerDown = (event: PointerEvent): void => {
+    updatePointerPosition(event);
+    controls.handlePointerDown(event);
+  };
+
+  const handlePointerMove = (event: PointerEvent): void => {
+    updatePointerPosition(event);
+    controls.handlePointerMove(event);
+  };
+
+  const handlePointerUp = (event: PointerEvent): void => {
+    updatePointerPosition(event);
+    controls.handlePointerUp(event);
+  };
+
+  const handlePointerCancel = (event: PointerEvent): void => {
+    setPointerPosition(null);
+    controls.handlePointerCancel(event);
+  };
+
+  const handleWheel = (event: WheelEvent): void => {
+    updatePointerPosition(event);
+    controls.handleWheel(event);
+  };
 
   const syncCanvasSize = () => {
     if (!canvas || !renderer) {
@@ -261,11 +404,13 @@ export const Chart: Component<ChartProps> = (props) => {
           isDragging() && "cursor-grabbing",
           !isDragging() && "cursor-grab",
         )}
-        onPointerDown={controls.handlePointerDown}
-        onPointerMove={controls.handlePointerMove}
-        onPointerUp={controls.handlePointerUp}
-        onPointerCancel={controls.handlePointerCancel}
-        onWheel={controls.handleWheel}
+        onPointerDown={handlePointerDown}
+        onPointerEnter={handlePointerMove}
+        onPointerMove={handlePointerMove}
+        onPointerLeave={() => setPointerPosition(null)}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerCancel}
+        onWheel={handleWheel}
       />
       <svg class="pointer-events-none absolute inset-0 h-full w-full overflow-visible" aria-hidden="true">
         <For each={priceMarks()}>
@@ -298,12 +443,43 @@ export const Chart: Component<ChartProps> = (props) => {
         </For>
         <Show when={latestPriceMark()}>
           {(mark) => {
-            const y = `${mark().position * 100}%`;
+            const y = () => `${(1 - mark().position) * 100}%`;
 
             return (
               <g>
-                <line x1="0" x2="100%" y1={y} y2={y} stroke="rgba(34, 211, 238, 0.58)" stroke-width="1" />
-                <text x="99%" y={y} dy="13" text-anchor="end" class="fill-cyan-200 font-mono text-[10px]">
+                <line x1="0" x2="100%" y1={y()} y2={y()} stroke="rgba(34, 211, 238, 0.58)" stroke-width="1" />
+                <text x="99%" y={y()} dy="13" text-anchor="end" class="fill-cyan-200 font-mono text-[10px]">
+                  {mark().label}
+                </text>
+              </g>
+            );
+          }}
+        </Show>
+        <Show when={pointerPriceMark()}>
+          {(mark) => {
+            const y = () => `${(1 - mark().position) * 100}%`;
+            const dy = () => (mark().position > 0.92 ? "13" : "-4");
+
+            return (
+              <g>
+                <line x1="0" x2="100%" y1={y()} y2={y()} stroke="rgba(251, 191, 36, 0.58)" stroke-width="1" />
+                <text x="99%" y={y()} dy={dy()} text-anchor="end" class="fill-amber-200 font-mono text-[10px]">
+                  {mark().label}
+                </text>
+              </g>
+            );
+          }}
+        </Show>
+        <Show when={pointerTimeMark()}>
+          {(mark) => {
+            const x = () => `${mark().position * 100}%`;
+            const textAnchor = () => (mark().position < 0.08 ? "start" : mark().position > 0.92 ? "end" : "middle");
+            const dx = () => (mark().position < 0.08 ? "4" : mark().position > 0.92 ? "-4" : "0");
+
+            return (
+              <g>
+                <line x1={x()} x2={x()} y1="0" y2="100%" stroke="rgba(251, 191, 36, 0.52)" stroke-width="1" />
+                <text x={x()} dx={dx()} y="98%" text-anchor={textAnchor()} class="fill-amber-200 font-mono text-[10px]">
                   {mark().label}
                 </text>
               </g>

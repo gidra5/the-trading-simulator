@@ -1,195 +1,169 @@
 import { createMemo, createSignal } from "solid-js";
 import {
-  defaultMarketBehaviorSettings,
+  cloneMarketModelSettings,
+  defaultMarketModelSettings,
   eventExcitationMatrix,
   eventVector,
-  normalizeExcitationMatrix,
+  type MarketModelSettings,
+  type MarketEventSetting,
   type OrderPriceDistribution,
+  type OrderSelectionDistribution,
   type OrderSizeDistribution,
+  type SimulationEventSettingGroup,
 } from "./types";
-import { halfLifeToDecay } from "../utils";
-import { sampleExponential, sampleLogNormal, sampleNormal, samplePowerLaw, sampleUniform } from "../distributions";
+import { clamp, halfLifeToDecay } from "../utils";
+import { sampleNormal, sampleUniform } from "../distributions";
 
+type ScalarMarketModelSetting = Exclude<
+  keyof MarketModelSettings,
+  "excitementHalfLife" | "excitationMatrix" | "publicInterest"
+>;
+
+// todo: orchestrator modes/events
+// mode - baseline model parameters describing a particular crowd behavior archetype
+// events - deviations from an archetype that eventually dies, or a permanent archetype change.
 export const createOrchestrator = () => {
-  const [marketParameters] = createSignal(defaultMarketBehaviorSettings);
-  const [orderPriceDistribution] = createSignal<OrderPriceDistribution>("power-law");
-  const [orderSizeDistribution] = createSignal<OrderSizeDistribution>("power-law");
-  const cancellationProbabilities = {
-    time: createSignal(0.5),
-    priceMovement: createSignal(0.5),
-    localVolume: createSignal(0.5),
-    farOrder: createSignal(0.5),
+  const [modelSettings, setModelSettings] = createSignal(defaultMarketModelSettings);
+  const [orderPriceDistribution, setOrderPriceDistribution] = createSignal<OrderPriceDistribution>("normal");
+  const [orderSizeDistribution, setOrderSizeDistribution] = createSignal<OrderSizeDistribution>("normal");
+  const [orderSelectionDistribution, setOrderSelectionDistribution] =
+    createSignal<OrderSelectionDistribution>("uniform");
+  const getMarketModelSettings = (): MarketModelSettings => cloneMarketModelSettings(modelSettings());
+  const setMarketModelSettings = (settings: MarketModelSettings): void => {
+    setModelSettings(cloneMarketModelSettings(settings));
   };
-  const _excitationMatrix = (): number[][] => {
-    const {
-      fear,
-      reflexivity,
-      contrarianism,
-      passiveMirroring,
-      liquidityChasing,
-      liquidityFading,
-      adverseSelection,
-      orderCrowding,
-      passiveAdverseSelection,
-      cancelCrowding,
-      bookRebalancing,
-      cancelPanic,
-    } = marketParameters();
-
-    return eventExcitationMatrix({
-      "market-buy": {
-        "market-buy": reflexivity * (1 - fear),
-        "market-sell": contrarianism * fear,
-        "order-buy": liquidityChasing * (1 - fear),
-        "order-sell": passiveMirroring * fear,
-        "cancel-buy": liquidityFading * (1 - fear),
-        "cancel-sell": adverseSelection * fear,
+  const setMarketModelSetting = (key: ScalarMarketModelSetting, value: number): void => {
+    setModelSettings((current) => ({ ...current, [key]: value }));
+  };
+  const setMarketModelEventSetting = (
+    group: SimulationEventSettingGroup,
+    eventType: MarketEventSetting,
+    value: number,
+  ): void => {
+    setModelSettings((current) => ({
+      ...current,
+      [group]: { ...current[group], [eventType]: value },
+    }));
+  };
+  const setMarketModelExcitation = (source: MarketEventSetting, target: MarketEventSetting, value: number): void => {
+    setModelSettings((current) => ({
+      ...current,
+      excitationMatrix: {
+        ...current.excitationMatrix,
+        [source]: { ...current.excitationMatrix[source], [target]: value },
       },
-      "market-sell": {
-        "market-buy": contrarianism * (1 - fear),
-        "market-sell": reflexivity * fear,
-        "order-buy": passiveMirroring * (1 - fear),
-        "order-sell": liquidityChasing * fear,
-        "cancel-buy": adverseSelection * (1 - fear),
-        "cancel-sell": liquidityFading * fear,
-      },
-      "order-buy": {
-        "market-buy": reflexivity * (1 - fear),
-        "market-sell": contrarianism * fear,
-        "order-buy": orderCrowding * (1 - fear),
-        "order-sell": passiveMirroring * fear,
-        "cancel-buy": passiveAdverseSelection * (1 - fear),
-        "cancel-sell": adverseSelection * fear,
-      },
-      "order-sell": {
-        "market-buy": contrarianism * (1 - fear),
-        "market-sell": reflexivity * fear,
-        "order-buy": passiveMirroring * (1 - fear),
-        "order-sell": orderCrowding * fear,
-        "cancel-buy": adverseSelection * (1 - fear),
-        "cancel-sell": passiveAdverseSelection * fear,
-      },
-      "cancel-buy": {
-        "market-buy": contrarianism * (1 - fear),
-        "market-sell": cancelPanic * fear,
-        "order-buy": reflexivity * (1 - fear),
-        "order-sell": bookRebalancing * fear,
-        "cancel-buy": cancelCrowding * (1 - fear),
-        "cancel-sell": passiveMirroring * fear,
-      },
-      "cancel-sell": {
-        "market-buy": cancelPanic * (1 - fear),
-        "market-sell": contrarianism * fear,
-        "order-buy": bookRebalancing * (1 - fear),
-        "order-sell": reflexivity * fear,
-        "cancel-buy": passiveMirroring * (1 - fear),
-        "cancel-sell": cancelCrowding * fear,
-      },
-    }); // row event adds rates to column events before branching-ratio scaling
+    }));
+  };
+  const updateOrderPriceDistribution = (distribution: OrderPriceDistribution): void => {
+    setOrderPriceDistribution(distribution);
+  };
+  const updateOrderSizeDistribution = (distribution: OrderSizeDistribution): void => {
+    setOrderSizeDistribution(distribution);
+  };
+  const updateOrderSelectionDistribution = (distribution: OrderSelectionDistribution): void => {
+    setOrderSelectionDistribution(distribution);
   };
 
   const excitementDecay = createMemo(() => {
-    return eventVector(marketParameters().excitementHalfLife).map(halfLifeToDecay);
+    return eventVector(modelSettings().excitementHalfLife).map(halfLifeToDecay);
   });
   const excitationMatrix = createMemo((): number[][] => {
-    return normalizeExcitationMatrix(
-      _excitationMatrix(),
-      excitementDecay(),
-      eventVector(marketParameters().branchingRatio),
-    );
+    return eventExcitationMatrix(modelSettings().excitationMatrix);
   });
 
-  const publicInterest = createMemo((): number[] => {
-    const { publicInterestRate, patience, greed, fear } = marketParameters();
-    const marketPressure = patience * greed;
-    const orderPressure = patience * (1 - greed);
-    const cancelPressure = 1 - patience;
-
-    return eventVector({
-      "market-buy": marketPressure * (1 - fear),
-      "market-sell": marketPressure * fear,
-      "order-buy": orderPressure * (1 - fear),
-      "order-sell": orderPressure * fear,
-      "cancel-buy": cancelPressure * (1 - fear),
-      "cancel-sell": cancelPressure * fear,
-    }).map((v) => publicInterestRate * v); // event rates per second before self-excitation
+  const baselineActivity = createMemo((): number[] => {
+    return eventVector(modelSettings().publicInterest);
   });
+
+  const sampleUniformWithStandardDeviation = (mean: number, standardDeviation: number, min: number): number => {
+    const halfRange = Math.max(0, standardDeviation) * Math.sqrt(3);
+    const low = Math.max(min, mean - halfRange);
+    const high = Math.max(low, mean + halfRange);
+
+    return sampleUniform(low, high);
+  };
 
   const sampleOrderDistance = (): number => {
-    const parameters = marketParameters();
-    const scale = parameters.orderSpread;
-    const tail = parameters.orderPriceTail;
+    const parameters = modelSettings();
+    const mean = parameters.meanPrice;
+    const standardDeviation = parameters.priceVariance;
 
-    switch (orderPriceDistribution()) {
-      case "uniform":
-        return sampleUniform(0, scale * 2);
-      case "abs-normal":
-        return Math.abs(sampleNormal(0, scale));
-      case "log-normal":
-        return sampleLogNormal(scale, tail);
-      case "power-law":
-        return scale * samplePowerLaw(tail);
-      case "exponential":
-        return sampleExponential(scale);
-    }
+    const distance = (() => {
+      switch (orderPriceDistribution()) {
+        case "uniform":
+          return sampleUniformWithStandardDeviation(mean, standardDeviation, -Infinity);
+        case "normal":
+          return sampleNormal(mean, standardDeviation);
+      }
+    })();
+    return Math.max(Number.EPSILON, Math.abs(distance));
   };
 
   const sampleOrderSize = (): number => {
-    const parameters = marketParameters();
-    const scale = parameters.orderSizeScale;
-    const tail = parameters.orderSizeTail;
+    const parameters = modelSettings();
+    const mean = parameters.meanSize;
+    const standardDeviation = parameters.sizeVariance;
 
     switch (orderSizeDistribution()) {
       case "uniform":
-        return sampleUniform(0, scale * 2);
-      case "log-normal":
-        return sampleLogNormal(scale, tail);
-      case "power-law":
-        return scale * samplePowerLaw(tail);
-      case "exponential":
-        return sampleExponential(scale);
+        return sampleUniformWithStandardDeviation(mean, standardDeviation, Number.EPSILON);
+      case "normal":
+        return Math.max(Number.EPSILON, Math.abs(sampleNormal(mean, standardDeviation)));
     }
   };
 
-  const priceAnchorIntervals = [60_000, 600_000, 1_800_000, 3_600_000];
+  const sampleCancellationOrderIndex = (orderCount: number): number => {
+    if (orderCount <= 1) return 0;
+
+    switch (orderSelectionDistribution()) {
+      case "uniform":
+      case "normal": {
+        const parameters = modelSettings();
+        const mean = clamp(parameters.cancellationCenter, 0, 1) * (orderCount - 1);
+        const standardDeviation = Math.max(0, parameters.cancellationVariance) * orderCount;
+        const sample =
+          orderSelectionDistribution() === "uniform"
+            ? sampleUniformWithStandardDeviation(mean, standardDeviation, 0)
+            : sampleNormal(mean, standardDeviation);
+
+        return Math.round(clamp(sample, 0, orderCount - 1));
+      }
+    }
+  };
+
   return {
     cancellation: {
-      ageWeight: cancellationProbabilities.time[0],
-      priceMovement: {
-        weight: cancellationProbabilities.priceMovement[0],
-        recencyDecay: () => marketParameters().cancellationPriceMovementOrderDecay,
-      },
-      localVolume: {
-        weight: cancellationProbabilities.localVolume[0],
-        ramp: () => marketParameters().cancellationLocalVolumeRamp,
-      },
-      farOrder: {
-        weight: cancellationProbabilities.farOrder[0],
-        minAge: () => marketParameters().cancellationFarOrderMinAge,
-        window: () => marketParameters().cancellationFarOrderWindow,
-        ramp: () => marketParameters().cancellationFarOrderRamp,
-      },
+      // todo: price movement - if moved awy from order, increase cancel prob and decrease if moved to the order
+      // todo: distance?
+      // todo: time
+      // todo: queue volume
+      sampleOrderIndex: sampleCancellationOrderIndex,
     },
     orderPlacement: {
-      anchoringIntervals: () => priceAnchorIntervals,
+      // todo: anchoring - min, max in interval(s)
+      // todo: anchoring - round anchor,
+      // todo: anchoring - liquidity anchors (place right before a wall)
+      // todo: inspread/near/far distributions.
       sampleOrderSize,
       sampleOrderDistance,
-      inSpreadReach: () => marketParameters().inSpreadReach,
-      nearSpreadSize: () => marketParameters().nearSpreadSize,
-      inSpreadOrderProbability: () => marketParameters().inSpreadOrderProbability,
-      nearSpreadProbability: () => marketParameters().nearSpreadProbability,
-      anchorPreference: () => marketParameters().anchorPreference,
-      liquidityWallAnchorPreference: () => marketParameters().liquidityWallAnchorPreference,
-      liquidityWallAnchorRange: () => marketParameters().liquidityWallAnchorRange,
-      liquidityWallHistogramResolution: () => marketParameters().liquidityWallHistogramResolution,
-      roundPricePreference: () => marketParameters().roundPricePreference,
-      roundPriceAnchorMinMidDistance: () => marketParameters().roundPriceAnchorMinMidDistance,
     },
     eventStream: {
       excitementDecay,
-      publicInterest,
+      baselineActivity,
       excitationMatrix,
     },
-    marketParameters,
+    getMarketModelSettings,
+    getOrderPriceDistribution: orderPriceDistribution,
+    getOrderSelectionDistribution: orderSelectionDistribution,
+    getOrderSizeDistribution: orderSizeDistribution,
+    setMarketModelEventSetting,
+    setMarketModelExcitation,
+    setMarketModelSetting,
+    setMarketModelSettings,
+    setOrderPriceDistribution: updateOrderPriceDistribution,
+    setOrderSelectionDistribution: updateOrderSelectionDistribution,
+    setOrderSizeDistribution: updateOrderSizeDistribution,
   };
 };
+
+export type SimulationOrchestrator = ReturnType<typeof createOrchestrator>;
