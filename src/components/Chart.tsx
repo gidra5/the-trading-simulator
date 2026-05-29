@@ -1,4 +1,14 @@
-import { createMemo, createSignal, For, onCleanup, onMount, Show, type Component, type JSX } from "solid-js";
+import {
+  createMemo,
+  createSignal,
+  createUniqueId,
+  For,
+  onCleanup,
+  onMount,
+  Show,
+  type Component,
+  type JSX,
+} from "solid-js";
 import type { OrderBookHeatmapEntry, PriceCandle } from "../market/index";
 import clsx from "clsx";
 import {
@@ -12,6 +22,7 @@ import {
 } from "./chartUtils";
 import { createChartControls } from "./chartControls";
 import { formatNumber } from "../utils";
+import { themeColors } from "../ui-kit/theme";
 
 export type ChartViewport = {
   time: [from: number, to: number];
@@ -55,7 +66,21 @@ type PointerPosition = {
   y: number;
 };
 
+type ChartSize = {
+  width: number;
+  height: number;
+};
+
+// todo: review slop
 const maxMarkGapPx = 160;
+const markLabelPaddingPx = 8;
+const markLabelCornerFadeStartPx = -4;
+const priceMarkLabelFadePx = 20;
+const timeMarkLabelFadePx = 16;
+const priceMarkLabelBandWidthPx = 72;
+const timeMarkLabelBandHeightPx = 28;
+const timeMarkLabelOverflowPx = 56;
+const markLabelBackgroundColor = themeColors.surface.body;
 const priceMarkBaseInterval = 0.25;
 const timeMarkBaseInterval = 25_000;
 
@@ -78,13 +103,16 @@ const normalizeMarkValue = (value: number, interval: number): number =>
 const buildFixedMarks = (
   range: [number, number],
   interval: number,
+  positionRange: [number, number],
   formatLabel: (value: number, interval: number) => string,
 ): ChartMark[] => {
   const span = range[1] - range[0];
   if (span <= 0 || interval <= 0) return [];
 
-  const firstIndex = Math.ceil(range[0] / interval);
-  const lastIndex = Math.floor(range[1] / interval);
+  const firstValue = range[0] + span * positionRange[0];
+  const lastValue = range[0] + span * positionRange[1];
+  const firstIndex = Math.ceil(firstValue / interval);
+  const lastIndex = Math.floor(lastValue / interval);
   const marks: ChartMark[] = [];
 
   for (let index = firstIndex; index <= lastIndex; index += 1) {
@@ -170,14 +198,30 @@ export const Chart: Component<ChartProps> = (props) => {
   const [isDragging, setIsDragging] = createSignal(false);
   const [frameRate, setFrameRate] = createSignal<number | null>(null);
   const [pointerPosition, setPointerPosition] = createSignal<PointerPosition | null>(null);
+  const [chartSize, setChartSize] = createSignal<ChartSize>({ width: 1, height: 1 });
+  const timeMarkPositionOverflow = (): number => timeMarkLabelOverflowPx / chartSize().width;
+  const timeMarkPositionRange = (): [number, number] => [-timeMarkPositionOverflow(), 1 + timeMarkPositionOverflow()];
+  const overlayId = createUniqueId();
+  const priceLabelClipId = `${overlayId}-price-label-clip`;
+  const timeLabelClipId = `${overlayId}-time-label-clip`;
+  const priceLabelGradientId = `${overlayId}-price-label-gradient`;
+  const timeLabelGradientId = `${overlayId}-time-label-gradient`;
+  const priceLabelMaskId = `${overlayId}-price-label-mask`;
+  const timeLabelMaskId = `${overlayId}-time-label-mask`;
+  const priceLabelMaskGradientId = `${overlayId}-price-label-mask-gradient`;
+  const timeLabelMaskGradientId = `${overlayId}-time-label-mask-gradient`;
   const priceMarkInterval = createMemo(() =>
     getFixedMarkInterval(props.viewport.price, props.viewport.resolution[1], priceMarkBaseInterval),
   );
   const timeMarkInterval = createMemo(() =>
     getFixedMarkInterval(props.viewport.time, props.viewport.resolution[0], timeMarkBaseInterval),
   );
-  const priceMarks = createMemo(() => buildFixedMarks(props.viewport.price, priceMarkInterval(), formatPriceMark));
-  const timeMarks = createMemo(() => buildFixedMarks(props.viewport.time, timeMarkInterval(), formatDuration));
+  const priceMarks = createMemo(() =>
+    buildFixedMarks(props.viewport.price, priceMarkInterval(), [0, 1], formatPriceMark),
+  );
+  const timeMarks = createMemo(() =>
+    buildFixedMarks(props.viewport.time, timeMarkInterval(), timeMarkPositionRange(), formatDuration),
+  );
   const latestPriceMark = createMemo(() => {
     const latestCandle = props.priceCandles[props.priceCandles.length - 1];
     if (!latestCandle) return null;
@@ -240,6 +284,47 @@ export const Chart: Component<ChartProps> = (props) => {
   const updateViewport = (viewport: Pick<ChartViewport, "time" | "price">): void => {
     reportViewport(viewport);
   };
+
+  const syncChartSize = (): void => {
+    if (!canvas) return;
+
+    const width = Math.max(1, canvas.clientWidth);
+    const height = Math.max(1, canvas.clientHeight);
+
+    setChartSize((current) => {
+      if (current.width === width && current.height === height) return current;
+      return { width, height };
+    });
+  };
+
+  const markX = (position: number): number => position * chartSize().width;
+  const markY = (position: number): number => (1 - position) * chartSize().height;
+  const priceLabelBandWidth = (): number => Math.min(priceMarkLabelBandWidthPx, chartSize().width);
+  const timeLabelBandHeight = (): number => Math.min(timeMarkLabelBandHeightPx, chartSize().height);
+  const priceLabelBandX = (): number => chartSize().width - priceLabelBandWidth();
+  const priceLabelBandHeight = (): number => chartSize().height - timeLabelBandHeight();
+  const timeLabelBandY = (): number => chartSize().height - timeLabelBandHeight();
+  const timeLabelBandWidth = (): number => chartSize().width - priceLabelBandWidth();
+  const priceLabelX = (): number => chartSize().width - markLabelPaddingPx;
+  const timeLabelY = (): number => chartSize().height - markLabelPaddingPx;
+  const labelFadeStartAfterBand = (): number => -markLabelCornerFadeStartPx;
+  const priceLabelClipHeight = (): number =>
+    Math.min(chartSize().height, priceLabelBandHeight() + labelFadeStartAfterBand() + priceMarkLabelFadePx);
+  const timeLabelClipWidth = (): number =>
+    Math.min(chartSize().width, timeLabelBandWidth() + labelFadeStartAfterBand() + timeMarkLabelFadePx);
+  const labelFadeOffset = (position: number, span: number): string =>
+    `${Math.min(100, Math.max(0, (position / Math.max(span, 1)) * 100))}%`;
+  const priceLabelFadeOffset = (): string => labelFadeOffset(priceMarkLabelFadePx, priceLabelClipHeight());
+  const timeLabelFadeOffset = (): string => labelFadeOffset(timeMarkLabelFadePx, timeLabelClipWidth());
+  const priceLabelFadeEndOffset = (): string =>
+    labelFadeOffset(priceLabelBandHeight() + labelFadeStartAfterBand() + priceMarkLabelFadePx, priceLabelClipHeight());
+  const timeLabelFadeEndOffset = (): string =>
+    labelFadeOffset(timeLabelBandWidth() + labelFadeStartAfterBand() + timeMarkLabelFadePx, timeLabelClipWidth());
+  const priceLabelFadeStartOffset = (): string =>
+    labelFadeOffset(priceLabelBandHeight() + labelFadeStartAfterBand() - 16, priceLabelClipHeight());
+  const timeLabelFadeStartOffset = (): string =>
+    labelFadeOffset(timeLabelBandWidth() + labelFadeStartAfterBand(), timeLabelClipWidth());
+
   const controls = createChartControls({
     getCanvas: () => canvas,
     getViewport: () => props.viewport,
@@ -296,6 +381,7 @@ export const Chart: Component<ChartProps> = (props) => {
       return false;
     }
 
+    syncChartSize();
     const [width, height] = getCanvasResolution(canvas);
 
     if (canvas.width !== width || canvas.height !== height) {
@@ -343,6 +429,7 @@ export const Chart: Component<ChartProps> = (props) => {
   };
 
   onMount(() => {
+    syncChartSize();
     reportViewport(props.viewport);
 
     void (async () => {
@@ -411,80 +498,205 @@ export const Chart: Component<ChartProps> = (props) => {
         onPointerCancel={handlePointerCancel}
         onWheel={handleWheel}
       />
-      <svg class="pointer-events-none absolute inset-0 h-full w-full overflow-visible" aria-hidden="true">
+      <svg class="pointer-events-none absolute inset-0 h-full w-full overflow-hidden" aria-hidden="true">
+        <defs>
+          <linearGradient
+            id={priceLabelGradientId}
+            gradientUnits="userSpaceOnUse"
+            x1={priceLabelBandX()}
+            x2={chartSize().width}
+            y1="0"
+            y2="0"
+          >
+            <stop offset="0%" stop-color={markLabelBackgroundColor} stop-opacity="0" />
+            <stop offset="55%" stop-color={markLabelBackgroundColor} stop-opacity="0.72" />
+            <stop offset="100%" stop-color={markLabelBackgroundColor} stop-opacity="0.96" />
+          </linearGradient>
+          <linearGradient
+            id={timeLabelGradientId}
+            gradientUnits="userSpaceOnUse"
+            x1="0"
+            x2="0"
+            y1={timeLabelBandY()}
+            y2={chartSize().height}
+          >
+            <stop offset="0%" stop-color={markLabelBackgroundColor} stop-opacity="0" />
+            <stop offset="55%" stop-color={markLabelBackgroundColor} stop-opacity="0.72" />
+            <stop offset="100%" stop-color={markLabelBackgroundColor} stop-opacity="0.96" />
+          </linearGradient>
+          <linearGradient id={priceLabelMaskGradientId} x1="0%" x2="0%" y1="0%" y2="100%">
+            <stop offset="0%" stop-color="black" />
+            <stop offset={priceLabelFadeOffset()} stop-color="white" />
+            <stop offset={priceLabelFadeStartOffset()} stop-color="white" />
+            <stop offset={priceLabelFadeEndOffset()} stop-color="black" />
+            <stop offset="100%" stop-color="black" />
+          </linearGradient>
+          <linearGradient id={timeLabelMaskGradientId} x1="0%" x2="100%" y1="0%" y2="0%">
+            <stop offset="0%" stop-color="black" />
+            <stop offset={timeLabelFadeOffset()} stop-color="white" />
+            <stop offset={timeLabelFadeStartOffset()} stop-color="white" />
+            <stop offset={timeLabelFadeEndOffset()} stop-color="black" />
+            <stop offset="100%" stop-color="black" />
+          </linearGradient>
+          <clipPath id={priceLabelClipId} clipPathUnits="userSpaceOnUse">
+            <rect x={priceLabelBandX()} y="0" width={priceLabelBandWidth()} height={priceLabelClipHeight()} />
+          </clipPath>
+          <clipPath id={timeLabelClipId} clipPathUnits="userSpaceOnUse">
+            <rect x="0" y={timeLabelBandY()} width={timeLabelClipWidth()} height={timeLabelBandHeight()} />
+          </clipPath>
+          <mask
+            id={priceLabelMaskId}
+            maskUnits="userSpaceOnUse"
+            x={priceLabelBandX()}
+            y="0"
+            width={priceLabelBandWidth()}
+            height={priceLabelClipHeight()}
+          >
+            <rect
+              x={priceLabelBandX()}
+              y="0"
+              width={priceLabelBandWidth()}
+              height={priceLabelClipHeight()}
+              fill={`url(#${priceLabelMaskGradientId})`}
+            />
+          </mask>
+          <mask
+            id={timeLabelMaskId}
+            maskUnits="userSpaceOnUse"
+            x="0"
+            y={timeLabelBandY()}
+            width={timeLabelClipWidth()}
+            height={timeLabelBandHeight()}
+          >
+            <rect
+              x="0"
+              y={timeLabelBandY()}
+              width={timeLabelClipWidth()}
+              height={timeLabelBandHeight()}
+              fill={`url(#${timeLabelMaskGradientId})`}
+            />
+          </mask>
+        </defs>
         <For each={priceMarks()}>
           {(mark) => {
-            const y = `${(1 - mark.position) * 100}%`;
+            const y = () => markY(mark.position);
 
-            return (
-              <g>
-                <line x1="0" x2="100%" y1={y} y2={y} stroke="rgba(148, 163, 184, 0.16)" stroke-width="1" />
-                <text x="99%" y={y} dy="-4" text-anchor="end" class="fill-slate-400 font-mono text-[10px]">
-                  {mark.label}
-                </text>
-              </g>
-            );
+            return <line x1="0" x2={chartSize().width} y1={y()} y2={y()} stroke="rgba(148, 163, 184, 0.16)" />;
           }}
         </For>
         <For each={timeMarks()}>
           {(mark) => {
-            const x = `${mark.position * 100}%`;
+            const x = () => markX(mark.position);
 
-            return (
-              <g>
-                <line x1={x} x2={x} y1="0" y2="100%" stroke="rgba(148, 163, 184, 0.12)" stroke-width="1" />
-                <text x={x} y="98%" text-anchor="middle" class="fill-slate-500 font-mono text-[10px]">
-                  {mark.label}
-                </text>
-              </g>
-            );
+            return <line x1={x()} x2={x()} y1="0" y2={chartSize().height} stroke="rgba(148, 163, 184, 0.12)" />;
           }}
         </For>
         <Show when={latestPriceMark()}>
           {(mark) => {
-            const y = () => `${(1 - mark().position) * 100}%`;
+            const y = () => markY(mark().position);
 
-            return (
-              <g>
-                <line x1="0" x2="100%" y1={y()} y2={y()} stroke="rgba(34, 211, 238, 0.58)" stroke-width="1" />
-                <text x="99%" y={y()} dy="13" text-anchor="end" class="fill-cyan-200 font-mono text-[10px]">
-                  {mark().label}
-                </text>
-              </g>
-            );
+            return <line x1="0" x2={chartSize().width} y1={y()} y2={y()} stroke="rgba(34, 211, 238, 0.58)" />;
           }}
         </Show>
         <Show when={pointerPriceMark()}>
           {(mark) => {
-            const y = () => `${(1 - mark().position) * 100}%`;
-            const dy = () => (mark().position > 0.92 ? "13" : "-4");
+            const y = () => markY(mark().position);
 
-            return (
-              <g>
-                <line x1="0" x2="100%" y1={y()} y2={y()} stroke="rgba(251, 191, 36, 0.58)" stroke-width="1" />
-                <text x="99%" y={y()} dy={dy()} text-anchor="end" class="fill-amber-200 font-mono text-[10px]">
-                  {mark().label}
-                </text>
-              </g>
-            );
+            return <line x1="0" x2={chartSize().width} y1={y()} y2={y()} stroke="rgba(251, 191, 36, 0.58)" />;
           }}
         </Show>
         <Show when={pointerTimeMark()}>
           {(mark) => {
-            const x = () => `${mark().position * 100}%`;
-            const textAnchor = () => (mark().position < 0.08 ? "start" : mark().position > 0.92 ? "end" : "middle");
-            const dx = () => (mark().position < 0.08 ? "4" : mark().position > 0.92 ? "-4" : "0");
+            const x = () => markX(mark().position);
 
-            return (
-              <g>
-                <line x1={x()} x2={x()} y1="0" y2="100%" stroke="rgba(251, 191, 36, 0.52)" stroke-width="1" />
-                <text x={x()} dx={dx()} y="98%" text-anchor={textAnchor()} class="fill-amber-200 font-mono text-[10px]">
-                  {mark().label}
-                </text>
-              </g>
-            );
+            return <line x1={x()} x2={x()} y1="0" y2={chartSize().height} stroke="rgba(251, 191, 36, 0.52)" />;
           }}
         </Show>
+        <rect
+          x={priceLabelBandX()}
+          y="0"
+          width={priceLabelBandWidth()}
+          height={chartSize().height}
+          fill={`url(#${priceLabelGradientId})`}
+        />
+        <rect
+          x="0"
+          y={timeLabelBandY()}
+          width={chartSize().width}
+          height={timeLabelBandHeight()}
+          fill={`url(#${timeLabelGradientId})`}
+        />
+        <g clip-path={`url(#${priceLabelClipId})`} mask={`url(#${priceLabelMaskId})`}>
+          <For each={priceMarks()}>
+            {(mark) => (
+              <text
+                x={priceLabelX()}
+                y={markY(mark.position)}
+                dy="-4"
+                text-anchor="end"
+                class="fill-slate-400 font-mono text-[10px]"
+              >
+                {mark.label}
+              </text>
+            )}
+          </For>
+          <Show when={latestPriceMark()}>
+            {(mark) => (
+              <text
+                x={priceLabelX()}
+                y={markY(mark().position)}
+                dy="13"
+                text-anchor="end"
+                class="fill-cyan-200 font-mono text-[10px]"
+              >
+                {mark().label}
+              </text>
+            )}
+          </Show>
+          <Show when={pointerPriceMark()}>
+            {(mark) => {
+              const dy = () => (mark().position > 0.92 ? "13" : "-4");
+
+              return (
+                <text
+                  x={priceLabelX()}
+                  y={markY(mark().position)}
+                  dy={dy()}
+                  text-anchor="end"
+                  class="fill-amber-200 font-mono text-[10px]"
+                >
+                  {mark().label}
+                </text>
+              );
+            }}
+          </Show>
+        </g>
+        <g clip-path={`url(#${timeLabelClipId})`} mask={`url(#${timeLabelMaskId})`}>
+          <For each={timeMarks()}>
+            {(mark) => (
+              <text
+                x={markX(mark.position)}
+                y={timeLabelY()}
+                text-anchor="middle"
+                class="fill-slate-500 font-mono text-[10px]"
+              >
+                {mark.label}
+              </text>
+            )}
+          </For>
+          <Show when={pointerTimeMark()}>
+            {(mark) => (
+              <text
+                x={markX(mark().position)}
+                y={timeLabelY()}
+                text-anchor="middle"
+                class="fill-amber-200 font-mono text-[10px]"
+              >
+                {mark().label}
+              </text>
+            )}
+          </Show>
+        </g>
       </svg>
       <Show when={status()}>
         {(message) => (
