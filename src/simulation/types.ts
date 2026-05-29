@@ -49,10 +49,10 @@ export const eventExcitationMatrix = (matrix: SimulationExcitationMatrix): numbe
 
 export const defaultMarketModelSettings: MarketModelSettings = {
   publicInterest: {
-    "market-buy": 0,
-    "market-sell": 0,
-    "order-buy": 20,
-    "order-sell": 20,
+    "market-buy": 25,
+    "market-sell": 25,
+    "order-buy": 30,
+    "order-sell": 30,
     "cancel-buy": 0,
     "cancel-sell": 0,
   }, // event rates per second before self-excitation

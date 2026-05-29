@@ -21,7 +21,7 @@ export const { time, market, simulation, actor, settings } = createRoot(() => {
     histogramPriceReference: settings.histogramPriceReference,
     histogramFanout: settings.histogramFanout,
   });
-  const orchestrator = createOrchestrator();
+  const { orchestrator } = createOrchestrator();
   const simulation = createTradingSimulationState({
     market,
     time,

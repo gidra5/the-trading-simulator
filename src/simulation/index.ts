@@ -3,7 +3,7 @@ import { type MarketState, type OrderSide } from "../market/index";
 import { assert } from "../utils";
 import { createCancellationState } from "./cancellation";
 import { createSimulationEventStream } from "./eventStream";
-import { createOrderPlacementState } from "./orderPlacement";
+import { createOrderPlacementState, type SimulationOrderPlacementOptions } from "./orderPlacement";
 import { type SimulationTimeState } from "./time";
 import { type SimulationEventType } from "./types";
 
@@ -28,10 +28,7 @@ type TradingSimulationOptions = {
     candidatesCount: Accessor<number>;
     sampleOrderIndex: (orderCount: number) => number;
   };
-  orderPlacement: {
-    sampleOrderDistance: () => number;
-    sampleOrderSize: () => number;
-  };
+  orderPlacement: Omit<SimulationOrderPlacementOptions, "market" | "time">;
   eventStream: {
     baselineActivity: Accessor<number[]>;
     excitementDecay: Accessor<number[]>;

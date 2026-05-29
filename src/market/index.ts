@@ -60,11 +60,6 @@ export const createMarketState = (options: MarketStateOptions) => {
     levels: options.orderBookLevels,
   });
 
-  orderBookState.appendChange([
-    { kind: "add", side: "buy", order: { id: -2, price: 0.999, size: 1e4 } },
-    { kind: "add", side: "sell", order: { id: -3, price: 1.001, size: 1e4 } },
-  ]);
-
   const { subscribeToOrder } = createOrderSubscriptionState(orderBookState.latestOrderBookChange);
   const { getOrderBookHistogram, getOrderBookHistogramSeries, querySideVolumeInPriceRange } = createHistogramState({
     orderBookChangeset: () => orderBookState.latestOrderBookChange().changes,

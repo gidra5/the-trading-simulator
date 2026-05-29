@@ -1,4 +1,4 @@
-import { createMemo, createSignal } from "solid-js";
+import { createMemo, createSignal, type Accessor } from "solid-js";
 import {
   cloneMarketModelSettings,
   defaultMarketModelSettings,
@@ -13,16 +13,51 @@ import {
 } from "./types";
 import { clamp, halfLifeToDecay } from "../utils";
 import { sampleNormal, sampleUniform } from "../distributions";
+import type { SimulationOrderPlacementOptions } from "./orderPlacement";
 
 type ScalarMarketModelSetting = Exclude<
   keyof MarketModelSettings,
   "excitementHalfLife" | "excitationMatrix" | "publicInterest"
 >;
 
+export type SimulationOrchestrator = {
+  cancellation: {
+    sampleOrderIndex: (orderCount: number) => number;
+  };
+  orderPlacement: Omit<SimulationOrderPlacementOptions, "market" | "time">;
+  eventStream: {
+    excitementDecay: Accessor<number[]>;
+    baselineActivity: Accessor<number[]>;
+    excitationMatrix: Accessor<number[][]>;
+  };
+};
+
+export type SimulationOrchestratorController = {
+  getMarketModelSettings: () => MarketModelSettings;
+  getOrderPriceDistribution: Accessor<OrderPriceDistribution>;
+  getOrderSelectionDistribution: Accessor<OrderSelectionDistribution>;
+  getOrderSizeDistribution: Accessor<OrderSizeDistribution>;
+  setMarketModelEventSetting: (
+    group: SimulationEventSettingGroup,
+    eventType: MarketEventSetting,
+    value: number,
+  ) => void;
+  setMarketModelExcitation: (source: MarketEventSetting, target: MarketEventSetting, value: number) => void;
+  setMarketModelSetting: (key: ScalarMarketModelSetting, value: number) => void;
+  setMarketModelSettings: (settings: MarketModelSettings) => void;
+  setOrderPriceDistribution: (distribution: OrderPriceDistribution) => void;
+  setOrderSelectionDistribution: (distribution: OrderSelectionDistribution) => void;
+  setOrderSizeDistribution: (distribution: OrderSizeDistribution) => void;
+};
+
 // todo: orchestrator modes/events
 // mode - baseline model parameters describing a particular crowd behavior archetype
 // events - deviations from an archetype that eventually dies, or a permanent archetype change.
-export const createOrchestrator = () => {
+export const createOrchestrator = (): {
+  orchestrator: SimulationOrchestrator;
+  controller: SimulationOrchestratorController;
+} => {
+  const rng = (): number => Math.random();
   const [modelSettings, setModelSettings] = createSignal(defaultMarketModelSettings);
   const [orderPriceDistribution, setOrderPriceDistribution] = createSignal<OrderPriceDistribution>("normal");
   const [orderSizeDistribution, setOrderSizeDistribution] = createSignal<OrderSizeDistribution>("normal");
@@ -80,7 +115,7 @@ export const createOrchestrator = () => {
     const low = Math.max(min, mean - halfRange);
     const high = Math.max(low, mean + halfRange);
 
-    return sampleUniform(low, high);
+    return sampleUniform(low, high, rng);
   };
 
   const sampleOrderDistance = (): number => {
@@ -93,7 +128,7 @@ export const createOrchestrator = () => {
         case "uniform":
           return sampleUniformWithStandardDeviation(mean, standardDeviation, -Infinity);
         case "normal":
-          return sampleNormal(mean, standardDeviation);
+          return sampleNormal(mean, standardDeviation, rng);
       }
     })();
     return Math.max(Number.EPSILON, Math.abs(distance));
@@ -108,7 +143,7 @@ export const createOrchestrator = () => {
       case "uniform":
         return sampleUniformWithStandardDeviation(mean, standardDeviation, Number.EPSILON);
       case "normal":
-        return Math.max(Number.EPSILON, Math.abs(sampleNormal(mean, standardDeviation)));
+        return Math.max(Number.EPSILON, Math.abs(sampleNormal(mean, standardDeviation, rng)));
     }
   };
 
@@ -124,14 +159,14 @@ export const createOrchestrator = () => {
         const sample =
           orderSelectionDistribution() === "uniform"
             ? sampleUniformWithStandardDeviation(mean, standardDeviation, 0)
-            : sampleNormal(mean, standardDeviation);
+            : sampleNormal(mean, standardDeviation, rng);
 
         return Math.round(clamp(sample, 0, orderCount - 1));
       }
     }
   };
 
-  return {
+  const orchestrator: SimulationOrchestrator = {
     cancellation: {
       // todo: price movement - if moved awy from order, increase cancel prob and decrease if moved to the order
       // todo: distance?
@@ -143,7 +178,13 @@ export const createOrchestrator = () => {
       // todo: anchoring - min, max in interval(s)
       // todo: anchoring - round anchor,
       // todo: anchoring - liquidity anchors (place right before a wall)
-      // todo: inspread/near/far distributions.
+      // todo: near/far distributions.
+      rng,
+      inSpread: {
+        max: () => 1,
+        halfRateSize: () => 0.01,
+        mean: () => 1,
+      },
       sampleOrderSize,
       sampleOrderDistance,
     },
@@ -152,6 +193,9 @@ export const createOrchestrator = () => {
       baselineActivity,
       excitationMatrix,
     },
+  };
+
+  const controller: SimulationOrchestratorController = {
     getMarketModelSettings,
     getOrderPriceDistribution: orderPriceDistribution,
     getOrderSelectionDistribution: orderSelectionDistribution,
@@ -164,6 +208,6 @@ export const createOrchestrator = () => {
     setOrderSelectionDistribution: updateOrderSelectionDistribution,
     setOrderSizeDistribution: updateOrderSizeDistribution,
   };
-};
 
-export type SimulationOrchestrator = ReturnType<typeof createOrchestrator>;
+  return { orchestrator, controller };
+};

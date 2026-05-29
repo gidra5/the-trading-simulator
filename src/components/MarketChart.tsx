@@ -9,7 +9,7 @@ import { MarketSettings } from "./MarketSettings";
 import { MarketPresets } from "./MarketPresets";
 import { createThrottledMemo, formatNumber } from "../utils";
 import { digits, Order } from "./Order";
-import type { SimulationOrchestrator } from "../simulation/orchestrator";
+import type { SimulationOrchestratorController } from "../simulation/orchestrator";
 
 const pollingInterval = 200;
 const showFrameRate = true;
@@ -17,8 +17,8 @@ type SettingsTab = "chart" | "market" | "presets";
 
 export type MarketChartProps = {
   market: MarketState;
+  marketModelController: SimulationOrchestratorController;
   orderBookAcceleration: OrderBookAccelerationSettings;
-  orchestrator: SimulationOrchestrator;
   simulation: TradingSimulation;
   time: SimulationTimeState;
 };
@@ -38,7 +38,7 @@ export const MarketChart: Component<MarketChartProps> = (props) => {
   const [histogramWindowFraction, setHistogramWindowFraction] = createSignal(0.01);
   const [viewport, setViewport] = createSignal<ChartViewport>({
     time: [startTime, startTime + 1 * 60 * 1000],
-    price: [0.7, 1.3],
+    price: [0, 1.3],
     resolution: [1, 1],
   });
   let previousCandleInterval = candleInterval();
@@ -211,23 +211,10 @@ export const MarketChart: Component<MarketChartProps> = (props) => {
             />
           </Show>
           <Show when={activeSettingsTab() === "market"}>
-            <MarketSettings
-              controller={{
-                getMarketModelSettings: props.orchestrator.getMarketModelSettings,
-                setMarketModelSetting: props.orchestrator.setMarketModelSetting,
-                setMarketModelEventSetting: props.orchestrator.setMarketModelEventSetting,
-                setMarketModelExcitation: props.orchestrator.setMarketModelExcitation,
-                getOrderPriceDistribution: props.orchestrator.getOrderPriceDistribution,
-                getOrderSelectionDistribution: props.orchestrator.getOrderSelectionDistribution,
-                getOrderSizeDistribution: props.orchestrator.getOrderSizeDistribution,
-                setOrderPriceDistribution: props.orchestrator.setOrderPriceDistribution,
-                setOrderSelectionDistribution: props.orchestrator.setOrderSelectionDistribution,
-                setOrderSizeDistribution: props.orchestrator.setOrderSizeDistribution,
-              }}
-            />
+            <MarketSettings controller={props.marketModelController} />
           </Show>
           <Show when={activeSettingsTab() === "presets"}>
-            <MarketPresets orchestrator={props.orchestrator} />
+            <MarketPresets controller={props.marketModelController} />
           </Show>
         </div>
       </div>

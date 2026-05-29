@@ -37,10 +37,10 @@ test("simulation ticks advance through quiet intervals", () => {
       orderBookFanout: () => 5,
       orderBookLevels: () => 5,
     });
-    const orchestrator = createOrchestrator();
+    const { controller, orchestrator } = createOrchestrator();
     const settings = cloneMarketModelSettings(defaultMarketModelSettings);
     for (const eventType of simulationEventTypes) settings.publicInterest[eventType] = 0;
-    orchestrator.setMarketModelSettings(settings);
+    controller.setMarketModelSettings(settings);
     const simulation = createTradingSimulationState({
       cancellation: orchestrator.cancellation,
       eventStream: orchestrator.eventStream,

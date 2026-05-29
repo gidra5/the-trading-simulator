@@ -22,7 +22,7 @@ const createSimulationSettings = () => {
   };
 };
 
-export const { market, orchestrator, settings, simulation, time } = createRoot(() => {
+export const { market, marketModelController, orchestrator, settings, simulation, time } = createRoot(() => {
   const settings = createSimulationSettings();
   const time = createSimulationTimeState();
   const market = createMarketState({
@@ -33,7 +33,7 @@ export const { market, orchestrator, settings, simulation, time } = createRoot((
     histogramPriceReference: settings.histogramPriceReference,
     histogramFanout: settings.histogramFanout,
   });
-  const orchestrator = createOrchestrator();
+  const { controller: marketModelController, orchestrator } = createOrchestrator();
   const simulation = createTradingSimulationState({
     cancellation: { ...orchestrator.cancellation, candidatesCount: settings.cancellationCandidatesCount },
     eventStream: orchestrator.eventStream,
@@ -42,5 +42,5 @@ export const { market, orchestrator, settings, simulation, time } = createRoot((
     time,
   });
 
-  return { market, orchestrator, settings, simulation, time };
+  return { market, marketModelController, orchestrator, settings, simulation, time };
 });

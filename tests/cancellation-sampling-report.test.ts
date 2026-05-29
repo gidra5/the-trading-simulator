@@ -41,12 +41,12 @@ const standardDeviation = (values: number[]): number => {
 
 const measureDistribution = (distribution: OrderSelectionDistribution): DistributionMeasurement => {
   return createRoot((dispose) => {
-    const orchestrator = createOrchestrator();
+    const { controller, orchestrator } = createOrchestrator();
     const settings = cloneMarketModelSettings(defaultMarketModelSettings);
     settings.cancellationSelectionCenter = 0.5;
     settings.cancellationSelectionStandardDeviation = 0.15;
-    orchestrator.setMarketModelSettings(settings);
-    orchestrator.setOrderSelectionDistribution(distribution);
+    controller.setMarketModelSettings(settings);
+    controller.setOrderSelectionDistribution(distribution);
 
     const samples = Array.from({ length: sampleCount }, () => orchestrator.cancellation.sampleOrderIndex(orderCount));
     const centerBucketSamples = samples.filter((sample) => sample >= 40 && sample < 60);

@@ -1,5 +1,5 @@
 import { For, createSignal, type Component } from "solid-js";
-import type { SimulationOrchestrator } from "../simulation/orchestrator";
+import type { SimulationOrchestratorController } from "../simulation/orchestrator";
 import {
   cloneMarketModelSettings,
   defaultMarketModelSettings,
@@ -496,15 +496,15 @@ const marketPresets: readonly MarketPreset[] = [
 ];
 
 export const MarketPresets: Component<{
-  orchestrator: SimulationOrchestrator;
+  controller: SimulationOrchestratorController;
 }> = (props) => {
   const [selectedPresetId, setSelectedPresetId] = createSignal("baseline");
 
   const applyPreset = (preset: MarketPreset): void => {
-    props.orchestrator.setMarketModelSettings(preset.settings);
-    props.orchestrator.setOrderPriceDistribution(preset.orderPriceDistribution);
-    props.orchestrator.setOrderSelectionDistribution(preset.orderSelectionDistribution);
-    props.orchestrator.setOrderSizeDistribution(preset.orderSizeDistribution);
+    props.controller.setMarketModelSettings(preset.settings);
+    props.controller.setOrderPriceDistribution(preset.orderPriceDistribution);
+    props.controller.setOrderSelectionDistribution(preset.orderSelectionDistribution);
+    props.controller.setOrderSizeDistribution(preset.orderSizeDistribution);
     setSelectedPresetId(preset.id);
   };
 

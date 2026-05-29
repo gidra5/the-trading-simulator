@@ -135,3 +135,13 @@ export const createThrottledMemo = <Value>(
 
   return memo as Accessor<Value>;
 };
+
+export const roundToList = (value: number, list: readonly number[]): number => {
+  const index = binarySearchIndex(list, (candidate) => candidate - value);
+  if (index >= list.length - 1) return list[index];
+  const valueDiff = list[index] - value;
+  const nextValueDiff = list[index + 1] - value;
+
+  if (Math.abs(valueDiff) < Math.abs(nextValueDiff)) return list[index];
+  return list[index + 1];
+};
