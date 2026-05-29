@@ -1,5 +1,5 @@
 import { Show, createSignal, onCleanup, onMount, type Component } from "solid-js";
-import type { MarketState, PriceCandle } from "../market/index";
+import type { MarketState, PriceCandle, QuotePriceKind } from "../market/index";
 import { OrderBookHistogram, HistogramNormalization } from "./OrderBookHistogram";
 import { simulationTickTime, type TradingSimulation } from "../simulation/index";
 import type { SimulationTimeState } from "../simulation/time";
@@ -25,6 +25,7 @@ export type MarketChartProps = {
 
 export const MarketChart: Component<MarketChartProps> = (props) => {
   const startTime = props.time.time();
+  const pricePoint: QuotePriceKind = "mid"; // todo: add to settings store
   const priceSpread = createThrottledMemo(props.market.marketPriceSpread, pollingInterval);
   const [activeSettingsTab, setActiveSettingsTab] = createSignal<SettingsTab>("chart");
   const [candleInterval, setCandleInterval] = createSignal(1_000);
@@ -50,7 +51,7 @@ export const MarketChart: Component<MarketChartProps> = (props) => {
       const candle = props.market.priceHistoryCandle(
         candleStart,
         Math.min(candleStart + interval, props.time.time()),
-        "buy",
+        pricePoint,
       );
       rebuiltCandles.push(candle);
     }
@@ -71,7 +72,7 @@ export const MarketChart: Component<MarketChartProps> = (props) => {
     }
 
     const candleStart = Math.floor(props.time.time() / interval) * interval;
-    const candle = props.market.priceHistoryCandle(candleStart, props.time.time(), "buy");
+    const candle = props.market.priceHistoryCandle(candleStart, props.time.time(), pricePoint);
     const latestCandle = currentCandles[currentCandles.length - 1];
 
     if (!latestCandle) return [candle];
@@ -81,11 +82,11 @@ export const MarketChart: Component<MarketChartProps> = (props) => {
     const finalizedLatestCandle = props.market.priceHistoryCandle(
       latestCandle.time,
       latestCandle.time + interval,
-      "buy",
+      pricePoint,
     );
     const missingCandles: PriceCandle[] = [];
     for (let missingStart = latestCandle.time + interval; missingStart < candle.time; missingStart += interval) {
-      const candle = props.market.priceHistoryCandle(missingStart, missingStart + interval, "buy");
+      const candle = props.market.priceHistoryCandle(missingStart, missingStart + interval, pricePoint);
       missingCandles.push(candle);
     }
 

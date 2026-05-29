@@ -14,8 +14,9 @@ import {
   type OrderBookChange,
   type OrderBookHeatmapEntry,
   type OrderBookHeatmapRegion,
+  type PriceSpread,
 } from "./orderBook";
-import { binarySearchIndex } from "../utils";
+import { assert, binarySearchIndex } from "../utils";
 
 export type { MakeOrderResult, OrderSide } from "./order";
 export type {
@@ -34,6 +35,8 @@ export type PriceCandle = {
   close: number;
 };
 
+export type QuotePriceKind = OrderSide | "mid";
+
 type MarketStateOptions = {
   time: Accessor<number>;
   deltaSnapshotInterval: Accessor<number>;
@@ -41,6 +44,11 @@ type MarketStateOptions = {
   orderBookLevels: Accessor<number>;
   histogramPriceReference: Accessor<number>;
   histogramFanout: Accessor<number>;
+};
+
+const getQuotePrice = (side: QuotePriceKind, spread: PriceSpread): number => {
+  if (side === "mid") return (spread.buy + spread.sell) / 2;
+  return spread[side];
 };
 
 export const createMarketState = (options: MarketStateOptions) => {
@@ -156,19 +164,19 @@ export const createMarketState = (options: MarketStateOptions) => {
   // each level is a list of candles
   // to compute a candle of arbitrary interval, look at the binary of the integer
   // and combine the candles at the corresponding levels
-  const priceHistoryCandle = (start: number, end: number, side: OrderSide): PriceCandle => {
+  const priceHistoryCandle = (start: number, end: number, quote: QuotePriceKind): PriceCandle => {
     const history = orderBookState.priceHistory();
     const firstIndex = binarySearchIndex(history, (entry) => (entry.timestamp <= start ? -1 : 1));
     const endIndex = binarySearchIndex(history, (entry) => (entry.timestamp <= end ? -1 : 1));
     const openEntry = history[Math.max(0, firstIndex - 1)];
-    const open = openEntry.spread[side];
+    const open = getQuotePrice(quote, openEntry.spread);
     let close = open;
     let high = open;
     let low = open;
 
     for (let index = firstIndex; index < endIndex; index += 1) {
-      const price = history[index]?.spread[side];
-      if (price === undefined) continue;
+      assert(history[index]);
+      const price = getQuotePrice(quote, history[index].spread);
 
       close = price;
       high = Math.max(high, price);
