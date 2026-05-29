@@ -10,13 +10,19 @@ type SimulationOrderPlacementOptions = {
   sampleOrderSize: () => number;
 };
 
+// todo: split into two cases in spread and out of spread sampling, pick randomly. 
+// The larger the spread, the more probable it is to pick in spread price
+// todo: if spread is infinite (no sell price), should always sample "in spread"
 export const createOrderPlacementState = (options: SimulationOrderPlacementOptions) => {
   const sampleOrderPrice = (side: OrderSide): number => {
     const spread = options.market.marketPriceSpread();
     const distance = 1 + options.sampleOrderDistance();
+    const price = (() => {
+      if (side === "buy") return spread.buy / distance;
+      return spread.sell * distance;
+    })();
 
-    if (side === "buy") return spread.buy / distance;
-    return spread.sell * distance;
+    return price;
   };
 
   const simulateLimitOrderEvent = (side: OrderSide): RestingOrder => {
