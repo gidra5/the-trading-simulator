@@ -1,6 +1,6 @@
-import { Show, createSignal, onCleanup, onMount, type Component } from "solid-js";
+import { Show, createMemo, createSignal, onCleanup, onMount, type Component } from "solid-js";
 import type { MarketState, PriceCandle, QuotePriceKind } from "../market/index";
-import { OrderBookHistogram, HistogramNormalization } from "./OrderBookHistogram";
+import { HistogramNormalization } from "./OrderBookHistogram";
 import { simulationTickTime, type TradingSimulation } from "../simulation/index";
 import type { SimulationTimeState } from "../simulation/time";
 import { Chart, type ChartViewport } from "./Chart";
@@ -109,6 +109,17 @@ export const MarketChart: Component<MarketChartProps> = (props) => {
       resolution: viewport().resolution[1],
     });
   }, pollingInterval);
+  const chartHistogram = createMemo(() => {
+    const data = histogram();
+    if (!data) return null;
+
+    return {
+      cumulative: isHistogramCumulative(),
+      data,
+      normalization: histogramNormalization(),
+      windowFraction: histogramWindowFraction(),
+    };
+  });
 
   const handleViewportChange = (nextViewport: ChartViewport) => {
     setViewport((current) => {
@@ -227,27 +238,11 @@ export const MarketChart: Component<MarketChartProps> = (props) => {
             candleInterval={candleInterval()}
             priceCandles={candles()}
             orderBookHeatmap={heatmap()}
+            orderBookHistogram={chartHistogram()}
             viewport={viewport()}
             onViewportChange={handleViewportChange}
             showFrameRate={showFrameRate}
           />
-          <Show when={histogram()}>
-            {(histogramData) => (
-              <div class="flex h-full w-[220px] min-h-0 flex-col overflow-hidden rounded border border-slate-800 bg-slate-900/60">
-                <div class="border-b border-slate-800 px-3 py-2 font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">
-                  Depth Histogram
-                </div>
-                <OrderBookHistogram
-                  class="block h-full w-full"
-                  data={histogramData()}
-                  cumulative={isHistogramCumulative()}
-                  normalization={histogramNormalization()}
-                  priceRange={viewport().price}
-                  windowFraction={histogramWindowFraction()}
-                />
-              </div>
-            )}
-          </Show>
           <Order market={props.market} time={props.time} />
         </div>
       </div>

@@ -49,8 +49,8 @@ export const eventExcitationMatrix = (matrix: SimulationExcitationMatrix): numbe
 
 export const defaultMarketModelSettings: MarketModelSettings = {
   publicInterest: {
-    "market-buy": 20,
-    "market-sell": 20,
+    "market-buy": 0,
+    "market-sell": 0,
     "order-buy": 20,
     "order-sell": 20,
     "cancel-buy": 0,

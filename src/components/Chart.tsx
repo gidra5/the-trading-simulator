@@ -10,7 +10,7 @@ import {
   type Component,
   type JSX,
 } from "solid-js";
-import type { OrderBookHeatmapEntry, PriceCandle } from "../market/index";
+import type { OrderBookHeatmapEntry, OrderBookHistogramEntry, PriceCandle } from "../market/index";
 import clsx from "clsx";
 import {
   drawFrame,
@@ -22,6 +22,7 @@ import {
   writeHeatmapTexture,
 } from "./chartUtils";
 import { createChartControls } from "./chartControls";
+import { OrderBookHistogram, type HistogramNormalization } from "./OrderBookHistogram";
 import { formatNumber } from "../utils";
 import { themeColors } from "../ui-kit/theme";
 
@@ -31,9 +32,17 @@ export type ChartViewport = {
   resolution: [time: number, price: number];
 };
 
-export type ChartProps = {
+type ChartHistogram = {
+  cumulative: boolean;
+  data: OrderBookHistogramEntry[];
+  normalization: HistogramNormalization;
+  windowFraction: number;
+};
+
+type ChartProps = {
   priceCandles: PriceCandle[];
   orderBookHeatmap: OrderBookHeatmapEntry[] | null;
+  orderBookHistogram: ChartHistogram | null;
   viewport: ChartViewport;
   candleInterval: number;
   onViewportChange?: (viewport: ChartViewport) => void;
@@ -52,7 +61,6 @@ const viewportMatches = (left: ChartViewport, right: ChartViewport): boolean =>
 
 // TODO: fixed candle interval relative to viewport
 // TODO: micro and macro candles to smoothly transition between scales
-// TODO: side panel with order book histogram
 // todo: drawing tools?
 // todo: smooth transition between scales
 // todo: move constants into settings
@@ -91,6 +99,7 @@ const markLabelCornerFadeStartPx = -4;
 const priceMarkLabelFadePx = 20;
 const timeMarkLabelFadePx = 16;
 const priceMarkLabelBandWidthPx = 72;
+const orderBookHistogramWidthPx = 220;
 const timeMarkLabelBandHeightPx = 28;
 const timeMarkLabelOverflowPx = 56;
 const activeMarkLabelBackgroundHeightPx = 16;
@@ -255,8 +264,9 @@ export const Chart: Component<ChartProps> = (props) => {
   const [isDragging, setIsDragging] = createSignal(false);
   const [frameRate, setFrameRate] = createSignal<number | null>(null);
   const [pointerPosition, setPointerPosition] = createSignal<PointerPosition | null>(null);
-  const [chartSize, setChartSize] = createSignal<ChartSize>({ width: 1, height: 1 });
-  const timeMarkPositionOverflow = (): number => timeMarkLabelOverflowPx / chartSize().width;
+  const [plotSize, setPlotSize] = createSignal<ChartSize>({ width: 1, height: 1 });
+  const [surfaceSize, setSurfaceSize] = createSignal<ChartSize>({ width: 1, height: 1 });
+  const timeMarkPositionOverflow = (): number => timeMarkLabelOverflowPx / plotSize().width;
   const timeMarkPositionRange = (): [number, number] => [-timeMarkPositionOverflow(), 1 + timeMarkPositionOverflow()];
   const overlayId = createUniqueId();
   const priceLabelClipId = `${overlayId}-price-label-clip`;
@@ -343,44 +353,68 @@ export const Chart: Component<ChartProps> = (props) => {
   };
 
   const syncChartSize = (): void => {
-    if (!canvas) return;
+    if (!canvas || !container) return;
 
-    const width = Math.max(1, canvas.clientWidth);
-    const height = Math.max(1, canvas.clientHeight);
+    const plotWidth = Math.max(1, canvas.clientWidth);
+    const plotHeight = Math.max(1, canvas.clientHeight);
+    const surfaceWidth = Math.max(1, container.clientWidth);
+    const surfaceHeight = Math.max(1, container.clientHeight);
 
-    setChartSize((current) => {
-      if (current.width === width && current.height === height) return current;
-      return { width, height };
+    setPlotSize((current) => {
+      if (current.width === plotWidth && current.height === plotHeight) return current;
+      return { width: plotWidth, height: plotHeight };
+    });
+    setSurfaceSize((current) => {
+      if (current.width === surfaceWidth && current.height === surfaceHeight) return current;
+      return { width: surfaceWidth, height: surfaceHeight };
     });
   };
 
-  const markX = (position: number): number => position * chartSize().width;
-  const markY = (position: number): number => (1 - position) * chartSize().height;
-  const priceLabelBandWidth = (): number => Math.min(priceMarkLabelBandWidthPx, chartSize().width);
-  const timeLabelBandHeight = (): number => Math.min(timeMarkLabelBandHeightPx, chartSize().height);
-  const priceLabelBandX = (): number => chartSize().width - priceLabelBandWidth();
-  const priceLabelBandHeight = (): number => chartSize().height - timeLabelBandHeight();
-  const timeLabelBandY = (): number => chartSize().height - timeLabelBandHeight();
-  const timeLabelBandWidth = (): number => chartSize().width - priceLabelBandWidth();
-  const priceLabelX = (): number => chartSize().width - markLabelPaddingPx;
-  const timeLabelY = (): number => chartSize().height - markLabelPaddingPx;
+  const markX = (position: number): number => position * plotSize().width;
+  const markY = (position: number): number => (1 - position) * plotSize().height;
+  const priceLabelBandWidth = (): number => Math.min(priceMarkLabelBandWidthPx, surfaceSize().width);
+  const timeLabelBandHeight = (): number => Math.min(timeMarkLabelBandHeightPx, surfaceSize().height);
+  const priceLabelBandX = (): number => surfaceSize().width - priceLabelBandWidth();
+  const priceLabelBandHeight = (): number => surfaceSize().height - timeLabelBandHeight();
+  const timeLabelBandY = (): number => surfaceSize().height - timeLabelBandHeight();
+  const hasOrderBookHistogram = (): boolean => props.orderBookHistogram !== null;
+  const timeLabelBandWidth = (): number =>
+    hasOrderBookHistogram() ? plotSize().width : surfaceSize().width - priceLabelBandWidth();
+  const timeLabelBackgroundWidth = (): number => (hasOrderBookHistogram() ? plotSize().width : surfaceSize().width);
+  const priceLabelX = (): number => surfaceSize().width - markLabelPaddingPx;
+  const timeLabelY = (): number => surfaceSize().height - markLabelPaddingPx;
   const labelFadeStartAfterBand = (): number => -markLabelCornerFadeStartPx;
   const priceLabelClipHeight = (): number =>
-    Math.min(chartSize().height, priceLabelBandHeight() + labelFadeStartAfterBand() + priceMarkLabelFadePx);
+    Math.min(surfaceSize().height, priceLabelBandHeight() + labelFadeStartAfterBand() + priceMarkLabelFadePx);
   const timeLabelClipWidth = (): number =>
-    Math.min(chartSize().width, timeLabelBandWidth() + labelFadeStartAfterBand() + timeMarkLabelFadePx);
+    hasOrderBookHistogram()
+      ? timeLabelBandWidth()
+      : Math.min(surfaceSize().width, timeLabelBandWidth() + labelFadeStartAfterBand() + timeMarkLabelFadePx);
   const labelFadeOffset = (position: number, span: number): string =>
     `${Math.min(100, Math.max(0, (position / Math.max(span, 1)) * 100))}%`;
   const priceLabelFadeOffset = (): string => labelFadeOffset(priceMarkLabelFadePx, priceLabelClipHeight());
   const timeLabelFadeOffset = (): string => labelFadeOffset(timeMarkLabelFadePx, timeLabelClipWidth());
   const priceLabelFadeEndOffset = (): string =>
-    labelFadeOffset(priceLabelBandHeight() + labelFadeStartAfterBand() + priceMarkLabelFadePx, priceLabelClipHeight());
+    labelFadeOffset(
+      priceLabelBandHeight() + labelFadeStartAfterBand() + priceMarkLabelFadePx - 8,
+      priceLabelClipHeight(),
+    );
   const timeLabelFadeEndOffset = (): string =>
-    labelFadeOffset(timeLabelBandWidth() + labelFadeStartAfterBand() + timeMarkLabelFadePx, timeLabelClipWidth());
+    labelFadeOffset(
+      hasOrderBookHistogram()
+        ? timeLabelBandWidth()
+        : timeLabelBandWidth() + labelFadeStartAfterBand() + timeMarkLabelFadePx,
+      timeLabelClipWidth(),
+    );
   const priceLabelFadeStartOffset = (): string =>
-    labelFadeOffset(priceLabelBandHeight() + labelFadeStartAfterBand() - 16, priceLabelClipHeight());
+    labelFadeOffset(priceLabelBandHeight() + labelFadeStartAfterBand() - 8, priceLabelClipHeight());
   const timeLabelFadeStartOffset = (): string =>
-    labelFadeOffset(timeLabelBandWidth() + labelFadeStartAfterBand(), timeLabelClipWidth());
+    labelFadeOffset(
+      hasOrderBookHistogram()
+        ? timeLabelBandWidth() - timeMarkLabelFadePx
+        : timeLabelBandWidth() + labelFadeStartAfterBand(),
+      timeLabelClipWidth(),
+    );
 
   const controls = createChartControls({
     getCanvas: () => canvas,
@@ -539,29 +573,43 @@ export const Chart: Component<ChartProps> = (props) => {
   });
 
   return (
-    <div ref={container} class={clsx(`relative overflow-hidden`, props.class ?? "")} style={props.style}>
-      <canvas
-        ref={canvas}
-        class={clsx(
-          "block h-full w-full touch-none",
-          isDragging() && "cursor-grabbing",
-          !isDragging() && "cursor-grab",
+    <div ref={container} class={clsx("relative flex overflow-hidden", props.class ?? "")} style={props.style}>
+      <div class="h-full min-w-0 flex-1">
+        <canvas
+          ref={canvas}
+          class={clsx(
+            "block h-full w-full touch-none",
+            isDragging() && "cursor-grabbing",
+            !isDragging() && "cursor-grab",
+          )}
+          onPointerDown={handlePointerDown}
+          onPointerEnter={handlePointerMove}
+          onPointerMove={handlePointerMove}
+          onPointerLeave={() => setPointerPosition(null)}
+          onPointerUp={handlePointerUp}
+          onPointerCancel={handlePointerCancel}
+          onWheel={handleWheel}
+        />
+      </div>
+      <Show when={props.orderBookHistogram}>
+        {(histogram) => (
+          <OrderBookHistogram
+            class="pointer-events-none block h-full shrink-0 pr-16"
+            cumulative={histogram().cumulative}
+            data={histogram().data}
+            normalization={histogram().normalization}
+            style={{ width: `${orderBookHistogramWidthPx}px` }}
+            windowFraction={histogram().windowFraction}
+          />
         )}
-        onPointerDown={handlePointerDown}
-        onPointerEnter={handlePointerMove}
-        onPointerMove={handlePointerMove}
-        onPointerLeave={() => setPointerPosition(null)}
-        onPointerUp={handlePointerUp}
-        onPointerCancel={handlePointerCancel}
-        onWheel={handleWheel}
-      />
+      </Show>
       <svg class="pointer-events-none absolute inset-0 h-full w-full overflow-hidden" aria-hidden="true">
         <defs>
           <linearGradient
             id={priceLabelGradientId}
             gradientUnits="userSpaceOnUse"
             x1={priceLabelBandX()}
-            x2={chartSize().width}
+            x2={surfaceSize().width}
             y1="0"
             y2="0"
           >
@@ -575,7 +623,7 @@ export const Chart: Component<ChartProps> = (props) => {
             x1="0"
             x2="0"
             y1={timeLabelBandY()}
-            y2={chartSize().height}
+            y2={surfaceSize().height}
           >
             <stop offset="0%" stop-color={markLabelBackgroundColor} stop-opacity="0" />
             <stop offset="55%" stop-color={markLabelBackgroundColor} stop-opacity="0.72" />
@@ -638,48 +686,48 @@ export const Chart: Component<ChartProps> = (props) => {
           {(mark) => {
             const y = () => markY(mark.position);
 
-            return <line x1="0" x2={chartSize().width} y1={y()} y2={y()} stroke="rgba(148, 163, 184, 0.16)" />;
+            return <line x1="0" x2={surfaceSize().width} y1={y()} y2={y()} stroke="rgba(148, 163, 184, 0.16)" />;
           }}
         </For>
         <For each={timeMarks()}>
           {(mark) => {
             const x = () => markX(mark.position);
 
-            return <line x1={x()} x2={x()} y1="0" y2={chartSize().height} stroke="rgba(148, 163, 184, 0.12)" />;
+            return <line x1={x()} x2={x()} y1="0" y2={surfaceSize().height} stroke="rgba(148, 163, 184, 0.12)" />;
           }}
         </For>
         <Show when={latestPriceMark()}>
           {(mark) => {
             const y = () => markY(mark().position);
 
-            return <line x1="0" x2={chartSize().width} y1={y()} y2={y()} stroke="rgba(34, 211, 238, 0.58)" />;
+            return <line x1="0" x2={surfaceSize().width} y1={y()} y2={y()} stroke="rgba(34, 211, 238, 0.58)" />;
           }}
         </Show>
         <Show when={pointerPriceMark()}>
           {(mark) => {
             const y = () => markY(mark().position);
 
-            return <line x1="0" x2={chartSize().width} y1={y()} y2={y()} stroke="rgba(251, 191, 36, 0.58)" />;
+            return <line x1="0" x2={surfaceSize().width} y1={y()} y2={y()} stroke="rgba(251, 191, 36, 0.58)" />;
           }}
         </Show>
         <Show when={pointerTimeMark()}>
           {(mark) => {
             const x = () => markX(mark().position);
 
-            return <line x1={x()} x2={x()} y1="0" y2={chartSize().height} stroke="rgba(251, 191, 36, 0.52)" />;
+            return <line x1={x()} x2={x()} y1="0" y2={surfaceSize().height} stroke="rgba(251, 191, 36, 0.52)" />;
           }}
         </Show>
         <rect
           x={priceLabelBandX()}
           y="0"
           width={priceLabelBandWidth()}
-          height={chartSize().height}
+          height={surfaceSize().height}
           fill={`url(#${priceLabelGradientId})`}
         />
         <rect
           x="0"
           y={timeLabelBandY()}
-          width={chartSize().width}
+          width={timeLabelBackgroundWidth()}
           height={timeLabelBandHeight()}
           fill={`url(#${timeLabelGradientId})`}
         />

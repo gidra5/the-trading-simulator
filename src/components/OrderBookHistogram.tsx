@@ -12,7 +12,6 @@ type OrderBookHistogramProps = {
   style?: JSX.CSSProperties;
   cumulative: boolean;
   normalization: HistogramNormalization;
-  priceRange: [min: number, max: number];
   windowFraction: number;
 };
 
@@ -22,21 +21,9 @@ type CanvasSize = {
 };
 
 const resizeCanvas = (canvas: HTMLCanvasElement, width: number, height: number): CanvasRenderingContext2D | null => {
-  const safeWidth = Math.max(0, Math.floor(width));
-  const safeHeight = Math.max(0, Math.floor(height));
-
-  canvas.style.width = `${safeWidth}px`;
-  canvas.style.height = `${safeHeight}px`;
-
-  if (safeWidth === 0 || safeHeight === 0) {
-    canvas.width = 0;
-    canvas.height = 0;
-    return null;
-  }
-
   const dpr = window.devicePixelRatio || 1;
-  const nextWidth = Math.max(1, Math.floor(safeWidth * dpr));
-  const nextHeight = Math.max(1, Math.floor(safeHeight * dpr));
+  const nextWidth = Math.floor(width * dpr) + 2;
+  const nextHeight = Math.floor(height * dpr) + 2;
 
   if (canvas.width !== nextWidth || canvas.height !== nextHeight) {
     canvas.width = nextWidth;
@@ -49,12 +36,12 @@ const resizeCanvas = (canvas: HTMLCanvasElement, width: number, height: number):
   }
 
   context.setTransform(dpr, 0, 0, dpr, 0, 0);
-  context.clearRect(0, 0, safeWidth, safeHeight);
+  context.clearRect(0, 0, nextWidth, nextHeight);
   context.imageSmoothingEnabled = false;
   context.lineCap = "round";
   context.lineJoin = "round";
   return context;
-};
+};;
 
 const normalizeLogarithmic = (value: number, maxValue: number): number => {
   if (value <= 0 || maxValue <= 0) {
@@ -108,105 +95,6 @@ const averageSeriesOverWindow = (series: number[], windowSize: number, direction
 
 const getMaxSeriesValue = (series: number[]): number => {
   return series.reduce((maxValue, value) => Math.max(maxValue, value), 0);
-};
-
-const formatPriceMark = (value: number): string => {
-  const magnitude = Math.abs(value);
-  const digits = magnitude >= 100 ? 2 : magnitude >= 10 ? 3 : 4;
-  return value.toFixed(digits);
-};
-
-const formatSizeMark = (value: number): string => {
-  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}m`;
-  if (value >= 1_000) return `${(value / 1_000).toFixed(1)}k`;
-  if (value >= 100) return value.toFixed(0);
-  if (value >= 10) return value.toFixed(1);
-  return value.toFixed(2);
-};
-
-const denormalizeSize = (fraction: number, maxSize: number, normalization: HistogramNormalization): number => {
-  if (normalization === HistogramNormalization.Logarithmic) {
-    return Math.expm1(Math.log1p(maxSize) * fraction);
-  }
-
-  return maxSize * fraction;
-};
-
-const drawGridMarkings = (
-  context: CanvasRenderingContext2D,
-  options: {
-    baselineX: number;
-    graphWidth: number;
-    height: number;
-    priceRange: [min: number, max: number];
-    width: number;
-  },
-): void => {
-  context.save();
-  context.strokeStyle = "rgba(148, 163, 184, 0.12)";
-  context.lineWidth = 1;
-
-  for (const fraction of [0.25, 0.5, 0.75, 1]) {
-    const x = options.baselineX + options.graphWidth * fraction;
-    context.beginPath();
-    context.moveTo(x, 0);
-    context.lineTo(x, options.height);
-    context.stroke();
-  }
-
-  for (const fraction of [0, 0.25, 0.5, 0.75, 1]) {
-    const y = options.height * (1 - fraction);
-    context.beginPath();
-    context.moveTo(options.baselineX, y);
-    context.lineTo(options.width, y);
-    context.stroke();
-  }
-
-  context.restore();
-};
-
-const drawMarkingLabels = (
-  context: CanvasRenderingContext2D,
-  options: {
-    baselineX: number;
-    graphWidth: number;
-    height: number;
-    maxSize: number;
-    normalization: HistogramNormalization;
-    priceRange: [min: number, max: number];
-    width: number;
-  },
-): void => {
-  context.save();
-  context.font = '10px "SFMono-Regular", Consolas, "Liberation Mono", monospace';
-  context.fillStyle = "rgba(148, 163, 184, 0.72)";
-
-  if (options.maxSize > 0) {
-    context.textAlign = "center";
-    context.textBaseline = "bottom";
-
-    for (const fraction of [0.5, 1]) {
-      const x = options.baselineX + options.graphWidth * fraction;
-      const value = denormalizeSize(fraction, options.maxSize, options.normalization);
-      context.fillText(formatSizeMark(value), x, options.height - 4);
-    }
-  }
-
-  const [minPrice, maxPrice] = options.priceRange;
-  const priceSpan = maxPrice - minPrice;
-
-  context.textAlign = "right";
-  context.textBaseline = "middle";
-  const labelTop = Math.min(28, options.height / 2);
-  const labelBottom = Math.max(labelTop, options.height - 24);
-
-  for (const fraction of [0, 0.25, 0.5, 0.75, 1]) {
-    const y = Math.min(Math.max(options.height * (1 - fraction), labelTop), labelBottom);
-    const price = minPrice + priceSpan * fraction;
-    context.fillText(formatPriceMark(price), options.width - 8, y);
-  }
-
-  context.restore();
 };
 
 const buildCumulativeSeries = (data: OrderBookHistogramEntry[]) => {
@@ -356,6 +244,7 @@ const drawArea = (
   }
 };
 
+// todo: when cursor is on chart, intersect with histogram and show another mark showing the exact volume at that price
 // TODO: resize bug on first page load, after reload disappears
 export const OrderBookHistogram: Component<OrderBookHistogramProps> = (props) => {
   let canvas: HTMLCanvasElement | undefined;
@@ -396,76 +285,42 @@ export const OrderBookHistogram: Component<OrderBookHistogramProps> = (props) =>
     const context = resizeCanvas(canvas, width, height);
     if (!context) return;
 
-    context.fillStyle = "rgba(2, 6, 23, 0.96)";
-    context.fillRect(0, 0, width, height);
-
     const { buySizes, sellSizes, maxSize, rowCount } = props.cumulative
       ? buildCumulativeSeries(props.data)
       : buildSeries(props.data, props.windowFraction);
-    const baselineX = 14.5;
-    const graphWidth = Math.max(width - baselineX - 12, 0);
-
-    drawGridMarkings(context, {
-      baselineX,
-      graphWidth,
-      height,
-      priceRange: props.priceRange,
-      width,
-    });
+    const baselineX = 0;
+    const graphWidth = width;
 
     drawArea(context, buySizes, {
       baselineX,
       connectEndToBaseline: true,
       connectStartToBaseline: !props.cumulative,
-      fill: "rgba(34, 197, 94, 0.28)",
+      fill: "rgba(34, 197, 94, 0.2)",
       graphWidth,
       height,
       maxSize,
       normalization: props.normalization,
       rowCount,
-      stroke: "rgba(74, 222, 128, 0.94)",
+      stroke: "rgba(74, 222, 128, 0.82)",
     });
     drawArea(context, sellSizes, {
       baselineX,
       connectEndToBaseline: !props.cumulative,
       connectStartToBaseline: true,
-      fill: "rgba(248, 113, 113, 0.28)",
+      fill: "rgba(248, 113, 113, 0.2)",
       graphWidth,
       height,
       maxSize,
       normalization: props.normalization,
       rowCount,
-      stroke: "rgba(251, 146, 60, 0.94)",
+      stroke: "rgba(251, 146, 60, 0.82)",
     });
-
-    context.strokeStyle = "rgba(148, 163, 184, 0.16)";
-    context.lineWidth = 1;
-    context.beginPath();
-    context.moveTo(baselineX, 0);
-    context.lineTo(baselineX, height);
-    context.stroke();
 
     context.font = '11px "SFMono-Regular", Consolas, "Liberation Mono", monospace';
-    context.textBaseline = "top";
-    context.textAlign = "left";
-
-    context.fillStyle = "rgba(74, 222, 128, 0.94)";
-    context.fillText("BID", 20, 8);
-    context.fillStyle = "rgba(251, 146, 60, 0.94)";
-    context.fillText("ASK", 54, 8);
     context.fillStyle = "rgba(148, 163, 184, 0.72)";
+    context.textBaseline = "top";
     context.textAlign = "right";
     context.fillText(props.normalization === "logarithmic" ? "LOG" : "LIN", width - 8, 8);
-
-    drawMarkingLabels(context, {
-      baselineX,
-      graphWidth,
-      height,
-      maxSize,
-      normalization: props.normalization,
-      priceRange: props.priceRange,
-      width,
-    });
   });
 
   return <canvas ref={canvas} class={props.class} style={props.style} />;

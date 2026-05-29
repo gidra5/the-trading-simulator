@@ -31,7 +31,6 @@ type MarketPreset = {
   orderSelectionDistribution: OrderSelectionDistribution;
   orderSizeDistribution: OrderSizeDistribution;
   settings: MarketModelSettings;
-  traits: readonly string[];
 };
 
 const presetSettings = (overrides: MarketPresetSettingsOverrides = {}): MarketModelSettings => {
@@ -58,17 +57,87 @@ const marketPresets: readonly MarketPreset[] = [
     id: "baseline",
     name: "Baseline",
     description: "Balanced event rates with moderate two-sided self-excitation.",
-    traits: ["balanced", "reference"],
     orderPriceDistribution: "normal",
     orderSelectionDistribution: "uniform",
     orderSizeDistribution: "normal",
     settings: presetSettings(),
   },
   {
+    id: "no-movement",
+    name: "No movement",
+    description: "",
+    orderPriceDistribution: "normal",
+    orderSelectionDistribution: "uniform",
+    orderSizeDistribution: "normal",
+    settings: presetSettings({
+      publicInterest: {
+        "market-buy": 0,
+        "market-sell": 0,
+        "order-buy": 20,
+        "order-sell": 20,
+        "cancel-buy": 0,
+        "cancel-sell": 0,
+      }, // event rates per second before self-excitation
+      excitationMatrix: {
+        "market-buy": {
+          "market-buy": 0,
+          "market-sell": 0,
+          "order-buy": 0,
+          "order-sell": 0,
+          "cancel-buy": 0,
+          "cancel-sell": 0,
+        },
+        "market-sell": {
+          "market-buy": 0,
+          "market-sell": 0,
+          "order-buy": 0,
+          "order-sell": 0,
+          "cancel-buy": 0,
+          "cancel-sell": 0,
+        },
+        "order-buy": {
+          "market-buy": 0,
+          "market-sell": 0,
+          "order-buy": 0,
+          "order-sell": 0,
+          "cancel-buy": 0,
+          "cancel-sell": 0,
+        },
+        "order-sell": {
+          "market-buy": 0,
+          "market-sell": 0,
+          "order-buy": 0,
+          "order-sell": 0,
+          "cancel-buy": 0,
+          "cancel-sell": 0,
+        },
+        "cancel-buy": {
+          "market-buy": 0,
+          "market-sell": 0,
+          "order-buy": 0,
+          "order-sell": 0,
+          "cancel-buy": 0,
+          "cancel-sell": 0,
+        },
+        "cancel-sell": {
+          "market-buy": 0,
+          "market-sell": 0,
+          "order-buy": 0,
+          "order-sell": 0,
+          "cancel-buy": 0,
+          "cancel-sell": 0,
+        },
+      },
+      meanPrice: 0.0,
+      priceVariance: 0.1,
+      meanSize: 100,
+      sizeVariance: 40,
+    }),
+  },
+  {
     id: "calm-depth",
     name: "Calm Depth",
     description: "Low market-order rates and high limit-order rates build a deep, tight book.",
-    traits: ["stable", "deep book", "tight spread"],
     orderPriceDistribution: "normal",
     orderSelectionDistribution: "uniform",
     orderSizeDistribution: "normal",
@@ -107,7 +176,6 @@ const marketPresets: readonly MarketPreset[] = [
     id: "thin-book",
     name: "Thin Book",
     description: "Sparse orders and stronger market/cancel excitation make small trades visible.",
-    traits: ["illiquid", "wide spread", "jumpy"],
     orderPriceDistribution: "uniform",
     orderSelectionDistribution: "uniform",
     orderSizeDistribution: "uniform",
@@ -138,7 +206,6 @@ const marketPresets: readonly MarketPreset[] = [
     id: "bull-momentum",
     name: "Bull Momentum",
     description: "Buy events have higher baseline rates and stronger same-side child events.",
-    traits: ["upward bias", "trend", "reflexive"],
     orderPriceDistribution: "normal",
     orderSelectionDistribution: "normal",
     orderSizeDistribution: "normal",
@@ -169,7 +236,6 @@ const marketPresets: readonly MarketPreset[] = [
     id: "bear-panic",
     name: "Bear Panic",
     description: "Sell market orders and bid-side cancels cluster into fast downward runs.",
-    traits: ["downward bias", "panic", "fragile bids"],
     orderPriceDistribution: "uniform",
     orderSelectionDistribution: "normal",
     orderSizeDistribution: "normal",
@@ -205,7 +271,6 @@ const marketPresets: readonly MarketPreset[] = [
     id: "mean-reversion",
     name: "Mean Reversion",
     description: "Market events mainly excite opposite-side market events and book replenishment.",
-    traits: ["counter-trend", "oscillation"],
     orderPriceDistribution: "normal",
     orderSelectionDistribution: "uniform",
     orderSizeDistribution: "normal",
@@ -236,7 +301,6 @@ const marketPresets: readonly MarketPreset[] = [
     id: "quote-stuffing",
     name: "Quote Stuffing",
     description: "Order and cancel rates dominate while half-lives stay very short.",
-    traits: ["high churn", "cancels", "microstructure noise"],
     orderPriceDistribution: "uniform",
     orderSelectionDistribution: "uniform",
     orderSizeDistribution: "uniform",
@@ -273,7 +337,6 @@ const marketPresets: readonly MarketPreset[] = [
     id: "whale-prints",
     name: "Whale Prints",
     description: "Normal event rates with large order-size variance and occasional large prints.",
-    traits: ["block trades", "fat sizes"],
     orderPriceDistribution: "normal",
     orderSelectionDistribution: "uniform",
     orderSizeDistribution: "normal",
@@ -302,7 +365,6 @@ const marketPresets: readonly MarketPreset[] = [
     id: "passive-shelves",
     name: "Passive Shelves",
     description: "High passive flow and large order sizes create heavy visible depth.",
-    traits: ["visible depth", "slow cancels"],
     orderPriceDistribution: "normal",
     orderSelectionDistribution: "normal",
     orderSizeDistribution: "normal",
@@ -333,7 +395,6 @@ const marketPresets: readonly MarketPreset[] = [
     id: "toxic-flow",
     name: "Toxic Flow",
     description: "Market orders strongly excite opposite-side cancels, so liquidity retreats.",
-    traits: ["adverse selection", "vanishing liquidity"],
     orderPriceDistribution: "uniform",
     orderSelectionDistribution: "normal",
     orderSizeDistribution: "normal",
@@ -366,7 +427,6 @@ const marketPresets: readonly MarketPreset[] = [
     id: "news-burst",
     name: "News Burst",
     description: "Large market-order baselines and short half-lives create bursts that fade fast.",
-    traits: ["bursty", "fast decay", "headline shock"],
     orderPriceDistribution: "normal",
     orderSelectionDistribution: "normal",
     orderSizeDistribution: "normal",
@@ -405,7 +465,6 @@ const marketPresets: readonly MarketPreset[] = [
     id: "passive-mirror",
     name: "Passive Mirror",
     description: "Bid and ask limit orders mostly excite each other, keeping the book symmetric.",
-    traits: ["symmetric", "passive", "range-bound"],
     orderPriceDistribution: "normal",
     orderSelectionDistribution: "uniform",
     orderSizeDistribution: "uniform",
@@ -476,15 +535,6 @@ export const MarketPresets: Component<{
                     Apply
                   </Button>
                 </div>
-                <div class="flex flex-wrap gap-1">
-                  <For each={preset.traits}>
-                    {(trait) => (
-                      <span class="rounded border border-slate-700 px-2 py-0.5 text-[10px] text-slate-300">
-                        {trait}
-                      </span>
-                    )}
-                  </For>
-                </div>
                 <dl class="grid grid-cols-2 gap-x-3 gap-y-1 text-[10px] text-slate-400">
                   <dt>Market rate</dt>
                   <dd class="text-right text-slate-200">{sumEvents(preset.settings.publicInterest, "market")}/s</dd>
@@ -495,11 +545,6 @@ export const MarketPresets: Component<{
                   <dt>Spread mean</dt>
                   <dd class="text-right text-slate-200">{Math.round(preset.settings.meanPrice * 100)}%</dd>
                   <dt>Price dist.</dt>
-                  <dd class="text-right text-slate-200">{preset.orderPriceDistribution}</dd>
-                  <dt>Size dist.</dt>
-                  <dd class="text-right text-slate-200">{preset.orderSizeDistribution}</dd>
-                  <dt>Cancel dist.</dt>
-                  <dd class="text-right text-slate-200">{preset.orderSelectionDistribution}</dd>
                 </dl>
               </section>
             );
