@@ -383,7 +383,6 @@ export const Chart: Component<ChartProps> = (props) => {
         window.cancelAnimationFrame(animationFrame);
         animationFrame = 0;
       }
-      controls.dispose();
       renderer = undefined;
       configuredWidth = 0;
       configuredHeight = 0;

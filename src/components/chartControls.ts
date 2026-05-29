@@ -34,42 +34,29 @@ type ChartControlsOptions = {
   updateViewport: (viewport: ViewportBounds) => void;
 };
 
-type ChartControls = {
-  handlePointerDown: (event: PointerEvent) => void;
-  handlePointerMove: (event: PointerEvent) => void;
-  handlePointerUp: (event: PointerEvent) => void;
-  handlePointerCancel: (event: PointerEvent) => void;
-  handleWheel: (event: WheelEvent) => void;
-  dispose: () => void;
-};
-
 // todo: move constants into settings
 // todo: review slop
 const zoomIntensity = 0.0015;
-const minTimeSpanMs = 1_000;
-const minPriceSpan = 0.000_001;
-const minViewportValue = 0;
 
 const resolveRangeStart = (
   range: readonly [number, number],
-  minimumSpan: number,
+  minValue: number,
   forceSticky: boolean,
 ): ResolvedRangeStart => {
-  const span = Math.max(range[1] - range[0], minimumSpan);
-  if (forceSticky || range[0] <= minViewportValue) {
-    return { range: [minViewportValue, minViewportValue + span], sticky: true };
+  const span = range[1] - range[0];
+  if (forceSticky || range[0] <= minValue) {
+    return { range: [minValue, minValue + span], sticky: true };
   }
 
-  if (range[1] - range[0] >= minimumSpan) return { range: [range[0], range[1]], sticky: false };
-
-  return { range: [range[0], range[0] + span], sticky: false };
+  return { range: [range[0], range[1]], sticky: false };
 };
 
 const resolvePannedViewportStart = (
   viewport: ViewportBounds,
 ): { viewport: ViewportBounds; stickyStart: StickyStart } => {
-  const time = resolveRangeStart(viewport.time, minTimeSpanMs, false);
-  const price = resolveRangeStart(viewport.price, minPriceSpan, false);
+  const timeSpan = viewport.time[1] - viewport.time[0];
+  const time = resolveRangeStart(viewport.time, -timeSpan * 0.01, false);
+  const price = resolveRangeStart(viewport.price, 0, false);
 
   return {
     viewport: { time: time.range, price: price.range },
@@ -77,30 +64,20 @@ const resolvePannedViewportStart = (
   };
 };
 
-const scaleRange = (
-  range: readonly [number, number],
-  anchor: number,
-  scale: number,
-  minimumSpan: number,
-): [number, number] => {
-  const span = Math.max(range[1] - range[0], minimumSpan);
-  const nextSpan = Math.max(minimumSpan, span * scale);
+const scaleRange = (range: readonly [number, number], anchor: number, scale: number): [number, number] => {
+  const span = range[1] - range[0];
+  const nextSpan = span * scale;
   const anchorValue = range[0] + span * anchor;
 
   return [anchorValue - nextSpan * anchor, anchorValue + nextSpan * (1 - anchor)];
 };
 
-export const createChartControls = (options: ChartControlsOptions): ChartControls => {
+export const createChartControls = (options: ChartControlsOptions) => {
   let dragState: DragState | undefined;
-  const stickyStart: StickyStart = {
-    time: false,
-    price: false,
-  };
+  const stickyStart: StickyStart = { time: false, price: false };
 
   const clearDragState = (pointerId?: number): void => {
-    if (!dragState || (pointerId !== undefined && dragState.pointerId !== pointerId)) {
-      return;
-    }
+    if (!dragState || (pointerId !== undefined && dragState.pointerId !== pointerId)) return;
 
     dragState = undefined;
     options.setDragging(false);
@@ -108,14 +85,10 @@ export const createChartControls = (options: ChartControlsOptions): ChartControl
 
   const getPointerCoordinates = (event: PointerEvent | WheelEvent): PointerCoordinates | null => {
     const canvas = options.getCanvas();
-    if (!canvas) {
-      return null;
-    }
+    if (!canvas) return null;
 
     const rect = canvas.getBoundingClientRect();
-    if (rect.width <= 0 || rect.height <= 0) {
-      return null;
-    }
+    if (rect.width <= 0 || rect.height <= 0) return null;
 
     return {
       x: clamp(event.clientX - rect.left, 0, rect.width),
@@ -126,8 +99,8 @@ export const createChartControls = (options: ChartControlsOptions): ChartControl
   };
 
   const syncStickyStart = (viewport: ChartViewport): void => {
-    if (viewport.time[0] > minViewportValue) stickyStart.time = false;
-    if (viewport.price[0] > minViewportValue) stickyStart.price = false;
+    if (viewport.time[0] > 0) stickyStart.time = false;
+    if (viewport.price[0] > 0) stickyStart.price = false;
   };
 
   const handlePointerDown = (event: PointerEvent): void => {
@@ -161,8 +134,8 @@ export const createChartControls = (options: ChartControlsOptions): ChartControl
 
     const width = Math.max(canvas.clientWidth, 1);
     const height = Math.max(canvas.clientHeight, 1);
-    const timeSpan = Math.max(dragState.viewport.time[1] - dragState.viewport.time[0], minTimeSpanMs);
-    const priceSpan = Math.max(dragState.viewport.price[1] - dragState.viewport.price[0], minPriceSpan);
+    const timeSpan = dragState.viewport.time[1] - dragState.viewport.time[0];
+    const priceSpan = dragState.viewport.price[1] - dragState.viewport.price[0];
     const deltaX = event.clientX - dragState.startX;
     const deltaY = event.clientY - dragState.startY;
     const timeOffset = (deltaX / width) * timeSpan;
@@ -207,19 +180,12 @@ export const createChartControls = (options: ChartControlsOptions): ChartControl
     const scaleTime = event.ctrlKey || !event.shiftKey;
     const scalePrice = event.ctrlKey || event.shiftKey;
 
+    const timeSpan = viewport.time[1] - viewport.time[0];
     const nextTime = scaleTime
-      ? resolveRangeStart(
-          scaleRange(viewport.time, anchorX, zoomFactor, minTimeSpanMs),
-          minTimeSpanMs,
-          stickyStart.time,
-        )
+      ? resolveRangeStart(scaleRange(viewport.time, anchorX, zoomFactor), -timeSpan * 0.01, stickyStart.time)
       : { range: viewport.time, sticky: stickyStart.time };
     const nextPrice = scalePrice
-      ? resolveRangeStart(
-          scaleRange(viewport.price, priceAnchor, zoomFactor, minPriceSpan),
-          minPriceSpan,
-          stickyStart.price,
-        )
+      ? resolveRangeStart(scaleRange(viewport.price, priceAnchor, zoomFactor), 0, stickyStart.price)
       : { range: viewport.price, sticky: stickyStart.price };
 
     stickyStart.time = nextTime.sticky;
@@ -238,8 +204,5 @@ export const createChartControls = (options: ChartControlsOptions): ChartControl
     handlePointerUp,
     handlePointerCancel,
     handleWheel,
-    dispose: () => {
-      clearDragState();
-    },
   };
 };

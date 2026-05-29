@@ -23,7 +23,6 @@ export const createOrderPlacementState = (options: SimulationOrderPlacementOptio
     const size = options.sampleOrderSize();
     const price = sampleOrderPrice(side);
     const result = options.market.makeOrder(side, { price, size });
-    console.log(side, size, price, options.market.marketPriceSpread());
 
     assert(result.order.size === size, "simulated limit orders should not fill immediately");
 
