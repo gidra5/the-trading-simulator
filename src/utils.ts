@@ -145,3 +145,52 @@ export const roundToList = (value: number, list: readonly number[]): number => {
   if (Math.abs(valueDiff) < Math.abs(nextValueDiff)) return list[index];
   return list[index + 1];
 };
+
+  // const roundNumber = (price: number): number => {
+  //   if (!Number.isFinite(price) || price <= 0) return 0;
+
+  //   const magnitude = 10 ** Math.floor(Math.log10(price));
+  //   const roll = Math.random();
+
+  //   if (roll < 0.15) return magnitude * 0.1;
+  //   if (roll < 0.45) return magnitude * 0.05;
+  //   return magnitude * 0.01;
+  // };
+
+
+  // const applyOrderPricePsychology = (side: OrderSide, price: number): number => {
+  //   const settings = options.getSettings();
+
+  //   if (!Number.isFinite(price) || price <= 0) return price;
+
+  //   const spread = options.market.marketPriceSpread();
+  //   updateRecentPriceAnchors(options.market.midPrice());
+
+  //   let adjustedPrice = price;
+
+  //   if (Math.random() < settings.anchorPreference) {
+  //     const anchor = sampleRecentHighLowAnchor(side);
+
+  //     if (anchor !== null) {
+  //       adjustedPrice += (anchor - adjustedPrice) * sampleUniform(0.15, 0.6);
+  //     }
+  //   }
+
+  //   if (Math.random() < settings.liquidityWallAnchorPreference) {
+  //     const anchor = sampleSupportResistanceAnchor(side, adjustedPrice, spread);
+
+  //     if (anchor !== null) {
+  //       adjustedPrice = anchor;
+  //     }
+  //   }
+
+  //   if (!isNearMidPrice(adjustedPrice, spread) && Math.random() < settings.roundPricePreference) {
+  //     const step = roundPriceStep(adjustedPrice);
+
+  //     if (step > 0) {
+  //       adjustedPrice = Math.round(adjustedPrice / step) * step;
+  //     }
+  //   }
+
+  //   return side === "buy" ? clamp(adjustedPrice, Number.MIN_VALUE, spread.buy) : Math.max(adjustedPrice, spread.sell);
+  // };
