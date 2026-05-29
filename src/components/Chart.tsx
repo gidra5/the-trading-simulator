@@ -1,4 +1,5 @@
 import {
+  createEffect,
   createMemo,
   createSignal,
   createUniqueId,
@@ -71,6 +72,18 @@ type ChartSize = {
   height: number;
 };
 
+type ActiveMarkLabelProps = {
+  backgroundClass: string;
+  backgroundY: number;
+  dominantBaseline?: "middle";
+  dy: string;
+  label: string;
+  textAnchor: "end" | "middle";
+  textClass: string;
+  x: number;
+  y: number;
+};
+
 // todo: review slop
 const maxMarkGapPx = 160;
 const markLabelPaddingPx = 8;
@@ -80,6 +93,9 @@ const timeMarkLabelFadePx = 16;
 const priceMarkLabelBandWidthPx = 72;
 const timeMarkLabelBandHeightPx = 28;
 const timeMarkLabelOverflowPx = 56;
+const activeMarkLabelBackgroundHeightPx = 16;
+const activeMarkLabelBackgroundHorizontalPaddingPx = 4;
+const activeMarkLabelBackgroundRadiusPx = 3;
 const markLabelBackgroundColor = themeColors.surface.body;
 const priceMarkBaseInterval = 0.25;
 const timeMarkBaseInterval = 25_000;
@@ -99,6 +115,47 @@ const getFixedMarkInterval = (range: [number, number], pixelSpan: number, baseIn
 
 const normalizeMarkValue = (value: number, interval: number): number =>
   Math.abs(value) < interval / 1_000 ? 0 : value;
+
+const ActiveMarkLabel: Component<ActiveMarkLabelProps> = (props) => {
+  let text: SVGTextElement | undefined;
+  const [textWidth, setTextWidth] = createSignal(0);
+  const backgroundWidth = () => textWidth() + activeMarkLabelBackgroundHorizontalPaddingPx * 2;
+  const backgroundX = () =>
+    props.textAnchor === "middle"
+      ? props.x - backgroundWidth() / 2
+      : props.x - textWidth() - activeMarkLabelBackgroundHorizontalPaddingPx;
+
+  createEffect(() => {
+    props.label;
+    if (!text) return;
+
+    setTextWidth(text.getComputedTextLength());
+  });
+
+  return (
+    <g>
+      <rect
+        x={backgroundX()}
+        y={props.backgroundY}
+        width={backgroundWidth()}
+        height={activeMarkLabelBackgroundHeightPx}
+        rx={activeMarkLabelBackgroundRadiusPx}
+        class={props.backgroundClass}
+      />
+      <text
+        ref={text}
+        x={props.x}
+        y={props.y}
+        dy={props.dy}
+        dominant-baseline={props.dominantBaseline}
+        text-anchor={props.textAnchor}
+        class={props.textClass}
+      >
+        {props.label}
+      </text>
+    </g>
+  );
+};
 
 const buildFixedMarks = (
   range: [number, number],
@@ -640,36 +697,6 @@ export const Chart: Component<ChartProps> = (props) => {
               </text>
             )}
           </For>
-          <Show when={latestPriceMark()}>
-            {(mark) => (
-              <text
-                x={priceLabelX()}
-                y={markY(mark().position)}
-                dy="13"
-                text-anchor="end"
-                class="fill-cyan-200 font-mono text-[10px]"
-              >
-                {mark().label}
-              </text>
-            )}
-          </Show>
-          <Show when={pointerPriceMark()}>
-            {(mark) => {
-              const dy = () => (mark().position > 0.92 ? "13" : "-4");
-
-              return (
-                <text
-                  x={priceLabelX()}
-                  y={markY(mark().position)}
-                  dy={dy()}
-                  text-anchor="end"
-                  class="fill-amber-200 font-mono text-[10px]"
-                >
-                  {mark().label}
-                </text>
-              );
-            }}
-          </Show>
         </g>
         <g clip-path={`url(#${timeLabelClipId})`} mask={`url(#${timeLabelMaskId})`}>
           <For each={timeMarks()}>
@@ -684,19 +711,65 @@ export const Chart: Component<ChartProps> = (props) => {
               </text>
             )}
           </For>
-          <Show when={pointerTimeMark()}>
-            {(mark) => (
-              <text
-                x={markX(mark().position)}
-                y={timeLabelY()}
-                text-anchor="middle"
-                class="fill-amber-200 font-mono text-[10px]"
-              >
-                {mark().label}
-              </text>
-            )}
-          </Show>
         </g>
+        <Show when={latestPriceMark()}>
+          {(mark) => {
+            const y = () => markY(mark().position);
+            const backgroundY = () => y() - activeMarkLabelBackgroundHeightPx / 2;
+
+            return (
+              <ActiveMarkLabel
+                backgroundClass="fill-cyan-300 transition-none"
+                backgroundY={backgroundY()}
+                dominantBaseline="middle"
+                dy="0"
+                label={mark().label}
+                textAnchor="end"
+                textClass="fill-surface-body font-mono text-[10px]"
+                x={priceLabelX()}
+                y={y()}
+              />
+            );
+          }}
+        </Show>
+        <Show when={pointerPriceMark()}>
+          {(mark) => {
+            const y = () => markY(mark().position);
+            const backgroundY = () => y() - activeMarkLabelBackgroundHeightPx / 2;
+
+            return (
+              <ActiveMarkLabel
+                backgroundClass="fill-amber-300 transition-none"
+                backgroundY={backgroundY()}
+                dominantBaseline="middle"
+                dy="0"
+                label={mark().label}
+                textAnchor="end"
+                textClass="fill-surface-body font-mono text-[10px]"
+                x={priceLabelX()}
+                y={y()}
+              />
+            );
+          }}
+        </Show>
+        <Show when={pointerTimeMark()}>
+          {(mark) => {
+            const x = () => markX(mark().position);
+
+            return (
+              <ActiveMarkLabel
+                backgroundClass="fill-amber-300 transition-none"
+                backgroundY={timeLabelY() - 12}
+                dy="0"
+                label={mark().label}
+                textAnchor="middle"
+                textClass="fill-surface-body font-mono text-[10px]"
+                x={x()}
+                y={timeLabelY()}
+              />
+            );
+          }}
+        </Show>
       </svg>
       <Show when={status()}>
         {(message) => (
