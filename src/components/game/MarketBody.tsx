@@ -31,12 +31,14 @@ export const MarketBody: Component<MarketBodyProps> = (props) => {
           <Chart
             candleInterval={settings.candleInterval()}
             class="h-full w-full bg-surface-primary"
+            isOrderBookHistogramVisible={settings.isHistogramEnabled()}
             orderBookHeatmap={props.orderBookHeatmap}
             orderBookHistogram={chartHistogram()}
             priceCandles={props.priceCandles}
             showFrameRate={settings.showFrameRate()}
             viewport={props.viewport}
             onViewportChange={props.onViewportChange}
+            onOrderBookHistogramVisibilityChange={settings.setIsHistogramEnabled}
           />
         </Panel>
       </div>

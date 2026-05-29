@@ -12,6 +12,7 @@ import {
 } from "solid-js";
 import type { OrderBookHeatmapEntry, OrderBookHistogramEntry, PriceCandle } from "../market/index";
 import clsx from "clsx";
+import { ChartNoAxesColumn, ChevronLeft, ChevronRight } from "lucide-solid";
 import {
   drawFrame,
   getCanvasResolution,
@@ -25,6 +26,7 @@ import { createChartControls } from "./chartControls";
 import { OrderBookHistogram, type HistogramNormalization } from "./OrderBookHistogram";
 import { formatNumber } from "../utils";
 import { themeColors } from "../ui-kit/theme";
+import { Button } from "../ui-kit/Button";
 
 export type ChartViewport = {
   time: [from: number, to: number];
@@ -43,6 +45,8 @@ type ChartProps = {
   priceCandles: PriceCandle[];
   orderBookHeatmap: OrderBookHeatmapEntry[] | null;
   orderBookHistogram: ChartHistogram | null;
+  isOrderBookHistogramVisible: boolean;
+  onOrderBookHistogramVisibilityChange: (visible: boolean) => void;
   viewport: ChartViewport;
   candleInterval: number;
   onViewportChange?: (viewport: ChartViewport) => void;
@@ -266,6 +270,9 @@ export const Chart: Component<ChartProps> = (props) => {
   const [pointerPosition, setPointerPosition] = createSignal<PointerPosition | null>(null);
   const [plotSize, setPlotSize] = createSignal<ChartSize>({ width: 1, height: 1 });
   const [surfaceSize, setSurfaceSize] = createSignal<ChartSize>({ width: 1, height: 1 });
+  const [renderedOrderBookHistogram, setRenderedOrderBookHistogram] = createSignal<ChartHistogram | null>(
+    props.orderBookHistogram,
+  );
   const timeMarkPositionOverflow = (): number => timeMarkLabelOverflowPx / plotSize().width;
   const timeMarkPositionRange = (): [number, number] => [-timeMarkPositionOverflow(), 1 + timeMarkPositionOverflow()];
   const overlayId = createUniqueId();
@@ -377,7 +384,9 @@ export const Chart: Component<ChartProps> = (props) => {
   const priceLabelBandX = (): number => surfaceSize().width - priceLabelBandWidth();
   const priceLabelBandHeight = (): number => surfaceSize().height - timeLabelBandHeight();
   const timeLabelBandY = (): number => surfaceSize().height - timeLabelBandHeight();
-  const hasOrderBookHistogram = (): boolean => props.orderBookHistogram !== null;
+  const hasOrderBookHistogram = (): boolean => renderedOrderBookHistogram() !== null;
+  const isOrderBookHistogramOpen = (): boolean =>
+    props.isOrderBookHistogramVisible && renderedOrderBookHistogram() !== null;
   const timeLabelBandWidth = (): number =>
     hasOrderBookHistogram() ? plotSize().width : surfaceSize().width - priceLabelBandWidth();
   const timeLabelBackgroundWidth = (): number => (hasOrderBookHistogram() ? plotSize().width : surfaceSize().width);
@@ -390,6 +399,18 @@ export const Chart: Component<ChartProps> = (props) => {
     hasOrderBookHistogram()
       ? timeLabelBandWidth()
       : Math.min(surfaceSize().width, timeLabelBandWidth() + labelFadeStartAfterBand() + timeMarkLabelFadePx);
+  const histogramToggleLabel = (): string =>
+    props.isOrderBookHistogramVisible ? "Hide order book histogram" : "Show order book histogram";
+  const histogramToggleRight = (): string => (isOrderBookHistogramOpen() ? `${orderBookHistogramWidthPx - 1}px` : "0");
+  const histogramPanelWidth = (): string => (isOrderBookHistogramOpen() ? `${orderBookHistogramWidthPx}px` : "0");
+  const histogramPanelStyle = (): JSX.CSSProperties => ({
+    opacity: isOrderBookHistogramOpen() ? 1 : 0,
+    width: histogramPanelWidth(),
+  });
+  const histogramToggleStyle = (): JSX.CSSProperties => ({
+    right: histogramToggleRight(),
+    transition: "right 180ms ease, background-color 160ms ease, border-color 160ms ease, color 160ms ease",
+  });
   const labelFadeOffset = (position: number, span: number): string =>
     `${Math.min(100, Math.max(0, (position / Math.max(span, 1)) * 100))}%`;
   const priceLabelFadeOffset = (): string => labelFadeOffset(priceMarkLabelFadePx, priceLabelClipHeight());
@@ -421,6 +442,11 @@ export const Chart: Component<ChartProps> = (props) => {
     getViewport: () => props.viewport,
     setDragging: setIsDragging,
     updateViewport,
+  });
+
+  createEffect(() => {
+    const histogram = props.orderBookHistogram;
+    if (histogram) setRenderedOrderBookHistogram(histogram);
   });
 
   const readPointerPosition = (event: PointerEvent | WheelEvent): PointerPosition | null => {
@@ -460,6 +486,10 @@ export const Chart: Component<ChartProps> = (props) => {
   const handlePointerCancel = (event: PointerEvent): void => {
     setPointerPosition(null);
     controls.handlePointerCancel(event);
+  };
+
+  const clearPointerPosition = (): void => {
+    setPointerPosition(null);
   };
 
   const handleWheel = (event: WheelEvent): void => {
@@ -591,18 +621,50 @@ export const Chart: Component<ChartProps> = (props) => {
           onWheel={handleWheel}
         />
       </div>
-      <Show when={props.orderBookHistogram}>
+      <Show when={renderedOrderBookHistogram()}>
         {(histogram) => (
-          <OrderBookHistogram
-            class="pointer-events-none block h-full shrink-0 pr-16"
-            cumulative={histogram().cumulative}
-            data={histogram().data}
-            normalization={histogram().normalization}
-            style={{ width: `${orderBookHistogramWidthPx}px` }}
-            windowFraction={histogram().windowFraction}
-          />
+          <div
+            class="h-full shrink-0 overflow-hidden transition-[width,opacity] duration-200 ease-out"
+            aria-hidden={!isOrderBookHistogramOpen()}
+            style={histogramPanelStyle()}
+          >
+            <OrderBookHistogram
+              class={clsx(
+                "pointer-events-none block h-full pr-16 transition-transform duration-200 ease-out",
+                isOrderBookHistogramOpen() ? "translate-x-0" : "translate-x-full",
+              )}
+              cumulative={histogram().cumulative}
+              data={histogram().data}
+              normalization={histogram().normalization}
+              style={{ width: `${orderBookHistogramWidthPx}px` }}
+              windowFraction={histogram().windowFraction}
+            />
+          </div>
         )}
       </Show>
+      <Button
+        aria-label={histogramToggleLabel()}
+        aria-pressed={props.isOrderBookHistogramVisible}
+        class="absolute top-1/2 z-10 h-12! min-h-12! w-8! min-w-8! -translate-y-1/2 rounded-l-md! rounded-r-none! border-border! border-r-0! bg-surface-secondary/95! text-text-secondary shadow-lg backdrop-blur hover:border-accent-secondary! hover:bg-surface-primary! hover:text-text-primary"
+        size="md"
+        style={histogramToggleStyle()}
+        title={histogramToggleLabel()}
+        type="button"
+        variant="icon"
+        onClick={() => props.onOrderBookHistogramVisibilityChange(!props.isOrderBookHistogramVisible)}
+        onPointerEnter={clearPointerPosition}
+        onPointerMove={clearPointerPosition}
+      >
+        <span class="flex flex-col items-center gap-0.5">
+          <ChartNoAxesColumn aria-hidden="true" class="h-4 w-4" strokeWidth={1.8} />
+          <Show
+            fallback={<ChevronLeft aria-hidden="true" class="h-3 w-3" strokeWidth={2.2} />}
+            when={props.isOrderBookHistogramVisible}
+          >
+            <ChevronRight aria-hidden="true" class="h-3 w-3" strokeWidth={2.2} />
+          </Show>
+        </span>
+      </Button>
       <svg class="pointer-events-none absolute inset-0 h-full w-full overflow-hidden" aria-hidden="true">
         <defs>
           <linearGradient

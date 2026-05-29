@@ -223,11 +223,13 @@ export const MarketChart: Component<MarketChartProps> = (props) => {
           <Chart
             class="h-full min-w-0 flex-1"
             candleInterval={candleInterval()}
+            isOrderBookHistogramVisible={isHistogramEnabled()}
             priceCandles={candles()}
             orderBookHeatmap={heatmap()}
             orderBookHistogram={chartHistogram()}
             viewport={viewport()}
             onViewportChange={handleViewportChange}
+            onOrderBookHistogramVisibilityChange={setIsHistogramEnabled}
             showFrameRate={showFrameRate}
           />
           <Order market={props.market} time={props.time} />
