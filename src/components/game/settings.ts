@@ -1,4 +1,5 @@
 import { createMemo, createRoot, createSignal } from "solid-js";
+import type { PriceScaleKind, QuotePriceKind } from "../../market";
 import { type StoreEncoding, type StoreKind } from "../../storage/interface";
 import { createSaveFileStore } from "../../storage/persistence";
 import { HistogramNormalization } from "../OrderBookHistogram";
@@ -17,7 +18,10 @@ export const createSettings = () => {
   const [histogramFanout, setHistogramFanout] = createSignal(5);
   const [frontierPickerSize, setFrontierPickerSize] = createSignal(3);
   const [candleInterval, setCandleInterval] = createSignal(1_000);
+  const [priceScale, setPriceScale] = createSignal<PriceScaleKind>("linear");
+  const [quotePriceKind, setQuotePriceKind] = createSignal<QuotePriceKind>("buy");
   const [isHeatmapEnabled, setIsHeatmapEnabled] = createSignal(false);
+  const [heatmapNormalization, setHeatmapNormalization] = createSignal<PriceScaleKind>("logarithmic");
   const [isHistogramEnabled, setIsHistogramEnabled] = createSignal(false);
   const [isHistogramCumulative, setIsHistogramCumulative] = createSignal(true);
   const [histogramNormalization, setHistogramNormalization] = createSignal<HistogramNormalization>(
@@ -72,6 +76,7 @@ export const createSettings = () => {
     effectsVolume,
     histogramNormalization,
     histogramWindowFraction,
+    heatmapNormalization,
     isHeatmapEnabled,
     isHistogramCumulative,
     isHistogramEnabled,
@@ -79,6 +84,8 @@ export const createSettings = () => {
     masterVolume,
     musicVolume,
     newsEventsEnabled,
+    priceScale,
+    quotePriceKind,
     showFrameRate,
     simulationSpeed,
     seed,
@@ -98,6 +105,7 @@ export const createSettings = () => {
     setEffectsVolume,
     setHistogramNormalization,
     setHistogramWindowFraction,
+    setHeatmapNormalization,
     setIsHeatmapEnabled,
     setIsHistogramCumulative,
     setIsHistogramEnabled,
@@ -105,6 +113,8 @@ export const createSettings = () => {
     setMasterVolume,
     setMusicVolume,
     setNewsEventsEnabled,
+    setPriceScale,
+    setQuotePriceKind,
     setShowFrameRate,
     setSimulationSpeed,
     setSeed,

@@ -1,5 +1,5 @@
 import { Show, createMemo, createSignal, onCleanup, onMount, type Component } from "solid-js";
-import type { MarketState, PriceCandle, QuotePriceKind } from "../market/index";
+import type { MarketState, PriceCandle, PriceScaleKind, QuotePriceKind } from "../market/index";
 import { HistogramNormalization } from "./OrderBookHistogram";
 import { simulationTickTime, type TradingSimulation } from "../simulation/index";
 import type { SimulationTimeState } from "../simulation/time";
@@ -12,7 +12,6 @@ import { digits, Order } from "./Order";
 import type { SimulationOrchestratorController } from "../simulation/orchestrator";
 
 const pollingInterval = 200;
-const showFrameRate = true;
 type SettingsTab = "chart" | "market" | "presets";
 
 export type MarketChartProps = {
@@ -25,23 +24,27 @@ export type MarketChartProps = {
 
 export const MarketChart: Component<MarketChartProps> = (props) => {
   const startTime = props.time.time();
-  const pricePoint: QuotePriceKind = "mid"; // todo: add to settings store
   const priceSpread = createThrottledMemo(props.market.marketPriceSpread, pollingInterval);
   const [activeSettingsTab, setActiveSettingsTab] = createSignal<SettingsTab>("chart");
   const [candleInterval, setCandleInterval] = createSignal(1_000);
+  const [priceScale, setPriceScale] = createSignal<PriceScaleKind>("linear");
+  const [quotePriceKind, setQuotePriceKind] = createSignal<QuotePriceKind>("mid");
   const [isHeatmapEnabled, setIsHeatmapEnabled] = createSignal(false);
+  const [heatmapNormalization, setHeatmapNormalization] = createSignal<PriceScaleKind>("logarithmic");
   const [isHistogramEnabled, setIsHistogramEnabled] = createSignal(true);
   const [isHistogramCumulative, setIsHistogramCumulative] = createSignal(true);
   const [histogramNormalization, setHistogramNormalization] = createSignal<HistogramNormalization>(
     HistogramNormalization.Linear,
   );
   const [histogramWindowFraction, setHistogramWindowFraction] = createSignal(0.01);
+  const [showFrameRate, setShowFrameRate] = createSignal(true);
   const [viewport, setViewport] = createSignal<ChartViewport>({
     time: [startTime, startTime + 1 * 60 * 1000],
     price: [0, 1.3],
     resolution: [1, 1],
   });
   let previousCandleInterval = candleInterval();
+  let previousQuotePriceKind = quotePriceKind();
 
   const rebuildCandles = (interval: number): PriceCandle[] => {
     const alignedStart = Math.floor(startTime / interval) * interval;
@@ -51,7 +54,7 @@ export const MarketChart: Component<MarketChartProps> = (props) => {
       const candle = props.market.priceHistoryCandle(
         candleStart,
         Math.min(candleStart + interval, props.time.time()),
-        pricePoint,
+        quotePriceKind(),
       );
       rebuiltCandles.push(candle);
     }
@@ -65,14 +68,16 @@ export const MarketChart: Component<MarketChartProps> = (props) => {
 
   const candles = createThrottledMemo<PriceCandle[]>((currentCandles = []) => {
     const interval = candleInterval();
+    const priceKind = quotePriceKind();
 
-    if (interval !== previousCandleInterval) {
+    if (interval !== previousCandleInterval || priceKind !== previousQuotePriceKind) {
       previousCandleInterval = interval;
+      previousQuotePriceKind = priceKind;
       return rebuildCandles(interval);
     }
 
     const candleStart = Math.floor(props.time.time() / interval) * interval;
-    const candle = props.market.priceHistoryCandle(candleStart, props.time.time(), pricePoint);
+    const candle = props.market.priceHistoryCandle(candleStart, props.time.time(), priceKind);
     const latestCandle = currentCandles[currentCandles.length - 1];
 
     if (!latestCandle) return [candle];
@@ -82,11 +87,11 @@ export const MarketChart: Component<MarketChartProps> = (props) => {
     const finalizedLatestCandle = props.market.priceHistoryCandle(
       latestCandle.time,
       latestCandle.time + interval,
-      pricePoint,
+      priceKind,
     );
     const missingCandles: PriceCandle[] = [];
     for (let missingStart = latestCandle.time + interval; missingStart < candle.time; missingStart += interval) {
-      const candle = props.market.priceHistoryCandle(missingStart, missingStart + interval, pricePoint);
+      const candle = props.market.priceHistoryCandle(missingStart, missingStart + interval, priceKind);
       missingCandles.push(candle);
     }
 
@@ -98,6 +103,7 @@ export const MarketChart: Component<MarketChartProps> = (props) => {
     return props.market.getOrderBookRegion({
       timestamp: viewport().time,
       price: viewport().price,
+      priceScale: priceScale(),
       resolution: viewport().resolution,
     });
   }, pollingInterval);
@@ -106,6 +112,7 @@ export const MarketChart: Component<MarketChartProps> = (props) => {
     if (!isHistogramEnabled()) return null;
     return props.market.getOrderBookHistogram({
       price: viewport().price,
+      priceScale: priceScale(),
       resolution: viewport().resolution[1],
     });
   }, pollingInterval);
@@ -194,21 +201,7 @@ export const MarketChart: Component<MarketChartProps> = (props) => {
             </div>
           </div>
           <Show when={activeSettingsTab() === "chart"}>
-            <ChartSettings
-              candleInterval={candleInterval}
-              onCandleIntervalChange={updateCandleInterval}
-              isHeatmapEnabled={isHeatmapEnabled}
-              setIsHeatmapEnabled={setIsHeatmapEnabled}
-              isHistogramEnabled={isHistogramEnabled}
-              setIsHistogramEnabled={setIsHistogramEnabled}
-              isHistogramCumulative={isHistogramCumulative}
-              setIsHistogramCumulative={setIsHistogramCumulative}
-              histogramNormalization={histogramNormalization}
-              setHistogramNormalization={setHistogramNormalization}
-              histogramWindowFraction={histogramWindowFraction}
-              setHistogramWindowFraction={setHistogramWindowFraction}
-              orderBookAcceleration={props.orderBookAcceleration}
-            />
+            <ChartSettings orderBookAcceleration={props.orderBookAcceleration} />
           </Show>
           <Show when={activeSettingsTab() === "market"}>
             <MarketSettings controller={props.marketModelController} />
@@ -223,14 +216,29 @@ export const MarketChart: Component<MarketChartProps> = (props) => {
           <Chart
             class="h-full min-w-0 flex-1"
             candleInterval={candleInterval()}
+            controls={{
+              candleInterval: candleInterval(),
+              heatmapNormalization: heatmapNormalization(),
+              isFrameRateVisible: showFrameRate(),
+              isHeatmapEnabled: isHeatmapEnabled(),
+              priceScale: priceScale(),
+              quotePriceKind: quotePriceKind(),
+              onCandleIntervalChange: updateCandleInterval,
+              onFrameRateVisibilityChange: setShowFrameRate,
+              onHeatmapEnabledChange: setIsHeatmapEnabled,
+              onHeatmapNormalizationChange: setHeatmapNormalization,
+              onPriceScaleChange: setPriceScale,
+              onQuotePriceKindChange: setQuotePriceKind,
+            }}
             isOrderBookHistogramVisible={isHistogramEnabled()}
             priceCandles={candles()}
             orderBookHeatmap={heatmap()}
             orderBookHistogram={chartHistogram()}
             viewport={viewport()}
             onViewportChange={handleViewportChange}
+            onOrderBookHistogramCumulativeChange={setIsHistogramCumulative}
+            onOrderBookHistogramNormalizationChange={setHistogramNormalization}
             onOrderBookHistogramVisibilityChange={setIsHistogramEnabled}
-            showFrameRate={showFrameRate}
           />
           <Order market={props.market} time={props.time} />
         </div>

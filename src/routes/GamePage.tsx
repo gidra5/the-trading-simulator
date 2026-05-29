@@ -10,7 +10,7 @@ import {
   untrack,
   type Accessor,
 } from "solid-js";
-import type { MarketState, PriceCandle } from "../market/index";
+import type { MarketState, PriceCandle, QuotePriceKind } from "../market/index";
 import { actor, market, settings as gameSettings, simulation, time } from "./game/state";
 import type { ChartViewport } from "../components/Chart";
 import { AccountBody } from "../components/game/AccountBody";
@@ -51,6 +51,7 @@ const createMarketGameState = (options: { market: MarketState; startTime: number
     resolution: [1, 1],
   });
   let previousCandleInterval = gameSettings.candleInterval();
+  let previousQuotePriceKind: QuotePriceKind = gameSettings.quotePriceKind();
 
   const rebuildCandles = (interval: number): PriceCandle[] => {
     const alignedStart = Math.floor(options.startTime / interval) * interval;
@@ -60,7 +61,7 @@ const createMarketGameState = (options: { market: MarketState; startTime: number
       const candle = options.market.priceHistoryCandle(
         candleStart,
         Math.min(candleStart + interval, time.time()),
-        "buy",
+        gameSettings.quotePriceKind(),
       );
       rebuiltCandles.push(candle);
     }
@@ -70,14 +71,16 @@ const createMarketGameState = (options: { market: MarketState; startTime: number
 
   const candles = createThrottledMemo<PriceCandle[]>((currentCandles = []) => {
     const interval = gameSettings.candleInterval();
+    const quotePriceKind = gameSettings.quotePriceKind();
 
-    if (interval !== previousCandleInterval) {
+    if (interval !== previousCandleInterval || quotePriceKind !== previousQuotePriceKind) {
       previousCandleInterval = interval;
+      previousQuotePriceKind = quotePriceKind;
       return rebuildCandles(interval);
     }
 
     const candleStart = Math.floor(time.time() / interval) * interval;
-    const candle = options.market.priceHistoryCandle(candleStart, time.time(), "buy");
+    const candle = options.market.priceHistoryCandle(candleStart, time.time(), quotePriceKind);
     const latestCandle = currentCandles[currentCandles.length - 1];
 
     if (!latestCandle) return [candle];
@@ -87,11 +90,11 @@ const createMarketGameState = (options: { market: MarketState; startTime: number
     const finalizedLatestCandle = options.market.priceHistoryCandle(
       latestCandle.time,
       latestCandle.time + interval,
-      "buy",
+      quotePriceKind,
     );
     const missingCandles: PriceCandle[] = [];
     for (let missingStart = latestCandle.time + interval; missingStart < candle.time; missingStart += interval) {
-      const missingCandle = options.market.priceHistoryCandle(missingStart, missingStart + interval, "buy");
+      const missingCandle = options.market.priceHistoryCandle(missingStart, missingStart + interval, quotePriceKind);
       missingCandles.push(missingCandle);
     }
 
@@ -104,6 +107,7 @@ const createMarketGameState = (options: { market: MarketState; startTime: number
     return options.market.getOrderBookRegion({
       timestamp: viewport().time,
       price: viewport().price,
+      priceScale: gameSettings.priceScale(),
       resolution: viewport().resolution,
     });
   }, pollingInterval);
@@ -113,6 +117,7 @@ const createMarketGameState = (options: { market: MarketState; startTime: number
 
     return options.market.getOrderBookHistogram({
       price: viewport().price,
+      priceScale: gameSettings.priceScale(),
       resolution: viewport().resolution[1],
     });
   }, pollingInterval);

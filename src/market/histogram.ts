@@ -2,6 +2,7 @@ import { Accessor, createMemo } from "solid-js";
 import { OrderSide, RestingOrder } from "./order";
 import { OrderBookChangeset } from "./orderBook";
 import { binarySearchIndex, inRange } from "../utils";
+import { priceAtScalePosition, type PriceScaleKind } from "./priceScale";
 
 export type OrderBookHistogramEntry = {
   kind: OrderSide;
@@ -11,6 +12,7 @@ export type OrderBookHistogramEntry = {
 
 export type OrderBookHistogramRegion = {
   price: [min: number, max: number];
+  priceScale: PriceScaleKind;
   resolution: number;
 };
 
@@ -78,7 +80,6 @@ const createHistogramAccelerationStructure = (options: HistogramAccelerationStru
 
     return getLogPrice(leaf.value[0].price) === logPrice;
   };
-
 
   const insertOrderById = (orders: Array<RestingOrder>, order: RestingOrder): void => {
     const lastOrder = orders[orders.length - 1];
@@ -337,14 +338,15 @@ export const createHistogramState = (options: Options) => {
     const resolution = region.resolution;
     if (resolution === 0) return [];
 
-    const minPrice = region.price[0];
-    const maxPrice = region.price[1];
-    const cellHeight = Math.max(maxPrice - minPrice, Number.EPSILON) / resolution;
     const histogram: OrderBookHistogramEntry[] = [];
 
     for (let y = 0; y < resolution; y += 1) {
-      const cellMinPrice = minPrice + y * cellHeight;
-      const cellMaxPrice = y === resolution - 1 ? maxPrice + Number.EPSILON : minPrice + (y + 1) * cellHeight;
+      const cellMinPrice = priceAtScalePosition(region.price, y / resolution, region.priceScale);
+      const cellMaxPrice =
+        y === resolution - 1
+          ? priceAtScalePosition(region.price, 1, region.priceScale) + Number.EPSILON
+          : priceAtScalePosition(region.price, (y + 1) / resolution, region.priceScale);
+      const cellHeight = Math.max(cellMaxPrice - cellMinPrice, Number.EPSILON);
 
       histogram.push({
         y,
@@ -369,11 +371,9 @@ export const createHistogramState = (options: Options) => {
 
     if (resolution === 0) return { cellHeight, sizes };
 
-    const minPrice = region.price[0];
-
     for (let y = 0; y < resolution; y += 1) {
-      const cellMinPrice = minPrice + y * cellHeight;
-      const cellMaxPrice = minPrice + (y + 1) * cellHeight;
+      const cellMinPrice = priceAtScalePosition(region.price, y / resolution, region.priceScale);
+      const cellMaxPrice = priceAtScalePosition(region.price, (y + 1) / resolution, region.priceScale);
       const includeMax = y === resolution - 1;
 
       sizes[y] = querySideVolumeInPriceRange(side, cellMinPrice, cellMaxPrice, includeMax);

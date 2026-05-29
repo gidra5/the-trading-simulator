@@ -31,13 +31,28 @@ export const MarketBody: Component<MarketBodyProps> = (props) => {
           <Chart
             candleInterval={settings.candleInterval()}
             class="h-full w-full bg-surface-primary"
+            controls={{
+              candleInterval: settings.candleInterval(),
+              heatmapNormalization: settings.heatmapNormalization(),
+              isFrameRateVisible: settings.showFrameRate(),
+              isHeatmapEnabled: settings.isHeatmapEnabled(),
+              priceScale: settings.priceScale(),
+              quotePriceKind: settings.quotePriceKind(),
+              onCandleIntervalChange: settings.setCandleInterval,
+              onFrameRateVisibilityChange: settings.setShowFrameRate,
+              onHeatmapEnabledChange: settings.setIsHeatmapEnabled,
+              onHeatmapNormalizationChange: settings.setHeatmapNormalization,
+              onPriceScaleChange: settings.setPriceScale,
+              onQuotePriceKindChange: settings.setQuotePriceKind,
+            }}
             isOrderBookHistogramVisible={settings.isHistogramEnabled()}
             orderBookHeatmap={props.orderBookHeatmap}
             orderBookHistogram={chartHistogram()}
             priceCandles={props.priceCandles}
-            showFrameRate={settings.showFrameRate()}
             viewport={props.viewport}
             onViewportChange={props.onViewportChange}
+            onOrderBookHistogramCumulativeChange={settings.setIsHistogramCumulative}
+            onOrderBookHistogramNormalizationChange={settings.setHistogramNormalization}
             onOrderBookHistogramVisibilityChange={settings.setIsHistogramEnabled}
           />
         </Panel>

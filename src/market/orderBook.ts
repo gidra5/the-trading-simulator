@@ -1,6 +1,7 @@
 import { Accessor, createMemo, createSignal } from "solid-js";
 import { assert, binarySearchIndex } from "../utils";
 import { cloneOrder, compareOrders, type OrderSide, type RestingOrder } from "./order";
+import type { PriceScaleKind } from "./priceScale";
 
 export type OrderBook = {
   // sorted by price and then id
@@ -95,11 +96,13 @@ export type OrderBookHistogramEntry = {
 export type OrderBookHeatmapRegion = {
   timestamp: [start: number, end: number];
   price: [min: number, max: number];
+  priceScale: PriceScaleKind;
   resolution: [time: number, price: number];
 };
 
 export type OrderBookHistogramRegion = {
   price: [min: number, max: number];
+  priceScale: PriceScaleKind;
   resolution: number;
 };
 
@@ -397,7 +400,6 @@ export const createOrderBook = ({ deltaSnapshotInterval, fanout, levels, time }:
     if (targetIndex >= entries.length) return null;
     return reconstructAt(targetIndex);
   };
-
 
   // todo: maybe use generator instead?
   // todo: pass down price range as well? So we don't compute anything outside it.

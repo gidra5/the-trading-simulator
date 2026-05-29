@@ -1,6 +1,7 @@
 import type { OrderBookHeatmapEntry, PriceCandle } from "../market/index";
 import type { ChartViewport } from "./Chart";
 import { assert } from "../utils";
+import { normalizeScaleValue, scalePrice, scaledPriceRange, type PriceScaleKind } from "../market/priceScale";
 
 const floatsPerCandleInstance = 5;
 const bytesPerFloat = 4;
@@ -490,9 +491,14 @@ const recreateHeatmapTexture = (renderer: RendererState, width: number, height: 
   renderer.heatmapTextureSize = [width, height];
 };
 
-export const writeChartUniforms = (renderer: RendererState, viewport: ChartViewport, candleInterval: number): void => {
+export const writeChartUniforms = (
+  renderer: RendererState,
+  viewport: ChartViewport,
+  candleInterval: number,
+  priceScale: PriceScaleKind,
+): void => {
   const chartUniforms: ChartUniforms = {
-    priceRange: viewport.price,
+    priceRange: scaledPriceRange(viewport.price, priceScale),
     resolution: viewport.resolution,
     timeScale: [Math.max(viewport.time[1] - viewport.time[0], 1), candleInterval],
     padding: [0, 0],
@@ -510,7 +516,11 @@ export const writeChartUniforms = (renderer: RendererState, viewport: ChartViewp
   );
 };
 
-export const writeHeatmapTexture = (renderer: RendererState, orderBookHeatmap: OrderBookHeatmapEntry[]) => {
+export const writeHeatmapTexture = (
+  renderer: RendererState,
+  orderBookHeatmap: OrderBookHeatmapEntry[],
+  heatmapNormalization: PriceScaleKind,
+) => {
   if (orderBookHeatmap.length === 0) {
     return 0;
   }
@@ -571,7 +581,7 @@ export const writeHeatmapTexture = (renderer: RendererState, orderBookHeatmap: O
         }
       }
 
-      const intensity = maxSize > 0 ? Math.log1p(size) / Math.log1p(maxSize) : 0;
+      const intensity = normalizeScaleValue(size, maxSize, heatmapNormalization);
       const row = height - 1 - y;
       const textureOffset = (row * width + x) * 4;
       const channel = Math.round(intensity * 255);
@@ -618,6 +628,7 @@ export const writeCandleInstances = (
   viewport: ChartViewport,
   priceCandles: PriceCandle[],
   candleInterval: number,
+  priceScale: PriceScaleKind,
 ): number => {
   const visibleCandles = getVisibleCandles(priceCandles, viewport, candleInterval);
   if (visibleCandles.length === 0) {
@@ -632,10 +643,10 @@ export const writeCandleInstances = (
     const candleInstance: CandleInstance = {
       timeOffset: priceCandle.time - viewport.time[0],
       prices: {
-        open: priceCandle.open,
-        high: priceCandle.high,
-        low: priceCandle.low,
-        close: priceCandle.close,
+        open: scalePrice(priceCandle.open, priceScale),
+        high: scalePrice(priceCandle.high, priceScale),
+        low: scalePrice(priceCandle.low, priceScale),
+        close: scalePrice(priceCandle.close, priceScale),
       },
     };
 

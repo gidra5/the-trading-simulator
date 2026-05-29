@@ -2,6 +2,7 @@ import clsx from "clsx";
 import { Download, Upload } from "lucide-solid";
 import { createMemo, createSignal, For, type Component } from "solid-js";
 import { locales, locale, setLocale, t, type Locale } from "../../i18n/game";
+import { priceScaleKinds, quotePriceKinds, type PriceScaleKind, type QuotePriceKind } from "../../market";
 import { settings } from "../../routes/game/state";
 import { encodings, type StoreEncoding, type StoreKind } from "../../storage/interface";
 import type { SaveFileStoreEntry, SaveFileStoreStatus } from "../../storage/persistence";
@@ -141,6 +142,12 @@ export const SettingsBody: Component = () => {
   const [levelsInput, setLevelsInput] = createSignal(String(settings.orderBookLevels()));
   const [settingsTransferStatus, setSettingsTransferStatus] = createSignal("");
   const languageOptions = createMemo(() => locales.map((value) => ({ value, label: t(`settings.language.${value}`) })));
+  const priceScaleOptions = createMemo(() =>
+    priceScaleKinds.map((value) => ({ value, label: t(`settings.scale.${value}` as const) })),
+  );
+  const quotePriceKindOptions = createMemo(() =>
+    quotePriceKinds.map((value) => ({ value, label: t(`settings.quotePriceKind.${value}` as const) })),
+  );
   const normalizationOptions = createMemo(() => [
     { value: HistogramNormalization.Linear, label: t("settings.normalization.linear") },
     { value: HistogramNormalization.Logarithmic, label: t("settings.normalization.logarithmic") },
@@ -270,6 +277,20 @@ export const SettingsBody: Component = () => {
                 onInput={(event) => settings.setIsHistogramCumulative(event.currentTarget.checked)}
               />
             </Field>
+            <Field label={t("settings.display.priceScale")}>
+              <Select
+                options={priceScaleOptions()}
+                value={settings.priceScale()}
+                onChange={(event) => settings.setPriceScale(event.currentTarget.value as PriceScaleKind)}
+              />
+            </Field>
+            <Field label={t("settings.display.quotePriceKind")}>
+              <Select
+                options={quotePriceKindOptions()}
+                value={settings.quotePriceKind()}
+                onChange={(event) => settings.setQuotePriceKind(event.currentTarget.value as QuotePriceKind)}
+              />
+            </Field>
             <Field label={t("settings.display.histogramNormalization")}>
               <Select
                 options={normalizationOptions()}
@@ -277,6 +298,13 @@ export const SettingsBody: Component = () => {
                 onChange={(event) =>
                   settings.setHistogramNormalization(event.currentTarget.value as HistogramNormalization)
                 }
+              />
+            </Field>
+            <Field label={t("settings.display.heatmapNormalization")}>
+              <Select
+                options={priceScaleOptions()}
+                value={settings.heatmapNormalization()}
+                onChange={(event) => settings.setHeatmapNormalization(event.currentTarget.value as PriceScaleKind)}
               />
             </Field>
             <Field label={t("settings.display.candleInterval")}>

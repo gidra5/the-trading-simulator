@@ -17,8 +17,10 @@ import {
   type PriceSpread,
 } from "./orderBook";
 import { assert, binarySearchIndex } from "../utils";
+import { priceScalePosition } from "./priceScale";
 
 export type { MakeOrderResult, OrderSide } from "./order";
+export { priceScaleKinds, type PriceScaleKind } from "./priceScale";
 export type {
   OrderBookHeatmapEntry,
   OrderBookHeatmapRegion,
@@ -36,6 +38,7 @@ export type PriceCandle = {
 };
 
 export type QuotePriceKind = OrderSide | "mid";
+export const quotePriceKinds = ["buy", "mid", "sell"] as const satisfies readonly QuotePriceKind[];
 
 type MarketStateOptions = {
   time: Accessor<number>;
@@ -123,20 +126,18 @@ export const createMarketState = (options: MarketStateOptions) => {
 
   const getOrderBookRegion = (region: OrderBookHeatmapRegion): OrderBookHeatmapEntry[] => {
     const resolution = region.resolution;
+    const priceRange = region.price;
 
-    const cellSize: [time: number, price: number] = [
-      Math.max(region.timestamp[1] - region.timestamp[0], 1) / resolution[0],
-      Math.max(region.price[1] - region.price[0], Number.EPSILON) / resolution[1],
-    ];
+    const cellSize = Math.max(region.timestamp[1] - region.timestamp[0], 1) / resolution[0];
     const heatmap: Map<number, OrderBookHeatmapEntry> = new Map();
 
     orderBookState.reconstructRegionStream(region.timestamp, (orderBook, timestamp) => {
-      const x = Math.floor((timestamp - region.timestamp[0]) / cellSize[0]);
+      const x = Math.floor((timestamp - region.timestamp[0]) / cellSize);
 
       const h = (order: RestingOrder) => {
-        if (order.price < region.price[0] || order.price > region.price[1]) return;
+        if (order.price < priceRange[0] || order.price > priceRange[1]) return;
 
-        const y = Math.floor((order.price - region.price[0]) / cellSize[1]);
+        const y = Math.floor(priceScalePosition(priceRange, order.price, region.priceScale) * resolution[1]);
         if (y < 0 || y >= resolution[1]) return;
 
         const key = y * resolution[0] + x;

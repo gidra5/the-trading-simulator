@@ -1,10 +1,16 @@
+import clsx from "clsx";
+import { ChartNoAxesColumn, ChartNoAxesCombined, ChartSpline } from "lucide-solid";
 import { createEffect, createSignal, onCleanup, onMount, type Component, type JSX } from "solid-js";
 import type { OrderBookHistogramEntry } from "../market/index";
+import { t } from "../i18n/game";
+import { Button } from "../ui-kit/Button";
 
 export const enum HistogramNormalization {
   Linear = "linear",
   Logarithmic = "logarithmic",
 }
+
+type HistogramMode = "cumulative" | "regular";
 
 type OrderBookHistogramProps = {
   data: OrderBookHistogramEntry[];
@@ -12,6 +18,8 @@ type OrderBookHistogramProps = {
   style?: JSX.CSSProperties;
   cumulative: boolean;
   normalization: HistogramNormalization;
+  onCumulativeChange: (cumulative: boolean) => void;
+  onNormalizationChange: (normalization: HistogramNormalization) => void;
   windowFraction: number;
 };
 
@@ -41,7 +49,7 @@ const resizeCanvas = (canvas: HTMLCanvasElement, width: number, height: number):
   context.lineCap = "round";
   context.lineJoin = "round";
   return context;
-};;
+};
 
 const normalizeLogarithmic = (value: number, maxValue: number): number => {
   if (value <= 0 || maxValue <= 0) {
@@ -64,6 +72,16 @@ const normalize = (value: number, maxValue: number, mode: HistogramNormalization
     ? normalizeLogarithmic(value, maxValue)
     : normalizeLinear(value, maxValue);
 };
+
+const oppositeNormalization = (normalization: HistogramNormalization): HistogramNormalization =>
+  normalization === HistogramNormalization.Linear ? HistogramNormalization.Logarithmic : HistogramNormalization.Linear;
+
+const histogramMode = (cumulative: boolean): HistogramMode => (cumulative ? "cumulative" : "regular");
+
+const normalizationLabel = (normalization: HistogramNormalization): string =>
+  t(`settings.normalization.${normalization}` as const);
+
+const histogramModeLabel = (mode: HistogramMode): string => t(`settings.histogramMode.${mode}` as const);
 
 const getAveragingWindowSize = (rowCount: number, windowFraction: number): number => {
   if (rowCount <= 1) {
@@ -315,13 +333,50 @@ export const OrderBookHistogram: Component<OrderBookHistogramProps> = (props) =>
       rowCount,
       stroke: "rgba(251, 146, 60, 0.82)",
     });
-
-    context.font = '11px "SFMono-Regular", Consolas, "Liberation Mono", monospace';
-    context.fillStyle = "rgba(148, 163, 184, 0.72)";
-    context.textBaseline = "top";
-    context.textAlign = "right";
-    context.fillText(props.normalization === "logarithmic" ? "LOG" : "LIN", width - 8, 8);
   });
 
-  return <canvas ref={canvas} class={props.class} style={props.style} />;
+  const normalizationTitle = (): string =>
+    t("chart.controls.histogramNormalization", { mode: normalizationLabel(props.normalization) });
+  const modeTitle = (): string =>
+    t("chart.controls.histogramMode", { mode: histogramModeLabel(histogramMode(props.cumulative)) });
+
+  return (
+    <div class={clsx("group relative", props.class)} style={props.style}>
+      <canvas ref={canvas} class="pointer-events-none block h-full w-full" />
+      <div class="pointer-events-none absolute right-2 top-2 flex items-center gap-1 rounded border border-border bg-surface-body/88 p-1 opacity-0 shadow-lg backdrop-blur transition-opacity duration-150 group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100">
+        <Button
+          active={props.cumulative}
+          aria-label={modeTitle()}
+          aria-pressed={props.cumulative}
+          size="sm"
+          title={modeTitle()}
+          type="button"
+          variant="icon"
+          onClick={() => props.onCumulativeChange(!props.cumulative)}
+        >
+          {props.cumulative ? (
+            <ChartNoAxesCombined aria-hidden="true" class="h-3.5 w-3.5" strokeWidth={1.8} />
+          ) : (
+            <ChartNoAxesColumn aria-hidden="true" class="h-3.5 w-3.5" strokeWidth={1.8} />
+          )}
+        </Button>
+        <Button
+          active={props.normalization === HistogramNormalization.Logarithmic}
+          aria-label={normalizationTitle()}
+          aria-pressed={props.normalization === HistogramNormalization.Logarithmic}
+          size="sm"
+          title={normalizationTitle()}
+          type="button"
+          variant="icon"
+          onClick={() => props.onNormalizationChange(oppositeNormalization(props.normalization))}
+        >
+          {props.normalization === HistogramNormalization.Linear ? (
+            <ChartNoAxesColumn aria-hidden="true" class="h-3.5 w-3.5" strokeWidth={1.8} />
+          ) : (
+            <ChartSpline aria-hidden="true" class="h-3.5 w-3.5" strokeWidth={1.8} />
+          )}
+        </Button>
+      </div>
+    </div>
+  );
 };

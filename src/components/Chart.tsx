@@ -14,6 +14,13 @@ import type { OrderBookHeatmapEntry, OrderBookHistogramEntry, PriceCandle } from
 import clsx from "clsx";
 import { ChartNoAxesColumn, ChevronLeft, ChevronRight } from "lucide-solid";
 import {
+  priceAtScalePosition,
+  priceScalePosition,
+  scaledPriceRange,
+  unscalePrice,
+  type PriceScaleKind,
+} from "../market/priceScale";
+import {
   drawFrame,
   getCanvasResolution,
   initializeRenderer,
@@ -27,6 +34,7 @@ import { OrderBookHistogram, type HistogramNormalization } from "./OrderBookHist
 import { formatNumber } from "../utils";
 import { themeColors } from "../ui-kit/theme";
 import { Button } from "../ui-kit/Button";
+import { ChartControlsOverlay, type ChartOverlayControls } from "./ChartControlsOverlay";
 
 export type ChartViewport = {
   time: [from: number, to: number];
@@ -45,12 +53,14 @@ type ChartProps = {
   priceCandles: PriceCandle[];
   orderBookHeatmap: OrderBookHeatmapEntry[] | null;
   orderBookHistogram: ChartHistogram | null;
+  controls: ChartOverlayControls;
   isOrderBookHistogramVisible: boolean;
+  onOrderBookHistogramCumulativeChange: (cumulative: boolean) => void;
+  onOrderBookHistogramNormalizationChange: (normalization: HistogramNormalization) => void;
   onOrderBookHistogramVisibilityChange: (visible: boolean) => void;
   viewport: ChartViewport;
   candleInterval: number;
-  onViewportChange?: (viewport: ChartViewport) => void;
-  showFrameRate: boolean;
+  onViewportChange: (viewport: ChartViewport) => void;
   class?: string;
   style?: JSX.CSSProperties;
 };
@@ -218,6 +228,13 @@ const formatPriceMark = (value: number, interval: number): string => {
   return formatNumber(value, digits);
 };
 
+const formatScaledPriceMark = (value: number, interval: number, priceScale: PriceScaleKind): string => {
+  const price = unscalePrice(value, priceScale);
+  const priceInterval = priceScale === "linear" ? interval : price * (2 ** interval - 1);
+
+  return formatPriceMark(price, priceInterval);
+};
+
 const formatDuration = (milliseconds: number, interval: number): string => {
   const sign = milliseconds < 0 ? "-" : "";
   const absoluteMilliseconds = Math.abs(milliseconds);
@@ -261,6 +278,7 @@ export const Chart: Component<ChartProps> = (props) => {
   let configuredHeight = 0;
   let lastReportedViewport: ChartViewport | undefined;
   let lastWrittenHeatmap: OrderBookHeatmapEntry[] | undefined;
+  let lastWrittenHeatmapNormalization: PriceScaleKind | undefined;
   let frameRateWindowStart = 0;
   let frameCount = 0;
 
@@ -284,14 +302,17 @@ export const Chart: Component<ChartProps> = (props) => {
   const timeLabelMaskId = `${overlayId}-time-label-mask`;
   const priceLabelMaskGradientId = `${overlayId}-price-label-mask-gradient`;
   const timeLabelMaskGradientId = `${overlayId}-time-label-mask-gradient`;
+  const scaledViewportPrice = createMemo(() => scaledPriceRange(props.viewport.price, props.controls.priceScale));
   const priceMarkInterval = createMemo(() =>
-    getFixedMarkInterval(props.viewport.price, props.viewport.resolution[1], priceMarkBaseInterval),
+    getFixedMarkInterval(scaledViewportPrice(), props.viewport.resolution[1], priceMarkBaseInterval),
   );
   const timeMarkInterval = createMemo(() =>
     getFixedMarkInterval(props.viewport.time, props.viewport.resolution[0], timeMarkBaseInterval),
   );
   const priceMarks = createMemo(() =>
-    buildFixedMarks(props.viewport.price, priceMarkInterval(), [0, 1], formatPriceMark),
+    buildFixedMarks(scaledViewportPrice(), priceMarkInterval(), [0, 1], (value, interval) =>
+      formatScaledPriceMark(value, interval, props.controls.priceScale),
+    ),
   );
   const timeMarks = createMemo(() =>
     buildFixedMarks(props.viewport.time, timeMarkInterval(), timeMarkPositionRange(), formatDuration),
@@ -300,10 +321,11 @@ export const Chart: Component<ChartProps> = (props) => {
     const latestCandle = props.priceCandles[props.priceCandles.length - 1];
     if (!latestCandle) return null;
 
-    const priceSpan = props.viewport.price[1] - props.viewport.price[0];
+    const priceRange = scaledViewportPrice();
+    const priceSpan = priceRange[1] - priceRange[0];
     if (priceSpan <= 0) return null;
 
-    const position = (latestCandle.close - props.viewport.price[0]) / priceSpan;
+    const position = priceScalePosition(props.viewport.price, latestCandle.close, props.controls.priceScale);
     if (position < 0 || position > 1) return null;
 
     return {
@@ -315,8 +337,7 @@ export const Chart: Component<ChartProps> = (props) => {
     const pointer = pointerPosition();
     if (!pointer) return null;
 
-    const priceSpan = props.viewport.price[1] - props.viewport.price[0];
-    const price = props.viewport.price[0] + priceSpan * (1 - pointer.y);
+    const price = priceAtScalePosition(props.viewport.price, 1 - pointer.y, props.controls.priceScale);
 
     return {
       label: formatPriceMark(price, priceMarkInterval()),
@@ -352,7 +373,7 @@ export const Chart: Component<ChartProps> = (props) => {
     }
 
     lastReportedViewport = nextViewport;
-    props.onViewportChange?.(nextViewport);
+    props.onViewportChange(nextViewport);
   };
 
   const updateViewport = (viewport: Pick<ChartViewport, "time" | "price">): void => {
@@ -439,6 +460,7 @@ export const Chart: Component<ChartProps> = (props) => {
 
   const controls = createChartControls({
     getCanvas: () => canvas,
+    getPriceScale: () => props.controls.priceScale,
     getViewport: () => props.viewport,
     setDragging: setIsDragging,
     updateViewport,
@@ -533,18 +555,25 @@ export const Chart: Component<ChartProps> = (props) => {
       return;
     }
 
-    writeChartUniforms(renderer, props.viewport, props.candleInterval);
-    if (props.orderBookHeatmap && props.orderBookHeatmap !== lastWrittenHeatmap) {
-      writeHeatmapTexture(renderer, props.orderBookHeatmap);
+    writeChartUniforms(renderer, props.viewport, props.candleInterval, props.controls.priceScale);
+    if (
+      props.orderBookHeatmap &&
+      (props.orderBookHeatmap !== lastWrittenHeatmap ||
+        props.controls.heatmapNormalization !== lastWrittenHeatmapNormalization)
+    ) {
+      writeHeatmapTexture(renderer, props.orderBookHeatmap, props.controls.heatmapNormalization);
       lastWrittenHeatmap = props.orderBookHeatmap;
+      lastWrittenHeatmapNormalization = props.controls.heatmapNormalization;
     } else if (!props.orderBookHeatmap) {
       lastWrittenHeatmap = undefined;
+      lastWrittenHeatmapNormalization = undefined;
     }
     const candleInstanceCount = writeCandleInstances(
       renderer,
       props.viewport,
       props.priceCandles,
       props.candleInterval,
+      props.controls.priceScale,
     );
     drawFrame(renderer, candleInstanceCount, props.orderBookHeatmap !== null);
   };
@@ -596,6 +625,7 @@ export const Chart: Component<ChartProps> = (props) => {
       configuredHeight = 0;
       lastReportedViewport = undefined;
       lastWrittenHeatmap = undefined;
+      lastWrittenHeatmapNormalization = undefined;
       frameRateWindowStart = 0;
       frameCount = 0;
       setFrameRate(null);
@@ -604,7 +634,7 @@ export const Chart: Component<ChartProps> = (props) => {
 
   return (
     <div ref={container} class={clsx("relative flex overflow-hidden", props.class ?? "")} style={props.style}>
-      <div class="h-full min-w-0 flex-1">
+      <div class="group relative h-full min-w-0 flex-1">
         <canvas
           ref={canvas}
           class={clsx(
@@ -620,6 +650,18 @@ export const Chart: Component<ChartProps> = (props) => {
           onPointerCancel={handlePointerCancel}
           onWheel={handleWheel}
         />
+        <div
+          class="pointer-events-none absolute right-3 top-3 z-20 opacity-0 transition-opacity duration-150 group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100"
+          onPointerEnter={clearPointerPosition}
+          onPointerMove={clearPointerPosition}
+        >
+          <ChartControlsOverlay
+            controls={props.controls}
+            frameRate={frameRate()}
+            viewport={props.viewport}
+            onViewportChange={props.onViewportChange}
+          />
+        </div>
       </div>
       <Show when={renderedOrderBookHistogram()}>
         {(histogram) => (
@@ -630,12 +672,14 @@ export const Chart: Component<ChartProps> = (props) => {
           >
             <OrderBookHistogram
               class={clsx(
-                "pointer-events-none block h-full pr-16 transition-transform duration-200 ease-out",
+                "block h-full pr-16 transition-transform duration-200 ease-out",
                 isOrderBookHistogramOpen() ? "translate-x-0" : "translate-x-full",
               )}
               cumulative={histogram().cumulative}
               data={histogram().data}
               normalization={histogram().normalization}
+              onCumulativeChange={props.onOrderBookHistogramCumulativeChange}
+              onNormalizationChange={props.onOrderBookHistogramNormalizationChange}
               style={{ width: `${orderBookHistogramWidthPx}px` }}
               windowFraction={histogram().windowFraction}
             />
@@ -887,11 +931,6 @@ export const Chart: Component<ChartProps> = (props) => {
             {message()}
           </div>
         )}
-      </Show>
-      <Show when={props.showFrameRate && frameRate() !== null}>
-        <div class="pointer-events-none absolute right-4 top-4 rounded border border-cyan-300/20 bg-slate-950/75 px-2 py-1 font-mono text-[11px] text-cyan-100 backdrop-blur">
-          {frameRate()!.toFixed(1)} FPS
-        </div>
       </Show>
     </div>
   );
