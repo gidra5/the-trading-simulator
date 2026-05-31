@@ -13,9 +13,9 @@ import { Range } from "../../ui-kit/Range";
 import { Select } from "../../ui-kit/Select";
 import { TextInput } from "../../ui-kit/TextInput";
 import { formatStorageBytes } from "../../utils";
-import type { AutosaveStatusReason } from "./autosaveStatus";
+import type { AutosaveStatusReason } from "../../settings/autosaveStatus";
 import { Checkbox } from "../../ui-kit/Checkbox";
-import { HistogramNormalization } from "../OrderBookHistogram";
+import { HistogramNormalization } from "../../settings/settings";
 
 const isLocale = (value: string): value is Locale => locales.includes(value as Locale);
 const checkboxFieldClass = "flex items-center justify-between gap-3";

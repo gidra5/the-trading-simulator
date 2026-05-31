@@ -30,11 +30,12 @@ import {
   writeHeatmapTexture,
 } from "./chartUtils";
 import { createChartControls } from "./chartControls";
-import { OrderBookHistogram, type HistogramNormalization } from "./OrderBookHistogram";
 import { formatNumber } from "../utils";
 import { themeColors } from "../ui-kit/theme";
 import { Button } from "../ui-kit/Button";
 import { ChartControlsOverlay, type ChartOverlayControls } from "./ChartControlsOverlay";
+import type { HistogramNormalization } from "../settings/settings";
+import { OrderBookHistogram } from "./OrderBookHistogram";
 
 export type ChartViewport = {
   time: [from: number, to: number];
@@ -73,6 +74,8 @@ const viewportMatches = (left: ChartViewport, right: ChartViewport): boolean =>
   left.resolution[0] === right.resolution[0] &&
   left.resolution[1] === right.resolution[1];
 
+// todo: if the current time is outside the visible range, show the histogram of the orderbook at the right edge of the viewport. 
+// todo: if the mouse is over some past time, show the histogram of the orderbook at that time.
 // TODO: fixed candle interval relative to viewport
 // TODO: micro and macro candles to smoothly transition between scales
 // todo: drawing tools?

@@ -12,7 +12,12 @@ import { formatNumber } from "../../utils";
 import { digits, formatAmount, formatMoney } from "./format";
 import { assets, type Asset, type AssetPair } from "../../economy/account";
 import type { OrderSide } from "../../market";
-import { autosaveIconConfig, autosaveStatusTitle, autosaveTooltipMessage, type AutosaveStatus } from "./autosaveStatus";
+import {
+  autosaveIconConfig,
+  autosaveStatusTitle,
+  autosaveTooltipMessage,
+  type AutosaveStatus,
+} from "../../settings/autosaveStatus";
 
 type FooterProps = {
   autosaveStatus: Accessor<AutosaveStatus<unknown>>;

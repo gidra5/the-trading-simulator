@@ -2,7 +2,7 @@ import { createRoot } from "solid-js";
 import { createMarketState } from "../../market";
 import { createTradingSimulationState } from "../../simulation";
 import { createSimulationTimeState } from "../../simulation/time";
-import { createSettings } from "../../components/game/settings";
+import { createSettings } from "../../settings/settings";
 import { createActor } from "../../economy/actor";
 import { progressionGraph } from "../../progression/data";
 import { createOrchestrator } from "../../simulation/orchestrator";

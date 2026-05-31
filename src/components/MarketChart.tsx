@@ -1,6 +1,5 @@
 import { Show, createMemo, createSignal, onCleanup, onMount, type Component } from "solid-js";
 import type { MarketState, PriceCandle, PriceScaleKind, QuotePriceKind } from "../market/index";
-import { HistogramNormalization } from "./OrderBookHistogram";
 import { simulationTickTime, type TradingSimulation } from "../simulation/index";
 import type { SimulationTimeState } from "../simulation/time";
 import { Chart, type ChartViewport } from "./Chart";
@@ -10,6 +9,7 @@ import { MarketPresets } from "./MarketPresets";
 import { createThrottledMemo, formatNumber } from "../utils";
 import { digits, Order } from "./Order";
 import type { SimulationOrchestratorController } from "../simulation/orchestrator";
+import { HistogramNormalization } from "../settings/settings";
 
 const pollingInterval = 200;
 type SettingsTab = "chart" | "market" | "presets";

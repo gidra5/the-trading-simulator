@@ -1,6 +1,6 @@
 import { CircleCheck, CircleX, SaveOff, TriangleAlert, type LucideIcon } from "lucide-solid";
-import type { SaveFileStoreEntry } from "../../storage/persistence";
-import { t } from "../../i18n/game";
+import type { SaveFileStoreEntry } from "../storage/persistence";
+import { t } from "../i18n/game";
 
 export type AutosaveStatusVariant = "disabled" | "needs-attention" | "active" | "error";
 

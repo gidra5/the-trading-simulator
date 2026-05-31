@@ -4,11 +4,7 @@ import { createEffect, createSignal, onCleanup, onMount, type Component, type JS
 import type { OrderBookHistogramEntry } from "../market/index";
 import { t } from "../i18n/game";
 import { Button } from "../ui-kit/Button";
-
-export const enum HistogramNormalization {
-  Linear = "linear",
-  Logarithmic = "logarithmic",
-}
+import { HistogramNormalization } from "../settings/settings";
 
 type HistogramMode = "cumulative" | "regular";
 
@@ -262,8 +258,8 @@ const drawArea = (
   }
 };
 
+// todo: add volume marks to the histogram with fixed intervals that handle scaling the same way it is done for the plot.
 // todo: when cursor is on chart, intersect with histogram and show another mark showing the exact volume at that price
-// TODO: resize bug on first page load, after reload disappears
 export const OrderBookHistogram: Component<OrderBookHistogramProps> = (props) => {
   let canvas: HTMLCanvasElement | undefined;
   const [size, setSize] = createSignal<CanvasSize>({ width: 0, height: 0 });

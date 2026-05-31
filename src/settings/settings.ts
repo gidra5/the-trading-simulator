@@ -1,12 +1,15 @@
-import { createMemo, createRoot, createSignal } from "solid-js";
-import type { PriceScaleKind, QuotePriceKind } from "../../market";
-import { type StoreEncoding, type StoreKind } from "../../storage/interface";
-import { createSaveFileStore } from "../../storage/persistence";
-import { HistogramNormalization } from "../OrderBookHistogram";
+import { createMemo, createSignal } from "solid-js";
+import type { PriceScaleKind, QuotePriceKind } from "../market";
+import { type StoreEncoding, type StoreKind } from "../storage/interface";
+import { createSaveFileStore } from "../storage/persistence";
 import { resolveAutosaveStatus } from "./autosaveStatus";
 
+export const enum HistogramNormalization {
+  Linear = "linear",
+  Logarithmic = "logarithmic",
+}
 type AutosaveStorePreference = Exclude<StoreKind, "manual"> | null;
-
+export type Settings = ReturnType<typeof createSettings>;
 // todo: lifetime for history - store at most last time interval of size N
 export const createSettings = () => {
   const [cancellationCandidatesCount, setCancellationCandidatesCount] = createSignal(64);

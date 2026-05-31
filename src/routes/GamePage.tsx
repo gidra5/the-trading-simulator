@@ -11,7 +11,7 @@ import {
   type Accessor,
 } from "solid-js";
 import type { MarketState, PriceCandle, QuotePriceKind } from "../market/index";
-import { actor, market, settings as gameSettings, simulation, time } from "./game/state";
+import { actor, market, settings, simulation, time } from "./game/state";
 import type { ChartViewport } from "../components/Chart";
 import { AccountBody } from "../components/game/AccountBody";
 import { AccountSidebar } from "../components/game/AccountSidebar";
@@ -42,26 +42,41 @@ const createAccountGameState = () => {
   };
 };
 
-const createMarketGameState = (options: { market: MarketState; startTime: number }) => {
+const createMarketGameState = (options: { market: MarketState; time: Accessor<number> }) => {
+  const startTime = options.time();
   const priceSpread = createThrottledMemo(options.market.marketPriceSpread, pollingInterval);
 
-  const [viewport, setViewport] = createSignal<ChartViewport>({
-    time: [options.startTime, options.startTime + 1 * 60 * 1000],
-    price: [0.7, 1.3],
-    resolution: [1, 1],
-  });
-  let previousCandleInterval = gameSettings.candleInterval();
-  let previousQuotePriceKind: QuotePriceKind = gameSettings.quotePriceKind();
+  const [viewport, setViewport] = createSignal<ChartViewport>(
+    {
+      time: [startTime, startTime + 1 * 60 * 1000],
+      price: [0, 1.3],
+      resolution: [1, 1],
+    },
+    {
+      equals: (prev, next) =>
+        prev.resolution[0] === next.resolution[0] &&
+        prev.resolution[1] === next.resolution[1] &&
+        prev.time[0] === next.time[0] &&
+        prev.time[1] === next.time[1] &&
+        prev.price[0] === next.price[0] &&
+        prev.price[1] === next.price[1],
+    },
+  );
+  const cursorTime: number | null = null;
+  const referenceTime = () => cursorTime ?? Math.min(viewport().time[1], options.time());
+
+  let previousCandleInterval = settings.candleInterval();
+  let previousQuotePriceKind: QuotePriceKind = settings.quotePriceKind();
 
   const rebuildCandles = (interval: number): PriceCandle[] => {
-    const alignedStart = Math.floor(options.startTime / interval) * interval;
+    const alignedStart = Math.floor(startTime / interval) * interval;
     const rebuiltCandles: PriceCandle[] = [];
 
-    for (let candleStart = alignedStart; candleStart <= time.time(); candleStart += interval) {
+    for (let candleStart = alignedStart; candleStart <= options.time(); candleStart += interval) {
       const candle = options.market.priceHistoryCandle(
         candleStart,
-        Math.min(candleStart + interval, time.time()),
-        gameSettings.quotePriceKind(),
+        Math.min(candleStart + interval, options.time()),
+        settings.quotePriceKind(),
       );
       rebuiltCandles.push(candle);
     }
@@ -70,8 +85,8 @@ const createMarketGameState = (options: { market: MarketState; startTime: number
   };
 
   const candles = createThrottledMemo<PriceCandle[]>((currentCandles = []) => {
-    const interval = gameSettings.candleInterval();
-    const quotePriceKind = gameSettings.quotePriceKind();
+    const interval = settings.candleInterval();
+    const quotePriceKind = settings.quotePriceKind();
 
     if (interval !== previousCandleInterval || quotePriceKind !== previousQuotePriceKind) {
       previousCandleInterval = interval;
@@ -79,8 +94,8 @@ const createMarketGameState = (options: { market: MarketState; startTime: number
       return rebuildCandles(interval);
     }
 
-    const candleStart = Math.floor(time.time() / interval) * interval;
-    const candle = options.market.priceHistoryCandle(candleStart, time.time(), quotePriceKind);
+    const candleStart = Math.floor(options.time() / interval) * interval;
+    const candle = options.market.priceHistoryCandle(candleStart, options.time(), quotePriceKind);
     const latestCandle = currentCandles[currentCandles.length - 1];
 
     if (!latestCandle) return [candle];
@@ -102,49 +117,32 @@ const createMarketGameState = (options: { market: MarketState; startTime: number
   }, pollingInterval);
 
   const heatmap = createThrottledMemo(() => {
-    if (!gameSettings.isHeatmapEnabled()) return null;
+    if (!settings.isHeatmapEnabled()) return null;
 
     return options.market.getOrderBookRegion({
       timestamp: viewport().time,
       price: viewport().price,
-      priceScale: gameSettings.priceScale(),
+      priceScale: settings.priceScale(),
       resolution: viewport().resolution,
     });
   }, pollingInterval);
 
   const histogram = createThrottledMemo(() => {
-    if (!gameSettings.isHistogramEnabled()) return null;
+    if (!settings.isHistogramEnabled()) return null;
 
     return options.market.getOrderBookHistogram({
       price: viewport().price,
-      priceScale: gameSettings.priceScale(),
+      priceScale: settings.priceScale(),
       resolution: viewport().resolution[1],
     });
   }, pollingInterval);
-
-  const updateViewport = (nextViewport: ChartViewport): void => {
-    setViewport((current) => {
-      if (
-        current.resolution[0] === nextViewport.resolution[0] &&
-        current.resolution[1] === nextViewport.resolution[1] &&
-        current.time[0] === nextViewport.time[0] &&
-        current.time[1] === nextViewport.time[1] &&
-        current.price[0] === nextViewport.price[0] &&
-        current.price[1] === nextViewport.price[1]
-      ) {
-        return current;
-      }
-
-      return nextViewport;
-    });
-  };
 
   return {
     candles,
     heatmap,
     histogram,
     priceSpread,
-    updateViewport,
+    setViewport,
     viewport,
   };
 };
@@ -229,7 +227,7 @@ export default function GamePage() {
   };
   const mainTabs = createMemo<readonly Tab[]>(() => (gates.market() ? ["market", "economy"] : ["economy"]));
   const accountState = createAccountGameState();
-  const marketState = createMarketGameState({ market, startTime });
+  const marketState = createMarketGameState({ market, time: time.time });
   const economy = createEconomyGameState({
     isActive: () => activeTab() === "economy",
   });
@@ -247,8 +245,8 @@ export default function GamePage() {
       const elapsed = timestamp - previousTimestamp;
       previousTimestamp = timestamp;
 
-      if (elapsed > 0 && !gameSettings.isSimulationPaused()) {
-        simulation.tick(elapsed * gameSettings.simulationSpeed());
+      if (elapsed > 0 && !settings.isSimulationPaused()) {
+        simulation.tick(elapsed * settings.simulationSpeed());
       }
 
       animationFrameId = requestAnimationFrame(tick);
@@ -274,7 +272,7 @@ export default function GamePage() {
                 orderBookHeatmap={marketState.heatmap()}
                 priceCandles={marketState.candles()}
                 viewport={marketState.viewport()}
-                onViewportChange={marketState.updateViewport}
+                onViewportChange={marketState.setViewport}
               />
             </Match>
             <Match when={activeTab() === "account"}>
@@ -307,7 +305,7 @@ export default function GamePage() {
       </div>
 
       <Footer
-        autosaveStatus={gameSettings.autosaveStatus}
+        autosaveStatus={settings.autosaveStatus}
         cashPerMinute={accountTelemetry.cashPerMinute()}
         priceSpread={marketState.priceSpread}
       />
