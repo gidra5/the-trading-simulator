@@ -22,7 +22,7 @@ export type GameSnapshot = {
 // todo: economic simulation
 // TODO: an simulation orchestrator (simulate initial interest)
 export const { actor, distributions, market, restore, settings, simulation, snapshot, time } = createRoot(() => {
-  const settings = createSettings();
+  const settings = createSettings<GameSnapshot>();
   const currentRng = createMemo(() => createRng(settings.seed()));
   const rng = (): number => currentRng().sample();
   const distributions = createDistributions(rng);

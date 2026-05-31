@@ -1,9 +1,9 @@
 import clsx from "clsx";
-import { Download, Upload } from "lucide-solid";
+import { FolderOpen, Save } from "lucide-solid";
 import { createMemo, createSignal, For, type Component } from "solid-js";
 import { locales, locale, setLocale, t, type Locale } from "../../i18n/game";
 import { priceScaleKinds, quotePriceKinds, type PriceScaleKind, type QuotePriceKind } from "../../market";
-import { settings } from "../../routes/game/state";
+import { restore as restoreGameSnapshot, settings, snapshot as gameSnapshot } from "../../routes/game/state";
 import { encodings, type StoreEncoding, type StoreKind } from "../../storage/interface";
 import type { SaveFileStoreEntry, SaveFileStoreStatus } from "../../storage/persistence";
 import { Button } from "../../ui-kit/Button";
@@ -141,7 +141,8 @@ export const SettingsBody: Component = () => {
   const [fanoutInput, setFanoutInput] = createSignal(String(settings.orderBookFanout()));
   const [levelsInput, setLevelsInput] = createSignal(String(settings.orderBookLevels()));
   const [seedInput, setSeedInput] = createSignal(String(settings.seed()));
-  const [settingsTransferStatus, setSettingsTransferStatus] = createSignal("");
+  const [saveTransferPending, setSaveTransferPending] = createSignal(false);
+  const [saveTransferStatus, setSaveTransferStatus] = createSignal("");
   const languageOptions = createMemo(() => locales.map((value) => ({ value, label: t(`settings.language.${value}`) })));
   const priceScaleOptions = createMemo(() =>
     priceScaleKinds.map((value) => ({ value, label: t(`settings.scale.${value}` as const) })),
@@ -169,6 +170,22 @@ export const SettingsBody: Component = () => {
   };
   const autosaveStatusDetails = () => autosaveStatusCopy(settings.autosaveStatus().reason, autosaveStatusStore());
   const autosaveStatusClass = () => autosaveStatusToneClass(settings.autosaveStatus().reason);
+  const activeSaveStore = () => settings.autosaveActiveStore()?.store ?? null;
+  const activeSaveStoreLabel = () => {
+    const entry = settings.autosaveActiveStore();
+
+    return entry ? autosaveStoreLabel(entry.kind) : t("autosave.store.none");
+  };
+  const canTransferSave = () => activeSaveStore() !== null && !saveTransferPending();
+
+  const syncSettingsInputs = (): void => {
+    setCandleIntervalInput(String(settings.candleInterval() / 1_000));
+    setHistogramWindowInput(String(settings.histogramWindowFraction()));
+    setDeltaSnapshotInput(String(settings.deltaSnapshotInterval()));
+    setFanoutInput(String(settings.orderBookFanout()));
+    setLevelsInput(String(settings.orderBookLevels()));
+    setSeedInput(String(settings.seed()));
+  };
 
   const updatePositiveNumberInput = (
     value: string,
@@ -232,33 +249,50 @@ export const SettingsBody: Component = () => {
     settings.setSeed(next);
   };
 
-  const exportSettings = async (): Promise<void> => {
+  const saveGame = async (): Promise<void> => {
+    const store = activeSaveStore();
+    if (!store) {
+      setSaveTransferStatus(t("settings.saveLoad.unavailable"));
+      return;
+    }
+    const fileName = settings.autosaveFileName();
+    const storeLabel = activeSaveStoreLabel();
+
+    setSaveTransferPending(true);
     try {
-      // todo: export current save file using gameSettings.stores.manual
-      setSettingsTransferStatus(t("settings.importExport.exported"));
+      await store.save(gameSnapshot());
+      setSaveTransferStatus(t("settings.saveLoad.saved", { fileName, store: storeLabel }));
     } catch (error) {
-      setSettingsTransferStatus(t("settings.importExport.exportFailed", { error: errorMessage(error) }));
+      setSaveTransferStatus(t("settings.saveLoad.saveFailed", { error: errorMessage(error) }));
+    } finally {
+      setSaveTransferPending(false);
     }
   };
 
-  const importSettings = async (): Promise<void> => {
+  const loadGame = async (): Promise<void> => {
+    const store = activeSaveStore();
+    if (!store) {
+      setSaveTransferStatus(t("settings.saveLoad.unavailable"));
+      return;
+    }
+    const fileName = settings.autosaveFileName();
+    const storeLabel = activeSaveStoreLabel();
+
+    setSaveTransferPending(true);
     try {
-      // todo: use gameSettings.stores.manual
-      // const snapshot = await settingsFileStore.load();
-      // if (!snapshot) {
-      //   setSettingsTransferStatus(t("settings.importExport.importCanceled"));
-      //   return;
-      // }
+      const snapshot = await store.load();
+      if (!snapshot) {
+        setSaveTransferStatus(t("settings.saveLoad.loadCanceled"));
+        return;
+      }
 
-      // todo: import current save file
-      // if (!applySettingsSnapshot(snapshot)) {
-      //   setSettingsTransferStatus(t("settings.importExport.importInvalid"));
-      //   return;
-      // }
-
-      setSettingsTransferStatus(t("settings.importExport.imported"));
+      restoreGameSnapshot(snapshot);
+      syncSettingsInputs();
+      setSaveTransferStatus(t("settings.saveLoad.loaded", { fileName, store: storeLabel }));
     } catch (error) {
-      setSettingsTransferStatus(t("settings.importExport.importFailed", { error: errorMessage(error) }));
+      setSaveTransferStatus(t("settings.saveLoad.loadFailed", { error: errorMessage(error) }));
+    } finally {
+      setSaveTransferPending(false);
     }
   };
 
@@ -464,6 +498,32 @@ export const SettingsBody: Component = () => {
               <p class="font-body-primary-xs-rg text-text-primary">{autosaveStatusDetails().action}</p>
             </div>
 
+            <div class="flex flex-wrap items-center justify-between gap-3 rounded border border-border bg-surface-secondary p-3">
+              <div class="min-w-0">
+                <p class="font-body-primary-sm-semi text-text-primary">{t("settings.saveLoad.title")}</p>
+                {saveTransferStatus() ? (
+                  <p class="break-words font-body-primary-xs-rg text-text-secondary">{saveTransferStatus()}</p>
+                ) : (
+                  <p class="break-words font-body-primary-xs-rg text-text-secondary">
+                    {t("settings.saveLoad.ready", {
+                      fileName: settings.autosaveFileName(),
+                      store: activeSaveStoreLabel(),
+                    })}
+                  </p>
+                )}
+              </div>
+              <div class="flex flex-wrap items-center gap-2">
+                <Button variant="primary" onClick={() => void saveGame()} disabled={!canTransferSave()}>
+                  <Save aria-hidden="true" class="h-4 w-4" strokeWidth={1.8} />
+                  <span>{t("settings.saveLoad.save")}</span>
+                </Button>
+                <Button onClick={() => void loadGame()} disabled={!canTransferSave()}>
+                  <FolderOpen aria-hidden="true" class="h-4 w-4" strokeWidth={1.8} />
+                  <span>{t("settings.saveLoad.load")}</span>
+                </Button>
+              </div>
+            </div>
+
             <div class="grid grid-cols-[repeat(auto-fit,minmax(14rem,1fr))] gap-3">
               <For each={settings.autosaveStores()}>
                 {(entry) => (
@@ -487,27 +547,6 @@ export const SettingsBody: Component = () => {
                           {autosaveEntryStoreState(entry)}
                         </span>
                       </div>
-                      {entry.kind === "manual" ? (
-                        <>
-                          <div class="flex justify-between gap-3">
-                            {settingsTransferStatus() ? (
-                              <span class="font-body-primary-xs-rg text-text-secondary">
-                                {settingsTransferStatus()}
-                              </span>
-                            ) : null}
-                          </div>
-                          <div class="flex flex-wrap items-center justify-center gap-2">
-                            <Button onClick={() => void exportSettings()} disabled={entry.status !== "available"}>
-                              <Download aria-hidden="true" class="h-4 w-4" strokeWidth={1.8} />
-                              <span>{t("settings.importExport.export")}</span>
-                            </Button>
-                            <Button onClick={() => void importSettings()} disabled={entry.status !== "available"}>
-                              <Upload aria-hidden="true" class="h-4 w-4" strokeWidth={1.8} />
-                              <span>{t("settings.importExport.import")}</span>
-                            </Button>
-                          </div>
-                        </>
-                      ) : null}
                       {entry.kind === "opfs" ? (
                         <>
                           <div class="flex justify-between gap-3">

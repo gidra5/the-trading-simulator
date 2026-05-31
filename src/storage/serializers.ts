@@ -19,9 +19,8 @@ export const jsonSerializer: Serializer<string> = {
 // make it a constructor that accepts a schema and does serde based on it
 export const binarySerializer: Serializer<ArrayBuffer> = {
   mimeType: mimeTypes.binary,
-  serialize: (data) => bytesToArrayBuffer(textEncoder.encode(String(data))),
+  serialize: (data) => bytesToArrayBuffer(textEncoder.encode(JSON.stringify(data))),
   async deserialize<T>(file: File): Promise<T> {
-    return textDecoder.decode(await file.arrayBuffer()) as T;
+    return JSON.parse(textDecoder.decode(await file.arrayBuffer())) as T;
   },
 };
-

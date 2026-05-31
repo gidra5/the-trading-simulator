@@ -10,7 +10,6 @@ export const enum HistogramNormalization {
   Logarithmic = "logarithmic",
 }
 type AutosaveStorePreference = Exclude<StoreKind, "manual"> | null;
-export type Settings = ReturnType<typeof createSettings>;
 export type SettingsSnapshot = {
   advancedOrdersEnabled: boolean;
   autosaveEncoding: StoreEncoding;
@@ -43,7 +42,7 @@ export type SettingsSnapshot = {
   simulationSpeed: number;
 };
 // todo: lifetime for history - store at most last time interval of size N
-export const createSettings = () => {
+export const createSettings = <SaveSnapshot = unknown>() => {
   const [cancellationCandidatesCount, setCancellationCandidatesCount] = createSignal(64);
   const [deltaSnapshotInterval, setDeltaSnapshotInterval] = createSignal(100);
   const [orderBookFanout, setOrderBookFanout] = createSignal(5);
@@ -78,7 +77,7 @@ export const createSettings = () => {
   const storePreference = createMemo<StoreKind | null>(() =>
     autosaveEnabled() ? autosaveStorePreference() : "manual",
   );
-  const autosaveFileStore = createSaveFileStore<unknown>({
+  const autosaveFileStore = createSaveFileStore<SaveSnapshot>({
     encoding: autosaveEncoding,
     name: autosaveFileName,
     preference: storePreference,
