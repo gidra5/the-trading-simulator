@@ -3,7 +3,7 @@ import { expect, test } from "vitest";
 import { createActor } from "../src/economy/actor";
 import { createAccount } from "../src/economy/account";
 import { Resource } from "../src/economy/inventory";
-import { createMarketState } from "../src/market";
+import { createMarketState, type MarketState } from "../src/market";
 import { progressionGraph, ProgressionMetric, ProgressionNode, type ProgressionMetrics } from "../src/progression/data";
 import type { ProgressionState } from "../src/progression/interface";
 import { createSimulationTimeState } from "../src/simulation/time";
@@ -17,6 +17,14 @@ const createTestMarket = (time: ReturnType<typeof createSimulationTimeState>) =>
     orderBookFanout: () => 5,
     orderBookLevels: () => 5,
   });
+
+const addBuyLiquidity = (market: MarketState, size = 1): void => {
+  market.makeOrder("buy", { price: 0.5, size });
+};
+
+const addSellLiquidity = (market: MarketState, size = 1): void => {
+  market.makeOrder("sell", { price: 1, size });
+};
 
 const createTestAccount = (options?: { completedNodes?: ProgressionNode[] }) => {
   return createRoot(() => {
@@ -77,6 +85,7 @@ test("actor progression spends inventory money", () => {
   const actor = createRoot(() => {
     const time = createSimulationTimeState();
     const market = createTestMarket(time);
+    addSellLiquidity(market);
 
     return createActor({
       name: "Test",
@@ -105,7 +114,8 @@ test("actor progression spends inventory money", () => {
 });
 
 test("account cannot borrow before debt is enabled", () => {
-  const { account } = createTestAccount();
+  const { account, market } = createTestAccount();
+  addSellLiquidity(market);
 
   account.placeMarketOrder("buy", 1);
 
@@ -114,7 +124,8 @@ test("account cannot borrow before debt is enabled", () => {
 });
 
 test("account can borrow after debt is enabled", () => {
-  const { account } = createTestAccount({ completedNodes: [ProgressionNode.TradingLeverage] });
+  const { account, market } = createTestAccount({ completedNodes: [ProgressionNode.TradingLeverage] });
+  addSellLiquidity(market);
   account.addMoney(0.5);
 
   account.placeMarketOrder("buy", 1);
@@ -124,7 +135,8 @@ test("account can borrow after debt is enabled", () => {
 });
 
 test("account only tracks order history after journaling is enabled", () => {
-  const { account, progression, setNodeComplete } = createTestAccount();
+  const { account, market, progression, setNodeComplete } = createTestAccount();
+  addSellLiquidity(market, 2);
   account.addMoney(3);
 
   account.placeMarketOrder("buy", 1);
@@ -148,7 +160,11 @@ test("account only places limit orders after advanced trading is enabled", () =>
 });
 
 test("account only tracks liquidation history after liquidation journaling is enabled", () => {
-  const { account, setNodeComplete, time } = createTestAccount({ completedNodes: [ProgressionNode.TradingLeverage] });
+  const { account, market, setNodeComplete, time } = createTestAccount({
+    completedNodes: [ProgressionNode.TradingLeverage],
+  });
+  addBuyLiquidity(market, 2);
+  addSellLiquidity(market, 2);
   account.addMoney(0.5);
   account.placeMarketOrder("buy", 1);
   setNodeComplete(ProgressionNode.TradingLeverage, false);

@@ -23,6 +23,16 @@ export type ProgressionTierNodeData = { node: ProgressionNode } & ProgressionNod
 type ProgressionTier = ProgressionTierNodeData[];
 export type ProgressionTierList = ProgressionTier[];
 
+type NodeSchedulerSnapshot = {
+  nodes: ProgressionFrontierNode[];
+};
+
+export type ProgressionSnapshot = {
+  frontier: ProgressionFrontier;
+  metrics: ProgressionMetrics;
+  scheduler: NodeSchedulerSnapshot;
+};
+
 const getInitialFrontier = (graph: ProgressionGraph): ProgressionFrontier => {
   return Object.keys(graph).filter((node) => {
     const graphNode = graph[node as keyof ProgressionGraph];
@@ -66,13 +76,21 @@ const createNodeScheduler = (onComplete: (node: ProgressionFrontierNode) => bool
     return index === -1 ? undefined : index + 1;
   };
 
+  const snapshot = (): NodeSchedulerSnapshot => ({
+    nodes: nodes(),
+  });
+
+  const restore = (snapshot: NodeSchedulerSnapshot): void => {
+    setNodes(snapshot.nodes);
+  };
+
   createEffect(() => {
     for (const node of nodes()) {
       if (!onComplete(node)) break;
     }
   });
 
-  return { nodes, getNodeOrder, move, scheduleFirst, scheduleLast, toggle };
+  return { nodes, getNodeOrder, move, restore, scheduleFirst, scheduleLast, snapshot, toggle };
 };
 
 export type ProgressionState = ReturnType<typeof createProgression>;
@@ -157,6 +175,20 @@ export const createProgression = (graph: ProgressionGraph, inventory: InventoryS
     setMetrics((current) => ({ ...current, [metric]: current[metric] + value }));
   };
 
+  const snapshot = (): ProgressionSnapshot => ({
+    frontier: frontier(),
+    metrics: metrics(),
+    scheduler: scheduler.snapshot(),
+  });
+
+  const restore = (snapshot: ProgressionSnapshot): void => {
+    batch(() => {
+      setFrontier(snapshot.frontier);
+      setMetrics(snapshot.metrics);
+      scheduler.restore(snapshot.scheduler);
+    });
+  };
+
   const tierListState = createMemo<{ list: ProgressionTierList; frontier: ProgressionFrontier }>(
     (state) => {
       const tiers = state.list;
@@ -184,6 +216,8 @@ export const createProgression = (graph: ProgressionGraph, inventory: InventoryS
     metrics,
     scheduler,
     addMetric,
+    restore,
+    snapshot,
 
     tierList,
     advanceFrontier,

@@ -1,9 +1,10 @@
-import { createEffect, createMemo, createSignal, untrack, type Accessor } from "solid-js";
+import { batch, createEffect, createMemo, createSignal, untrack, type Accessor } from "solid-js";
 import { type MarketState, type OrderSide } from "../market";
 import { oppositeSide } from "../market/order";
 import { type SimulationTimeState } from "../simulation/time";
 import type { ProgressionState } from "../progression/interface";
 import { ProgressionMetric, ProgressionNode } from "../progression/data";
+import { createCleanupScope } from "../utils";
 
 let nextAccountId = 0;
 
@@ -31,6 +32,17 @@ type OrderHistoryEntry = {
   timestamp: number;
 };
 
+type OrderHistorySnapshot = {
+  entries: OrderHistoryEntry[];
+  nextEntryId: number;
+};
+
+export type AccountSnapshot = {
+  activeOrders: PendingOrder[];
+  orderHistory: OrderHistorySnapshot;
+  portfolio: Portfolio;
+};
+
 type AccountStateOptions = {
   progression: ProgressionState;
   market: MarketState;
@@ -39,6 +51,9 @@ type AccountStateOptions = {
   debtCapitalizationRate: Accessor<number>;
   maintenanceMargin: Accessor<number>;
 };
+
+const clonePendingOrder = (order: PendingOrder): PendingOrder => ({ ...order });
+const cloneOrderHistoryEntry = (entry: OrderHistoryEntry): OrderHistoryEntry => ({ ...entry });
 
 const createOrderHistory = (time: Accessor<number>) => {
   let nextEntryId = 0;
@@ -49,8 +64,20 @@ const createOrderHistory = (time: Accessor<number>) => {
     setEntries((current) => [historyEntry, ...current]);
   };
 
+  const snapshot = (): OrderHistorySnapshot => ({
+    entries: entries().map(cloneOrderHistoryEntry),
+    nextEntryId,
+  });
+
+  const restore = (snapshot: OrderHistorySnapshot): void => {
+    nextEntryId = snapshot.nextEntryId;
+    setEntries(snapshot.entries.map(cloneOrderHistoryEntry));
+  };
+
   return {
     entries,
+    restore,
+    snapshot,
     submitted: (entry: Omit<OrderHistoryEntry, "id" | "timestamp" | "kind" | "cost">): void =>
       record({ ...entry, kind: "submitted", cost: 0 }),
     partialFill: (entry: Omit<OrderHistoryEntry, "id" | "timestamp" | "kind">): void =>
@@ -71,6 +98,8 @@ export const createAccount = (options: AccountStateOptions) => {
   const orderHistory = createOrderHistory(timeState.time);
   const [portfolio, setPortfolio] = createSignal<Portfolio>({ Money: 0, Stock: 0 });
   const [activeOrders, setActiveOrders] = createSignal<PendingOrder[]>([]);
+  const activeOrderSubscriptionScope = createCleanupScope();
+  const subscribedActiveOrderIds = new Set<number>();
   const reservedPortfolio = createMemo(() => {
     const reserved = { Money: 0, Stock: 0 };
 
@@ -179,9 +208,78 @@ export const createAccount = (options: AccountStateOptions) => {
     else updatePortfolio(-fulfilled, cost * (1 - options.feeRate()));
   };
 
+  const removeActiveOrder = (id: number): void => {
+    subscribedActiveOrderIds.delete(id);
+    setActiveOrders((current) => current.filter((order) => order.id !== id));
+  };
+
+  const setActiveOrder = (order: PendingOrder): void => {
+    setActiveOrders((current) => {
+      const index = current.findIndex((pending) => pending.id === order.id);
+      if (index === -1) return [...current, clonePendingOrder(order)];
+
+      const next = [...current];
+      next[index] = clonePendingOrder(order);
+      return next;
+    });
+  };
+
+  const trackActiveOrder = (order: PendingOrder): void => {
+    setActiveOrder(order);
+    if (subscribedActiveOrderIds.has(order.id)) return;
+
+    subscribedActiveOrderIds.add(order.id);
+    activeOrderSubscriptionScope.run(() =>
+      market.subscribeToOrder(order.id, (change) => {
+        if (change.kind === "add") {
+          trackActiveOrder({ ...order, size: change.order.size });
+          return;
+        }
+
+        if (change.kind === "remove") subscribedActiveOrderIds.delete(change.order.id);
+
+        const pending = activeOrders().find((order) => order.id === change.order.id);
+        if (!pending) return;
+        if (change.kind === "remove") {
+          const filled = change.order.size;
+          const cost = filled * change.order.price;
+          removeActiveOrder(change.order.id);
+          applyFill(change.side, change.order.size, cost);
+          tracking.trade();
+          trackOrderHistory(() =>
+            orderHistory.filled({
+              orderId: change.order.id,
+              side: change.side,
+              size: change.order.size,
+              price: change.order.price,
+              cost,
+            }),
+          );
+          return;
+        }
+
+        const filled = change.prevSize - change.order.size;
+        const cost = filled * change.order.price;
+        applyFill(pending.side, filled, cost);
+        tracking.trade();
+        trackOrderHistory(() =>
+          orderHistory.partialFill({
+            orderId: change.order.id,
+            side: change.side,
+            size: filled,
+            price: change.order.price,
+            cost,
+          }),
+        );
+
+        setActiveOrder({ ...pending, size: change.order.size });
+      }),
+    );
+  };
+
   const cancelActiveOrder = (order: PendingOrder): void => {
+    removeActiveOrder(order.id);
     market.cancelOrder(order.id, order.side);
-    setActiveOrders((current) => current.filter((pending) => pending.id !== order.id));
     trackOrderHistory(() =>
       orderHistory.canceled({
         orderId: order.id,
@@ -190,10 +288,6 @@ export const createAccount = (options: AccountStateOptions) => {
         price: order.price,
       }),
     );
-  };
-
-  const trackActiveOrder = (order: PendingOrder): void => {
-    setActiveOrders((current) => (current.some((pending) => pending.id === order.id) ? current : [...current, order]));
   };
 
   const placeMarketOrder = (side: OrderSide, size: number): void => {
@@ -247,58 +341,26 @@ export const createAccount = (options: AccountStateOptions) => {
       size: result.order.size,
       createdAt: timeState.time(),
     });
+  };
 
-    market.subscribeToOrder(result.order.id, (change) => {
-      if (change.kind === "add") {
-        trackActiveOrder({
-          id: result.order.id,
-          side,
-          price,
-          initialSize: size,
-          size: change.order.size,
-          createdAt: timeState.time(),
-        });
-        return;
-      }
+  const snapshot = (): AccountSnapshot => ({
+    activeOrders: activeOrders().map(clonePendingOrder),
+    orderHistory: orderHistory.snapshot(),
+    portfolio: portfolio(),
+  });
 
-      const pending = activeOrders().find((order) => order.id === change.order.id);
-      if (!pending) return;
-      if (change.kind === "remove") {
-        const filled = change.order.size;
-        const cost = filled * change.order.price;
-        setActiveOrders((current) => current.filter((order) => order.id !== change.order.id));
-        applyFill(change.side, change.order.size, cost);
-        tracking.trade();
-        trackOrderHistory(() =>
-          orderHistory.filled({
-            orderId: change.order.id,
-            side: change.side,
-            size: change.order.size,
-            price: change.order.price,
-            cost,
-          }),
-        );
-        return;
-      }
+  const restore = (snapshot: AccountSnapshot): void => {
+    activeOrderSubscriptionScope.reset();
+    subscribedActiveOrderIds.clear();
 
-      const filled = change.prevSize - change.order.size;
-      const cost = filled * change.order.price;
-      applyFill(pending.side, filled, cost);
-      tracking.trade();
-      trackOrderHistory(() =>
-        orderHistory.partialFill({
-          orderId: change.order.id,
-          side: change.side,
-          size: filled,
-          price: change.order.price,
-          cost,
-        }),
-      );
-
-      setActiveOrders((current) =>
-        current.map((order) => (order.id === pending.id ? { ...order, size: change.order.size } : order)),
-      );
+    const restoredActiveOrders = snapshot.activeOrders.map(clonePendingOrder);
+    batch(() => {
+      setPortfolio(snapshot.portfolio);
+      setActiveOrders(restoredActiveOrders);
+      orderHistory.restore(snapshot.orderHistory);
     });
+
+    for (const order of restoredActiveOrders) trackActiveOrder(order);
   };
 
   createEffect(() => {
@@ -393,6 +455,8 @@ export const createAccount = (options: AccountStateOptions) => {
     leverage,
     liquidationPrice,
     addMoney,
+    restore,
+    snapshot,
     placeMarketOrder,
     placeLimitOrder,
     cancelActiveOrder,

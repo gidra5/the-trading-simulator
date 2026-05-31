@@ -14,6 +14,7 @@ import {
   type OrderBookChange,
   type OrderBookHeatmapEntry,
   type OrderBookHeatmapRegion,
+  type OrderBookSnapshot,
   type PriceSpread,
 } from "./orderBook";
 import { assert, binarySearchIndex } from "../utils";
@@ -40,6 +41,11 @@ export type PriceCandle = {
 export type QuotePriceKind = OrderSide | "mid";
 export const quotePriceKinds = ["buy", "mid", "sell"] as const satisfies readonly QuotePriceKind[];
 
+export type MarketSnapshot = {
+  nextOrderId: number;
+  orderBook: OrderBookSnapshot;
+};
+
 type MarketStateOptions = {
   time: Accessor<number>;
   deltaSnapshotInterval: Accessor<number>;
@@ -63,7 +69,7 @@ export const createMarketState = (options: MarketStateOptions) => {
     levels: options.orderBookLevels,
   });
 
-  const { subscribeToOrder } = createOrderSubscriptionState(orderBookState.latestOrderBookChange);
+  const orderSubscriptions = createOrderSubscriptionState(orderBookState.latestOrderBookChange);
   const { getOrderBookHistogram, getOrderBookHistogramSeries, querySideVolumeInPriceRange } = createHistogramState({
     orderBookChangeset: () => orderBookState.latestOrderBookChange().changes,
     priceReference: options.histogramPriceReference,
@@ -287,8 +293,21 @@ export const createMarketState = (options: MarketStateOptions) => {
     return order;
   };
 
+  const snapshot = (): MarketSnapshot => ({
+    nextOrderId,
+    orderBook: orderBookState.snapshot(),
+  });
+
+  const restore = (snapshot: MarketSnapshot): void => {
+    orderSubscriptions.clearOrderSubscriptions();
+    nextOrderId = snapshot.nextOrderId;
+    orderBookState.restore(snapshot.orderBook);
+  };
+
+  const { restore: _restoreOrderBook, snapshot: _snapshotOrderBook, ...publicOrderBookState } = orderBookState;
+
   return {
-    ...orderBookState,
+    ...publicOrderBookState,
     cancelOrder,
     getOrderBookHistogram,
     getOrderBookHistogramSeries,
@@ -298,7 +317,9 @@ export const createMarketState = (options: MarketStateOptions) => {
     makeOrder,
     priceHistoryCandle,
     querySideVolumeInPriceRange,
-    subscribeToOrder,
+    restore,
+    snapshot,
+    subscribeToOrder: orderSubscriptions.subscribeToOrder,
     takeOrder,
   };
 };

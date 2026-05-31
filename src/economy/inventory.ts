@@ -6,6 +6,9 @@ export enum Resource {
 export const resourceValues = Object.values(Resource) as Resource[];
 
 export type Inventory = Record<Resource, number>;
+export type InventorySnapshot = {
+  resources: Inventory;
+};
 
 export type InventoryState = ReturnType<typeof createInventory>;
 export const createInventory = () => {
@@ -19,9 +22,19 @@ export const createInventory = () => {
     setResources((current) => ({ ...current, [resource]: current[resource] - value }));
   };
 
+  const snapshot = (): InventorySnapshot => ({
+    resources: resources(),
+  });
+
+  const restore = (snapshot: InventorySnapshot): void => {
+    setResources(snapshot.resources);
+  };
+
   return {
     resources,
     addResource,
     removeResource,
+    restore,
+    snapshot,
   };
 };

@@ -1,8 +1,12 @@
 import { batch, createSignal } from "solid-js";
 
+export type SimulationTimeSnapshot = {
+  time: number;
+};
+
 export const createSimulationTimeState = () => {
   const [dt, setDt] = createSignal(0, { equals: false, name: "time step" });
-  const [time, setTime] = createSignal(0, { equals: false, name: "clock" });
+  const [time, setTime] = createSignal(0, { name: "clock" });
 
   const advance = (dt: number) => {
     batch(() => {
@@ -11,7 +15,15 @@ export const createSimulationTimeState = () => {
     });
   };
 
-  return { dt, time, advance };
+  const snapshot = (): SimulationTimeSnapshot => ({ time: time() });
+
+  const restore = (snapshot: SimulationTimeSnapshot): void => {
+    batch(() => {
+      setTime(snapshot.time);
+    });
+  };
+
+  return { dt, time, advance, restore, snapshot };
 };
 
 export type SimulationTimeState = ReturnType<typeof createSimulationTimeState>;

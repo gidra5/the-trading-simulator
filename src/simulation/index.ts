@@ -2,7 +2,7 @@ import { type Accessor } from "solid-js";
 import type { Distributions } from "../distributions";
 import { type MarketState, type OrderSide } from "../market/index";
 import { assert } from "../utils";
-import { createCancellationState } from "./cancellation";
+import { createCancellationState, type CancellationSnapshot } from "./cancellation";
 import { createOrderPlacementState, type SimulationOrderPlacementOptions } from "./orderPlacement";
 import { type SimulationTimeState } from "./time";
 import { eventVector, simulationEventTypes as events, type SimulationEventType } from "./types";
@@ -35,6 +35,11 @@ type TradingSimulationOptions = {
     excitationMatrix: Accessor<number[][]>;
     distributions: Pick<Distributions, "sampleMultivariateHawkesProcessEventTypes">;
   };
+};
+
+export type TradingSimulationSnapshot = {
+  cancellation: CancellationSnapshot;
+  excitedInterest: number[];
 };
 
 // TODO: Preference to place orders in the direction of the movement
@@ -115,9 +120,19 @@ export const createTradingSimulationState = (options: TradingSimulationOptions) 
     );
 
     if (elapsed < dt) options.time.advance(dt - elapsed);
-  };;
+  };
 
-  return { getCancellationRestingOrders: cancellation.getRestingOrders, tick };
+  const snapshot = (): TradingSimulationSnapshot => ({
+    cancellation: cancellation.snapshot(),
+    excitedInterest: [...excitedInterest],
+  });
+
+  const restore = (snapshot: TradingSimulationSnapshot): void => {
+    excitedInterest = [...snapshot.excitedInterest];
+    cancellation.restore(snapshot.cancellation);
+  };
+
+  return { getCancellationRestingOrders: cancellation.getRestingOrders, restore, snapshot, tick };
 };
 
 export type TradingSimulation = ReturnType<typeof createTradingSimulationState>;

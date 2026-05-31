@@ -61,14 +61,32 @@ type OrderBookMapEntry = OrderBookSnapshotEntry | OrderBookDeltaSnapshotEntry;
 type OrderBookHistory = OrderBookHistoryEntry[];
 type OrderBookMap = OrderBookMapEntry[];
 
+export type OrderBookSnapshot = {
+  history: OrderBookHistoryEntry[];
+};
+
 type AcceleratedOrderBookMapState = {
   entries: OrderBookMap;
   orderBook: OrderBook;
   pendingChangesByLevel: Array<OrderBookChangesetMap>;
   processedEntries: number;
+  sourceEntries: OrderBookHistory;
   deltaSnapshotInterval: number;
   fanout: number;
   levels: number;
+};
+
+type OrderBookMemoState = {
+  entries: OrderBookHistory;
+  orderBook: OrderBook;
+  processedEntries: number;
+};
+
+type PriceHistoryMemoState = {
+  entries: PriceHistoryEntry[];
+  orderBook: OrderBook;
+  processedEntries: number;
+  sourceEntries: OrderBookHistory;
 };
 
 export type PriceSpread = {
@@ -145,6 +163,13 @@ const cloneOrderBookChange = (change: OrderBookChange): OrderBookChange => {
   return { ...change, order: cloneOrder(change.order) };
 };
 
+const cloneOrderBookHistoryEntry = (entry: OrderBookHistoryEntry): OrderBookHistoryEntry => ({
+  ...entry,
+  changes: entry.changes.map(cloneOrderBookChange),
+});
+
+const cloneOrderBookHistory = (history: OrderBookHistory): OrderBookHistory => history.map(cloneOrderBookHistoryEntry);
+
 const mergeIntoChangesetMap = (prev: OrderBookChangesetMap, nextChanges: OrderBookChangeset): OrderBookChangesetMap => {
   for (const change of nextChanges) {
     const key = change.order.id;
@@ -188,47 +213,97 @@ export const createOrderBook = ({ deltaSnapshotInterval, fanout, levels, time }:
       return entries;
     });
 
-  const orderBook = createMemo<OrderBook>(
-    (previousOrderBook) => {
+  const orderBookState = createMemo<OrderBookMemoState>(
+    (previousState) => {
       const entries = orderBookHistory();
-      const latest = entries[entries.length - 1];
+      const canAppend = previousState.entries === entries && previousState.processedEntries <= entries.length;
+      const nextState = canAppend
+        ? previousState
+        : {
+            entries,
+            orderBook: cloneOrderBookFrom(initialOrderBook),
+            processedEntries: 0,
+          };
 
-      if (!latest) return previousOrderBook;
+      for (let index = nextState.processedEntries; index < entries.length; index += 1) {
+        applyChangeset(nextState.orderBook, entries[index]!.changes);
+      }
 
-      const nextOrderBook = previousOrderBook;
-      applyChangeset(nextOrderBook, latest.changes);
-      return nextOrderBook;
+      nextState.processedEntries = entries.length;
+      return nextState;
     },
-    cloneOrderBookFrom(initialOrderBook),
+    {
+      entries: [],
+      orderBook: cloneOrderBookFrom(initialOrderBook),
+      processedEntries: 0,
+    },
     { equals: false },
   );
+  const orderBook = () => orderBookState().orderBook;
 
-  const priceHistory = createMemo<PriceHistoryEntry[]>(
-    (previousHistory) => {
-      const spread = ((): PriceSpread => {
-        // to decide spread we look at the opposite side offers
-        const source = orderBook();
-        return {
-          buy: source.sell[source.sell.length - 1]?.price ?? Infinity,
-          sell: source.buy[source.buy.length - 1]?.price ?? 0,
-        };
-      })();
+  const priceSpreadFrom = (source: OrderBook): PriceSpread => ({
+    buy: source.sell[source.sell.length - 1]?.price ?? Infinity,
+    sell: source.buy[source.buy.length - 1]?.price ?? 0,
+  });
 
-      const next = () => {
-        previousHistory.push({ revision: revision(), timestamp: latestOrderBookChange().timestamp, spread });
-        return previousHistory;
-      };
+  const appendPriceHistoryEntry = (
+    entries: PriceHistoryEntry[],
+    revision: number,
+    timestamp: number,
+    spread: PriceSpread,
+  ): void => {
+    const latest = entries[entries.length - 1];
+    if (latest && latest.spread.buy === spread.buy && latest.spread.sell === spread.sell) return;
 
-      if (previousHistory.length === 0) return next();
+    entries.push({ revision, timestamp, spread });
+  };
 
-      const latest = previousHistory[previousHistory.length - 1];
-      if (latest.spread.buy === spread.buy && latest.spread.sell === spread.sell) return previousHistory;
+  const priceHistoryState = createMemo<PriceHistoryMemoState>(
+    (previousState) => {
+      const sourceEntries = orderBookHistory();
+      const canAppend =
+        previousState.sourceEntries === sourceEntries && previousState.processedEntries <= sourceEntries.length;
+      const nextState = canAppend
+        ? previousState
+        : {
+            entries: [],
+            orderBook: cloneOrderBookFrom(initialOrderBook),
+            processedEntries: 0,
+            sourceEntries,
+          };
 
-      return next();
+      if (nextState.entries.length === 0) {
+        appendPriceHistoryEntry(
+          nextState.entries,
+          emptyOrderBookChange.revision,
+          emptyOrderBookChange.timestamp,
+          priceSpreadFrom(nextState.orderBook),
+        );
+      }
+
+      for (let index = nextState.processedEntries; index < sourceEntries.length; index += 1) {
+        const entry = sourceEntries[index]!;
+        applyChangeset(nextState.orderBook, entry.changes);
+        appendPriceHistoryEntry(
+          nextState.entries,
+          entry.revision,
+          entry.timestamp,
+          priceSpreadFrom(nextState.orderBook),
+        );
+      }
+
+      nextState.processedEntries = sourceEntries.length;
+      return nextState;
     },
-    [],
+    {
+      entries: [],
+      orderBook: cloneOrderBookFrom(initialOrderBook),
+      processedEntries: 0,
+      sourceEntries: [],
+    },
     { equals: false },
   );
+  const priceHistory = () => priceHistoryState().entries;
 
   const marketPriceSpread = () => {
     const history = priceHistory();
@@ -268,10 +343,11 @@ export const createOrderBook = ({ deltaSnapshotInterval, fanout, levels, time }:
       const levelCount = levels();
 
       const canAppend =
+        previousState.sourceEntries === sourceEntries &&
         previousState.deltaSnapshotInterval === interval &&
         previousState.fanout === fanoutValue &&
         previousState.levels === levelCount &&
-        previousState.processedEntries <= sourceEntries.length; // todo: compare revisions instead
+        previousState.processedEntries <= sourceEntries.length;
 
       const nextState: AcceleratedOrderBookMapState = canAppend
         ? previousState
@@ -280,6 +356,7 @@ export const createOrderBook = ({ deltaSnapshotInterval, fanout, levels, time }:
             orderBook: cloneOrderBookFrom(initialOrderBook),
             pendingChangesByLevel: [],
             processedEntries: 0,
+            sourceEntries,
             deltaSnapshotInterval: interval,
             fanout: fanoutValue,
             levels: levelCount,
@@ -330,6 +407,7 @@ export const createOrderBook = ({ deltaSnapshotInterval, fanout, levels, time }:
       orderBook: cloneOrderBookFrom(initialOrderBook),
       pendingChangesByLevel: [],
       processedEntries: 0,
+      sourceEntries: [],
       deltaSnapshotInterval: Number.NaN,
       fanout: Number.NaN,
       levels: Number.NaN,
@@ -343,6 +421,14 @@ export const createOrderBook = ({ deltaSnapshotInterval, fanout, levels, time }:
     if (changes.length === 0) return;
 
     createOrderBookDelta(time(), changes);
+  };
+
+  const snapshot = (): OrderBookSnapshot => ({
+    history: cloneOrderBookHistory(orderBookHistory()),
+  });
+
+  const restore = (snapshot: OrderBookSnapshot): void => {
+    setOrderBookHistory(cloneOrderBookHistory(snapshot.history));
   };
 
   const applyPendingChanges = (target: OrderBook, entries: OrderBookMap, pendingChanges: number[]): void => {
@@ -442,9 +528,11 @@ export const createOrderBook = ({ deltaSnapshotInterval, fanout, levels, time }:
     latestOrderBookChange,
     orderBook,
     appendChange,
+    restore,
     reconstruct,
     reconstructAt,
     reconstructRegionStream,
+    snapshot,
 
     priceHistory,
     marketPriceSpread,

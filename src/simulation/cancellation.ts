@@ -1,11 +1,11 @@
 import type { Accessor } from "solid-js";
 import { type MarketState, type OrderSide } from "../market/index";
 import { type OrderBookChange } from "../market/orderBook";
-import { binarySearchIndex, clamp } from "../utils";
+import { binarySearchIndex, clamp, createCleanupScope } from "../utils";
 import type { RestingOrder } from "./types";
 
 export type CancellationOptions = {
-  market: MarketState;
+  market?: Pick<MarketState, "subscribeToOrder">;
   onCancel: (order: RestingOrder) => boolean;
 
   candidatesCount: Accessor<number>;
@@ -13,9 +13,22 @@ export type CancellationOptions = {
 };
 
 type RestingOrders = { buy: RestingOrder[]; sell: RestingOrder[] };
+type SubscribeToOrder = (id: number, callback: (change: OrderBookChange) => void) => VoidFunction | void;
+
+export type CancellationSnapshot = {
+  restingOrders: RestingOrders;
+};
+
+const cloneRestingOrder = (order: RestingOrder): RestingOrder => ({ ...order });
+const cloneRestingOrders = (orders: RestingOrders): RestingOrders => ({
+  buy: orders.buy.map(cloneRestingOrder),
+  sell: orders.sell.map(cloneRestingOrder),
+});
 
 export const createCancellationState = (options: CancellationOptions) => {
   const restingOrders: RestingOrders = { buy: [], sell: [] };
+  const subscriptionScope = createCleanupScope();
+  const subscribedOrderIds = new Set<number>();
 
   const randomRestingOrder = (side: OrderSide): RestingOrder | null => {
     const orders = restingOrders[side];
@@ -34,6 +47,7 @@ export const createCancellationState = (options: CancellationOptions) => {
     if (idx >= orders.length || orders[idx]!.price !== order.price) return false;
 
     restingOrders[side].splice(idx, 1);
+    subscribedOrderIds.delete(order.id);
     return true;
   };
 
@@ -45,22 +59,46 @@ export const createCancellationState = (options: CancellationOptions) => {
     return options.onCancel(order);
   };
 
-  const addOrder = (order: RestingOrder): void => {
+  const addOrder = (
+    order: RestingOrder,
+    subscribeToOrder: SubscribeToOrder | undefined = options.market?.subscribeToOrder,
+  ): void => {
     const _orders = restingOrders[order.side];
     const idx = binarySearchIndex(_orders, (candidate) => candidate.price - order.price);
-    _orders.splice(idx, 0, order);
+    _orders.splice(idx, 0, cloneRestingOrder(order));
 
-    options.market.subscribeToOrder(order.id, (change) => {
-      if (change.kind !== "remove") return;
-      removeRestingOrder(change.side, change.order);
-    });
+    if (!subscribeToOrder || subscribedOrderIds.has(order.id)) return;
+
+    subscribedOrderIds.add(order.id);
+    subscriptionScope.run(() =>
+      subscribeToOrder(order.id, (change) => {
+        if (change.kind !== "remove") return;
+        removeRestingOrder(change.side, change.order);
+      }),
+    );
   };
 
   const getRestingOrders = (side: OrderSide): RestingOrder[] => [...restingOrders[side]];
+
+  const snapshot = (): CancellationSnapshot => ({
+    restingOrders: cloneRestingOrders(restingOrders),
+  });
+
+  const restore = (snapshot: CancellationSnapshot): void => {
+    subscriptionScope.reset();
+    subscribedOrderIds.clear();
+    restingOrders.buy = [];
+    restingOrders.sell = [];
+
+    for (const order of snapshot.restingOrders.buy) addOrder(order);
+    for (const order of snapshot.restingOrders.sell) addOrder(order);
+  };
 
   return {
     simulate,
     addOrder,
     getRestingOrders,
+    restore,
+    snapshot,
   };
 };

@@ -1,4 +1,4 @@
-import { createMemo, createSignal, type Accessor } from "solid-js";
+import { batch, createMemo, createSignal, type Accessor } from "solid-js";
 import {
   cloneMarketModelSettings,
   defaultMarketModelSettings,
@@ -33,11 +33,19 @@ export type SimulationOrchestrator = {
   };
 };
 
+export type SimulationOrchestratorSnapshot = {
+  marketModelSettings: MarketModelSettings;
+  orderPriceDistribution: OrderPriceDistribution;
+  orderSelectionDistribution: OrderSelectionDistribution;
+  orderSizeDistribution: OrderSizeDistribution;
+};
+
 export type SimulationOrchestratorController = {
   getMarketModelSettings: () => MarketModelSettings;
   getOrderPriceDistribution: Accessor<OrderPriceDistribution>;
   getOrderSelectionDistribution: Accessor<OrderSelectionDistribution>;
   getOrderSizeDistribution: Accessor<OrderSizeDistribution>;
+  restore: (snapshot: SimulationOrchestratorSnapshot) => void;
   setMarketModelEventSetting: (
     group: SimulationEventSettingGroup,
     eventType: MarketEventSetting,
@@ -49,6 +57,7 @@ export type SimulationOrchestratorController = {
   setOrderPriceDistribution: (distribution: OrderPriceDistribution) => void;
   setOrderSelectionDistribution: (distribution: OrderSelectionDistribution) => void;
   setOrderSizeDistribution: (distribution: OrderSizeDistribution) => void;
+  snapshot: () => SimulationOrchestratorSnapshot;
 };
 
 // todo: orchestrator modes/events
@@ -104,6 +113,20 @@ export const createOrchestrator = (
   };
   const updateOrderSelectionDistribution = (distribution: OrderSelectionDistribution): void => {
     setOrderSelectionDistribution(distribution);
+  };
+  const snapshot = (): SimulationOrchestratorSnapshot => ({
+    marketModelSettings: getMarketModelSettings(),
+    orderPriceDistribution: orderPriceDistribution(),
+    orderSelectionDistribution: orderSelectionDistribution(),
+    orderSizeDistribution: orderSizeDistribution(),
+  });
+  const restore = (snapshot: SimulationOrchestratorSnapshot): void => {
+    batch(() => {
+      setMarketModelSettings(snapshot.marketModelSettings);
+      setOrderPriceDistribution(snapshot.orderPriceDistribution);
+      setOrderSelectionDistribution(snapshot.orderSelectionDistribution);
+      setOrderSizeDistribution(snapshot.orderSizeDistribution);
+    });
   };
 
   const excitementDecay = createMemo(() => {
@@ -208,6 +231,7 @@ export const createOrchestrator = (
     getOrderPriceDistribution: orderPriceDistribution,
     getOrderSelectionDistribution: orderSelectionDistribution,
     getOrderSizeDistribution: orderSizeDistribution,
+    restore,
     setMarketModelEventSetting,
     setMarketModelExcitation,
     setMarketModelSetting,
@@ -215,6 +239,7 @@ export const createOrchestrator = (
     setOrderPriceDistribution: updateOrderPriceDistribution,
     setOrderSelectionDistribution: updateOrderSelectionDistribution,
     setOrderSizeDistribution: updateOrderSizeDistribution,
+    snapshot,
   };
 
   return { orchestrator, controller };

@@ -14,10 +14,13 @@ export type MakeOrderResult = {
   order: RestingOrder;
 };
 
-// todo: replace explicit tag with a size sign - negative means sell, positive is buy
 export type OrderSide = "buy" | "sell";
 type OrderUpdateCallback = (change: OrderBookChange) => void;
 type OrderUpdateSource = Accessor<OrderBookHistoryEntry>;
+type OrderSubscriber = {
+  callback: OrderUpdateCallback;
+  revision: number;
+};
 
 export const compareOrders = (candidate: RestingOrder, side: OrderSide, target: RestingOrder): number => {
   if (candidate.price !== target.price) {
@@ -33,20 +36,26 @@ export const cloneOrder = (order: RestingOrder): RestingOrder => ({ ...order });
 export const oppositeSide = (side: OrderSide): OrderSide => (side === "buy" ? "sell" : "buy");
 
 export const createOrderSubscriptionState = (latestOrderBookChange: OrderUpdateSource) => {
-  const orderSubscriptions = new Map<number, Set<OrderUpdateCallback>>();
+  const orderSubscriptions = new Map<number, Set<OrderSubscriber>>();
 
   createEffect(() => {
     const latest = latestOrderBookChange();
 
     untrack(() => {
+      const notifiedSubscribers = new Set<OrderSubscriber>();
+
       for (const change of latest.changes) {
         const subscribers = orderSubscriptions.get(change.order.id);
         if (!subscribers) continue;
 
         for (const subscriber of subscribers) {
-          subscriber(change);
+          if (latest.revision <= subscriber.revision) continue;
+          subscriber.callback(change);
+          notifiedSubscribers.add(subscriber);
         }
       }
+
+      for (const subscriber of notifiedSubscribers) subscriber.revision = latest.revision;
     });
   });
 
@@ -55,18 +64,25 @@ export const createOrderSubscriptionState = (latestOrderBookChange: OrderUpdateS
       orderSubscriptions.set(id, new Set());
     }
     const subscribers = orderSubscriptions.get(id)!;
-    const callback = (change: OrderBookChange) => {
-      cb(change);
-      if (change.kind === "remove") subscribers.delete(callback);
-      if (subscribers.size === 0) orderSubscriptions.delete(id);
+    const subscriber: OrderSubscriber = {
+      revision: latestOrderBookChange().revision,
+      callback: (change: OrderBookChange) => {
+        cb(change);
+        if (change.kind === "remove") subscribers.delete(subscriber);
+        if (subscribers.size === 0) orderSubscriptions.delete(id);
+      },
     };
-    subscribers.add(callback);
+    subscribers.add(subscriber);
 
     return () => {
-      subscribers.delete(callback);
+      subscribers.delete(subscriber);
       if (subscribers.size === 0) orderSubscriptions.delete(id);
     };
   };
 
-  return { subscribeToOrder };
+  const clearOrderSubscriptions = (): void => {
+    orderSubscriptions.clear();
+  };
+
+  return { clearOrderSubscriptions, subscribeToOrder };
 };

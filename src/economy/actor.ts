@@ -1,11 +1,11 @@
-import { createSignal, type Accessor } from "solid-js";
+import { batch, createSignal, type Accessor } from "solid-js";
 import { type MarketState } from "../market";
 import { type SimulationTimeState } from "../simulation/time";
-import { createProgression } from "../progression/interface";
+import { createProgression, type ProgressionSnapshot } from "../progression/interface";
 import type { ProgressionGraph } from "../progression/data";
-import { createAccount } from "./account";
-import { createNeeds, type Needs } from "./needs";
-import { createInventory } from "./inventory";
+import { createAccount, type AccountSnapshot } from "./account";
+import { createNeeds, type Needs, type NeedsSnapshot } from "./needs";
+import { createInventory, type InventorySnapshot } from "./inventory";
 
 let nextActorId = 0;
 
@@ -14,6 +14,17 @@ type ActorMeta = {
   name: Accessor<string>;
   setName: (name: string) => void;
   birthDate: number;
+};
+
+export type ActorSnapshot = {
+  account: AccountSnapshot;
+  inventory: InventorySnapshot;
+  meta: {
+    birthDate: number;
+    name: string;
+  };
+  needs: NeedsSnapshot;
+  progression: ProgressionSnapshot;
 };
 
 type ActorOptions = {
@@ -47,5 +58,27 @@ export const createActor = (options: ActorOptions) => {
   const [name, setName] = createSignal(options.name);
   const meta: ActorMeta = { id, name, setName, birthDate: options.time.time() };
 
-  return { progression, inventory, account, needs, meta };
+  const snapshot = (): ActorSnapshot => ({
+    account: account.snapshot(),
+    inventory: inventory.snapshot(),
+    meta: {
+      birthDate: meta.birthDate,
+      name: name(),
+    },
+    needs: needs.snapshot(),
+    progression: progression.snapshot(),
+  });
+
+  const restore = (snapshot: ActorSnapshot): void => {
+    batch(() => {
+      inventory.restore(snapshot.inventory);
+      progression.restore(snapshot.progression);
+      account.restore(snapshot.account);
+      meta.birthDate = snapshot.meta.birthDate;
+      needs.restore(snapshot.needs);
+      setName(snapshot.meta.name);
+    });
+  };
+
+  return { progression, inventory, account, needs, meta, restore, snapshot };
 };

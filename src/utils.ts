@@ -1,4 +1,13 @@
-import { createMemo, createSignal, onCleanup, type Accessor } from "solid-js";
+import {
+  createMemo,
+  createRoot,
+  createSignal,
+  getOwner,
+  onCleanup,
+  runWithOwner,
+  type Accessor,
+  type Owner,
+} from "solid-js";
 
 export const assert: (condition: unknown, message?: string) => asserts condition = (
   condition: unknown,
@@ -7,6 +16,39 @@ export const assert: (condition: unknown, message?: string) => asserts condition
   if (!condition) {
     throw new Error(message);
   }
+};
+
+export const createCleanupScope = () => {
+  let owner: Owner | null = null;
+  let disposeOwner: VoidFunction = () => {};
+
+  const reset = (): void => {
+    disposeOwner();
+    createRoot((dispose) => {
+      owner = getOwner();
+      disposeOwner = () => {
+        dispose();
+        owner = null;
+        disposeOwner = () => {};
+      };
+    });
+  };
+
+  const run = (setup: () => VoidFunction | void): void => {
+    assert(owner !== null);
+    runWithOwner(owner, () => {
+      const cleanup = setup();
+      if (cleanup) onCleanup(cleanup);
+    });
+  };
+
+  reset();
+
+  return {
+    dispose: () => disposeOwner(),
+    reset,
+    run,
+  };
 };
 
 export const unreachable = (message = "Unreachable code reached"): never => {
@@ -146,51 +188,50 @@ export const roundToList = (value: number, list: readonly number[]): number => {
   return list[index + 1];
 };
 
-  // const roundNumber = (price: number): number => {
-  //   if (!Number.isFinite(price) || price <= 0) return 0;
+// const roundNumber = (price: number): number => {
+//   if (!Number.isFinite(price) || price <= 0) return 0;
 
-  //   const magnitude = 10 ** Math.floor(Math.log10(price));
-  //   const roll = Math.random();
+//   const magnitude = 10 ** Math.floor(Math.log10(price));
+//   const roll = Math.random();
 
-  //   if (roll < 0.15) return magnitude * 0.1;
-  //   if (roll < 0.45) return magnitude * 0.05;
-  //   return magnitude * 0.01;
-  // };
+//   if (roll < 0.15) return magnitude * 0.1;
+//   if (roll < 0.45) return magnitude * 0.05;
+//   return magnitude * 0.01;
+// };
 
+// const applyOrderPricePsychology = (side: OrderSide, price: number): number => {
+//   const settings = options.getSettings();
 
-  // const applyOrderPricePsychology = (side: OrderSide, price: number): number => {
-  //   const settings = options.getSettings();
+//   if (!Number.isFinite(price) || price <= 0) return price;
 
-  //   if (!Number.isFinite(price) || price <= 0) return price;
+//   const spread = options.market.marketPriceSpread();
+//   updateRecentPriceAnchors(options.market.midPrice());
 
-  //   const spread = options.market.marketPriceSpread();
-  //   updateRecentPriceAnchors(options.market.midPrice());
+//   let adjustedPrice = price;
 
-  //   let adjustedPrice = price;
+//   if (Math.random() < settings.anchorPreference) {
+//     const anchor = sampleRecentHighLowAnchor(side);
 
-  //   if (Math.random() < settings.anchorPreference) {
-  //     const anchor = sampleRecentHighLowAnchor(side);
+//     if (anchor !== null) {
+//       adjustedPrice += (anchor - adjustedPrice) * sampleUniform(0.15, 0.6);
+//     }
+//   }
 
-  //     if (anchor !== null) {
-  //       adjustedPrice += (anchor - adjustedPrice) * sampleUniform(0.15, 0.6);
-  //     }
-  //   }
+//   if (Math.random() < settings.liquidityWallAnchorPreference) {
+//     const anchor = sampleSupportResistanceAnchor(side, adjustedPrice, spread);
 
-  //   if (Math.random() < settings.liquidityWallAnchorPreference) {
-  //     const anchor = sampleSupportResistanceAnchor(side, adjustedPrice, spread);
+//     if (anchor !== null) {
+//       adjustedPrice = anchor;
+//     }
+//   }
 
-  //     if (anchor !== null) {
-  //       adjustedPrice = anchor;
-  //     }
-  //   }
+//   if (!isNearMidPrice(adjustedPrice, spread) && Math.random() < settings.roundPricePreference) {
+//     const step = roundPriceStep(adjustedPrice);
 
-  //   if (!isNearMidPrice(adjustedPrice, spread) && Math.random() < settings.roundPricePreference) {
-  //     const step = roundPriceStep(adjustedPrice);
+//     if (step > 0) {
+//       adjustedPrice = Math.round(adjustedPrice / step) * step;
+//     }
+//   }
 
-  //     if (step > 0) {
-  //       adjustedPrice = Math.round(adjustedPrice / step) * step;
-  //     }
-  //   }
-
-  //   return side === "buy" ? clamp(adjustedPrice, Number.MIN_VALUE, spread.buy) : Math.max(adjustedPrice, spread.sell);
-  // };
+//   return side === "buy" ? clamp(adjustedPrice, Number.MIN_VALUE, spread.buy) : Math.max(adjustedPrice, spread.sell);
+// };

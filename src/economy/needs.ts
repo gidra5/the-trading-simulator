@@ -9,6 +9,9 @@ enum Need {
 const needValues = Object.values(Need) as Need[];
 const criticalNeeds = [Need.Food, Need.Health];
 export type Needs = Record<Need, number>;
+export type NeedsSnapshot = {
+  needs: Needs;
+};
 
 type NeedsOptions = {
   dt: Accessor<number>;
@@ -41,11 +44,21 @@ export const createNeeds = (options: NeedsOptions) => {
     });
   });
 
+  const snapshot = (): NeedsSnapshot => ({
+    needs: needs(),
+  });
+
+  const restore = (snapshot: NeedsSnapshot): void => {
+    setNeeds(snapshot.needs);
+  };
+
   return {
     needs,
     overflowedNeeds,
     underflowedNeeds,
     fulfillNeed,
     dead,
+    restore,
+    snapshot,
   };
 };

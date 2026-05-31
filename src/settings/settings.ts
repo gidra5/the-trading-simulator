@@ -1,4 +1,4 @@
-import { createMemo, createSignal } from "solid-js";
+import { batch, createMemo, createSignal } from "solid-js";
 import type { PriceScaleKind, QuotePriceKind } from "../market";
 import { createRngSeed } from "../rng";
 import { type StoreEncoding, type StoreKind } from "../storage/interface";
@@ -11,6 +11,37 @@ export const enum HistogramNormalization {
 }
 type AutosaveStorePreference = Exclude<StoreKind, "manual"> | null;
 export type Settings = ReturnType<typeof createSettings>;
+export type SettingsSnapshot = {
+  advancedOrdersEnabled: boolean;
+  autosaveEncoding: StoreEncoding;
+  autosaveEnabled: boolean;
+  autosaveFileName: string;
+  autosaveStorePreference: AutosaveStorePreference;
+  cancellationCandidatesCount: number;
+  candleInterval: number;
+  deltaSnapshotInterval: number;
+  effectsVolume: number;
+  frontierPickerSize: number;
+  heatmapNormalization: PriceScaleKind;
+  histogramFanout: number;
+  histogramNormalization: HistogramNormalization;
+  histogramPriceReference: number;
+  histogramWindowFraction: number;
+  isHeatmapEnabled: boolean;
+  isHistogramCumulative: boolean;
+  isHistogramEnabled: boolean;
+  isSimulationPaused: boolean;
+  masterVolume: number;
+  musicVolume: number;
+  newsEventsEnabled: boolean;
+  orderBookFanout: number;
+  orderBookLevels: number;
+  priceScale: PriceScaleKind;
+  quotePriceKind: QuotePriceKind;
+  seed: number;
+  showFrameRate: boolean;
+  simulationSpeed: number;
+};
 // todo: lifetime for history - store at most last time interval of size N
 export const createSettings = () => {
   const [cancellationCandidatesCount, setCancellationCandidatesCount] = createSignal(64);
@@ -61,6 +92,72 @@ export const createSettings = () => {
     }),
   );
 
+  const snapshot = (): SettingsSnapshot => ({
+    advancedOrdersEnabled: advancedOrdersEnabled(),
+    autosaveEncoding: autosaveEncoding(),
+    autosaveEnabled: autosaveEnabled(),
+    autosaveFileName: autosaveFileName(),
+    autosaveStorePreference: autosaveStorePreference(),
+    cancellationCandidatesCount: cancellationCandidatesCount(),
+    candleInterval: candleInterval(),
+    deltaSnapshotInterval: deltaSnapshotInterval(),
+    effectsVolume: effectsVolume(),
+    frontierPickerSize: frontierPickerSize(),
+    heatmapNormalization: heatmapNormalization(),
+    histogramFanout: histogramFanout(),
+    histogramNormalization: histogramNormalization(),
+    histogramPriceReference: histogramPriceReference(),
+    histogramWindowFraction: histogramWindowFraction(),
+    isHeatmapEnabled: isHeatmapEnabled(),
+    isHistogramCumulative: isHistogramCumulative(),
+    isHistogramEnabled: isHistogramEnabled(),
+    isSimulationPaused: isSimulationPaused(),
+    masterVolume: masterVolume(),
+    musicVolume: musicVolume(),
+    newsEventsEnabled: newsEventsEnabled(),
+    orderBookFanout: orderBookFanout(),
+    orderBookLevels: orderBookLevels(),
+    priceScale: priceScale(),
+    quotePriceKind: quotePriceKind(),
+    seed: seed(),
+    showFrameRate: showFrameRate(),
+    simulationSpeed: simulationSpeed(),
+  });
+
+  const restore = (snapshot: SettingsSnapshot): void => {
+    batch(() => {
+      setAdvancedOrdersEnabled(snapshot.advancedOrdersEnabled);
+      setAutosaveEncoding(snapshot.autosaveEncoding);
+      setAutosaveEnabled(snapshot.autosaveEnabled);
+      setAutosaveFileName(snapshot.autosaveFileName);
+      setAutosaveStorePreference(snapshot.autosaveStorePreference);
+      setCancellationCandidatesCount(snapshot.cancellationCandidatesCount);
+      setCandleInterval(snapshot.candleInterval);
+      setDeltaSnapshotInterval(snapshot.deltaSnapshotInterval);
+      setEffectsVolume(snapshot.effectsVolume);
+      setFrontierPickerSize(snapshot.frontierPickerSize);
+      setHeatmapNormalization(snapshot.heatmapNormalization);
+      setHistogramFanout(snapshot.histogramFanout);
+      setHistogramNormalization(snapshot.histogramNormalization);
+      setHistogramPriceReference(snapshot.histogramPriceReference);
+      setHistogramWindowFraction(snapshot.histogramWindowFraction);
+      setIsHeatmapEnabled(snapshot.isHeatmapEnabled);
+      setIsHistogramCumulative(snapshot.isHistogramCumulative);
+      setIsHistogramEnabled(snapshot.isHistogramEnabled);
+      setIsSimulationPaused(snapshot.isSimulationPaused);
+      setMasterVolume(snapshot.masterVolume);
+      setMusicVolume(snapshot.musicVolume);
+      setNewsEventsEnabled(snapshot.newsEventsEnabled);
+      setOrderBookFanout(snapshot.orderBookFanout);
+      setOrderBookLevels(snapshot.orderBookLevels);
+      setPriceScale(snapshot.priceScale);
+      setQuotePriceKind(snapshot.quotePriceKind);
+      setSeed(snapshot.seed);
+      setShowFrameRate(snapshot.showFrameRate);
+      setSimulationSpeed(snapshot.simulationSpeed);
+    });
+  };
+
   return {
     deltaSnapshotInterval,
     orderBookFanout,
@@ -94,6 +191,8 @@ export const createSettings = () => {
     simulationSpeed,
     seed,
     cancellationCandidatesCount,
+    restore,
+    snapshot,
 
     setDeltaSnapshotInterval,
     setOrderBookFanout,

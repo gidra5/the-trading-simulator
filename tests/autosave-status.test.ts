@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { isOPFSQuotaLow, resolveAutosaveStatus } from "../src/components/game/autosaveStatus";
+import { isOPFSQuotaLow, resolveAutosaveStatus } from "../src/settings/autosaveStatus";
 import type { Store } from "../src/storage/interface";
 import type { SaveFileStoreEntry } from "../src/storage/persistence";
 
