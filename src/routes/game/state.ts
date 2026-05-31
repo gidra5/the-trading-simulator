@@ -8,6 +8,7 @@ import { progressionGraph } from "../../progression/data";
 import { createOrchestrator, type SimulationOrchestratorSnapshot } from "../../simulation/orchestrator";
 import { createRng, type RngSnapshot } from "../../rng";
 import { createDistributions } from "../../distributions";
+import type { Store } from "../../storage/interface";
 
 export type GameSnapshot = {
   actor: ActorSnapshot;
@@ -21,7 +22,18 @@ export type GameSnapshot = {
 
 // todo: economic simulation
 // TODO: an simulation orchestrator (simulate initial interest)
-export const { actor, distributions, market, restore, settings, simulation, snapshot, time } = createRoot(() => {
+export const {
+  actor,
+  distributions,
+  market,
+  resetProgress,
+  restore,
+  saveSnapshot,
+  settings,
+  simulation,
+  snapshot,
+  time,
+} = createRoot(() => {
   const settings = createSettings<GameSnapshot>();
   const currentRng = createMemo(() => createRng(settings.seed()));
   const rng = (): number => currentRng().sample();
@@ -76,5 +88,30 @@ export const { actor, distributions, market, restore, settings, simulation, snap
     actor.restore(snapshot.actor);
   };
 
-  return { actor, distributions, market, restore, settings, simulation, snapshot, time };
+  const initialProgressSnapshot = structuredClone(snapshot());
+
+  const resetProgress = (): void => {
+    const currentSettings = settings.snapshot();
+
+    restore({
+      ...structuredClone(initialProgressSnapshot),
+      rng: createRng(currentSettings.seed).snapshot(),
+      settings: currentSettings,
+    });
+  };
+
+  const saveSnapshot = async (store: Store<GameSnapshot>): Promise<void> => {
+    const previousLastSaveAt = settings.lastSaveAt();
+    settings.setLastSaveAt(new Date().toISOString());
+
+    try {
+      await store.save(snapshot());
+      await settings.refreshAutosaveStorageUsage();
+    } catch (error) {
+      settings.setLastSaveAt(previousLastSaveAt);
+      throw error;
+    }
+  };
+
+  return { actor, distributions, market, resetProgress, restore, saveSnapshot, settings, simulation, snapshot, time };
 });

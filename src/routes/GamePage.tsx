@@ -15,6 +15,7 @@ import {
   actor,
   market,
   restore as restoreGameSnapshot,
+  saveSnapshot,
   settings,
   simulation,
   snapshot as gameSnapshot,
@@ -249,6 +250,21 @@ export default function GamePage() {
   });
   const accountTelemetry = createAccountTelemetryState();
   let autosaveRestoreStarted = false;
+  let autosavePending = false;
+
+  const saveToAutomaticStore = async (message: string): Promise<void> => {
+    const store = automaticSaveStore();
+    if (!settings.autosaveEnabled() || !store || autosavePending) return;
+
+    autosavePending = true;
+    try {
+      await saveSnapshot(store);
+    } catch (error) {
+      console.error(message, error);
+    } finally {
+      autosavePending = false;
+    }
+  };
 
   createEffect(() => {
     if (activeTab() === "market" && !gates.market()) setActiveTab("economy");
@@ -274,20 +290,7 @@ export default function GamePage() {
     const interval = settings.autosaveIntervalMinutes() * minuteMs;
     if (!settings.autosaveEnabled() || !store) return;
 
-    let savePending = false;
-    const save = async (): Promise<void> => {
-      if (savePending) return;
-
-      savePending = true;
-      try {
-        await store.save(gameSnapshot());
-      } catch (error) {
-        console.error("Autosave failed", error);
-      } finally {
-        savePending = false;
-      }
-    };
-    const intervalId = window.setInterval(() => void save(), interval);
+    const intervalId = window.setInterval(() => void saveToAutomaticStore("Autosave failed"), interval);
 
     onCleanup(() => clearInterval(intervalId));
   });
@@ -311,6 +314,25 @@ export default function GamePage() {
 
     onCleanup(() => {
       cancelAnimationFrame(animationFrameId);
+    });
+  });
+
+  onMount(() => {
+    const saveBeforeUnload = (): void => {
+      void saveToAutomaticStore("Autosave before unload failed");
+    };
+    const saveWhenHidden = (): void => {
+      if (document.visibilityState === "hidden") saveBeforeUnload();
+    };
+
+    window.addEventListener("beforeunload", saveBeforeUnload);
+    window.addEventListener("pagehide", saveBeforeUnload);
+    document.addEventListener("visibilitychange", saveWhenHidden);
+
+    onCleanup(() => {
+      window.removeEventListener("beforeunload", saveBeforeUnload);
+      window.removeEventListener("pagehide", saveBeforeUnload);
+      document.removeEventListener("visibilitychange", saveWhenHidden);
     });
   });
 

@@ -31,6 +31,7 @@ export type SettingsSnapshot = {
   isHistogramCumulative: boolean;
   isHistogramEnabled: boolean;
   isSimulationPaused: boolean;
+  lastSaveAt: string | null;
   masterVolume: number;
   musicVolume: number;
   newsEventsEnabled: boolean;
@@ -71,6 +72,7 @@ export const createSettings = <SaveSnapshot = unknown>() => {
   const [autosaveFileName, setAutosaveFileName] = createSignal("trading-simulator-autosave.json");
   const [autosaveIntervalMinutes, setAutosaveIntervalMinutes] = createSignal(5);
   const [autosaveStorePreference, setAutosaveStorePreference] = createSignal<AutosaveStorePreference>(null);
+  const [lastSaveAt, setLastSaveAt] = createSignal<string | null>(null);
   const [simulationSpeed, setSimulationSpeed] = createSignal(1);
   const [isSimulationPaused, setIsSimulationPaused] = createSignal(false);
   const [masterVolume, setMasterVolume] = createSignal(70);
@@ -114,6 +116,7 @@ export const createSettings = <SaveSnapshot = unknown>() => {
     isHistogramCumulative: isHistogramCumulative(),
     isHistogramEnabled: isHistogramEnabled(),
     isSimulationPaused: isSimulationPaused(),
+    lastSaveAt: lastSaveAt(),
     masterVolume: masterVolume(),
     musicVolume: musicVolume(),
     newsEventsEnabled: newsEventsEnabled(),
@@ -148,6 +151,7 @@ export const createSettings = <SaveSnapshot = unknown>() => {
       setIsHistogramCumulative(snapshot.isHistogramCumulative);
       setIsHistogramEnabled(snapshot.isHistogramEnabled);
       setIsSimulationPaused(snapshot.isSimulationPaused);
+      setLastSaveAt(snapshot.lastSaveAt ?? null);
       setMasterVolume(snapshot.masterVolume);
       setMusicVolume(snapshot.musicVolume);
       setNewsEventsEnabled(snapshot.newsEventsEnabled);
@@ -174,6 +178,7 @@ export const createSettings = <SaveSnapshot = unknown>() => {
     autosaveEnabled,
     autosaveFileName,
     autosaveIntervalMinutes,
+    refreshAutosaveStorageUsage: autosaveFileStore.refreshStorageUsage,
     autosaveStatus,
     autosaveStorePreference,
     autosaveStores: autosaveFileStore.stores,
@@ -186,6 +191,7 @@ export const createSettings = <SaveSnapshot = unknown>() => {
     isHistogramCumulative,
     isHistogramEnabled,
     isSimulationPaused,
+    lastSaveAt,
     masterVolume,
     musicVolume,
     newsEventsEnabled,
@@ -218,6 +224,7 @@ export const createSettings = <SaveSnapshot = unknown>() => {
     setIsHistogramCumulative,
     setIsHistogramEnabled,
     setIsSimulationPaused,
+    setLastSaveAt,
     setMasterVolume,
     setMusicVolume,
     setNewsEventsEnabled,

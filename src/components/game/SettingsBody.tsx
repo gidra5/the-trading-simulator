@@ -1,9 +1,9 @@
 import clsx from "clsx";
-import { FolderOpen, Save } from "lucide-solid";
+import { FolderOpen, RotateCcw, Save } from "lucide-solid";
 import { createMemo, createSignal, For, type Component } from "solid-js";
 import { locales, locale, setLocale, t, type Locale } from "../../i18n/game";
 import { priceScaleKinds, quotePriceKinds, type PriceScaleKind, type QuotePriceKind } from "../../market";
-import { restore as restoreGameSnapshot, settings, snapshot as gameSnapshot } from "../../routes/game/state";
+import { resetProgress, restore as restoreGameSnapshot, saveSnapshot, settings } from "../../routes/game/state";
 import { encodings, type StoreEncoding, type StoreKind } from "../../storage/interface";
 import type { SaveFileStoreEntry, SaveFileStoreStatus } from "../../storage/persistence";
 import { Button } from "../../ui-kit/Button";
@@ -177,7 +177,18 @@ export const SettingsBody: Component = () => {
 
     return entry ? autosaveStoreLabel(entry.kind) : t("autosave.store.none");
   };
+  const automaticSaveStore = () => {
+    const entry = settings.autosaveStatus().entry;
+    if (!entry?.store || entry.kind === "manual") return null;
+
+    return entry.store;
+  };
   const canTransferSave = () => activeSaveStore() !== null && !saveTransferPending();
+  const lastSaveAtLabel = () => {
+    const lastSaveAt = settings.lastSaveAt();
+
+    return lastSaveAt ? new Date(lastSaveAt).toLocaleString(locale()) : t("settings.saveLoad.neverSaved");
+  };
 
   const syncSettingsInputs = (): void => {
     setCandleIntervalInput(String(settings.candleInterval() / 1_000));
@@ -266,7 +277,7 @@ export const SettingsBody: Component = () => {
 
     setSaveTransferPending(true);
     try {
-      await store.save(gameSnapshot());
+      await saveSnapshot(store);
       setSaveTransferStatus(t("settings.saveLoad.saved", { fileName, store: storeLabel }));
     } catch (error) {
       setSaveTransferStatus(t("settings.saveLoad.saveFailed", { error: errorMessage(error) }));
@@ -297,6 +308,29 @@ export const SettingsBody: Component = () => {
       setSaveTransferStatus(t("settings.saveLoad.loaded", { fileName, store: storeLabel }));
     } catch (error) {
       setSaveTransferStatus(t("settings.saveLoad.loadFailed", { error: errorMessage(error) }));
+    } finally {
+      setSaveTransferPending(false);
+    }
+  };
+
+  const resetGame = async (): Promise<void> => {
+    if (!window.confirm(t("settings.saveLoad.resetConfirm"))) return;
+
+    resetProgress();
+    syncSettingsInputs();
+
+    const store = automaticSaveStore();
+    if (!store) {
+      setSaveTransferStatus(t("settings.saveLoad.resetDone"));
+      return;
+    }
+
+    setSaveTransferPending(true);
+    try {
+      await saveSnapshot(store);
+      setSaveTransferStatus(t("settings.saveLoad.resetSaved"));
+    } catch (error) {
+      setSaveTransferStatus(t("settings.saveLoad.resetSaveFailed", { error: errorMessage(error) }));
     } finally {
       setSaveTransferPending(false);
     }
@@ -524,6 +558,9 @@ export const SettingsBody: Component = () => {
                     })}
                   </p>
                 )}
+                <p class="break-words font-body-primary-xs-rg text-text-secondary">
+                  {t("settings.saveLoad.lastSaved", { date: lastSaveAtLabel() })}
+                </p>
               </div>
               <div class="flex flex-wrap items-center gap-2">
                 <Button variant="primary" onClick={() => void saveGame()} disabled={!canTransferSave()}>
@@ -533,6 +570,10 @@ export const SettingsBody: Component = () => {
                 <Button onClick={() => void loadGame()} disabled={!canTransferSave()}>
                   <FolderOpen aria-hidden="true" class="h-4 w-4" strokeWidth={1.8} />
                   <span>{t("settings.saveLoad.load")}</span>
+                </Button>
+                <Button variant="danger" onClick={() => void resetGame()} disabled={saveTransferPending()}>
+                  <RotateCcw aria-hidden="true" class="h-4 w-4" strokeWidth={1.8} />
+                  <span>{t("settings.saveLoad.reset")}</span>
                 </Button>
               </div>
             </div>

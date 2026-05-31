@@ -46,6 +46,7 @@ export type SaveFileStoreEntry<T> =
 
 export type SaveFileStore<T> = {
   active: Accessor<SaveFileStoreEntry<T> | null>;
+  refreshStorageUsage: () => Promise<void>;
   stores: Accessor<readonly SaveFileStoreEntry<T>[]>;
 };
 
@@ -284,6 +285,16 @@ export const createSaveFileStore = <T>(options: Options): SaveFileStore<T> => {
   };
 
   const active = createMemo(() => chooseActiveEntry(options.preference(), stores()));
+  const refreshStorageUsage = async (): Promise<void> => {
+    const estimate = await storageEstimate();
+    if (!estimate) return;
+
+    setStores((current) =>
+      current.map((entry) =>
+        entry.kind === "opfs" ? { ...entry, quota: estimate.quota, usage: estimate.usage } : entry,
+      ),
+    );
+  };
 
   createEffect(() => {
     untrack(() => {
@@ -323,5 +334,5 @@ export const createSaveFileStore = <T>(options: Options): SaveFileStore<T> => {
     })();
   });
 
-  return { active, stores };
+  return { active, refreshStorageUsage, stores };
 };
