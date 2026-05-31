@@ -1,24 +1,22 @@
 import { createRoot } from "solid-js";
-import { afterEach, expect, test, vi } from "vitest";
-import { sampleMultivariateHawkesProcessEventTypes } from "../src/distributions";
+import { expect, test } from "vitest";
+import { createDistributions } from "../src/distributions";
 import { createMarketState } from "../src/market";
+import { createRng } from "../src/rng";
 import { createTradingSimulationState } from "../src/simulation";
 import { createOrchestrator } from "../src/simulation/orchestrator";
 import { createSimulationTimeState } from "../src/simulation/time";
 import { cloneMarketModelSettings, defaultMarketModelSettings, simulationEventTypes } from "../src/simulation/types";
 
-afterEach(() => {
-  vi.restoreAllMocks();
-});
-
 test("multivariate Hawkes event callback receives millisecond gaps", () => {
   const firstGapRandom = 1 - Math.exp(-0.5);
   const secondGapRandom = 1 - Math.exp(-0.6);
   const randomValues = [firstGapRandom, 0.5, 0.5, secondGapRandom];
-  vi.spyOn(Math, "random").mockImplementation(() => randomValues.shift() ?? 0.999_999);
+  const rng = (): number => randomValues.shift() ?? 0.999_999;
+  const distributions = createDistributions(rng);
   const eventGaps: number[] = [];
 
-  sampleMultivariateHawkesProcessEventTypes([1], [[0]], [0], 1_000, [0], (_eventType, dt) => {
+  distributions.sampleMultivariateHawkesProcessEventTypes([1], [[0]], [0], 1_000, [0], (_eventType, dt) => {
     eventGaps.push(dt);
   });
 
@@ -37,7 +35,7 @@ test("simulation ticks advance through quiet intervals", () => {
       orderBookFanout: () => 5,
       orderBookLevels: () => 5,
     });
-    const { controller, orchestrator } = createOrchestrator();
+    const { controller, orchestrator } = createOrchestrator({ distributions: createDistributions(createRng(0x5eed)) });
     const settings = cloneMarketModelSettings(defaultMarketModelSettings);
     for (const eventType of simulationEventTypes) settings.publicInterest[eventType] = 0;
     controller.setMarketModelSettings(settings);

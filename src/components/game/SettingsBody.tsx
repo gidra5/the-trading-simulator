@@ -140,6 +140,7 @@ export const SettingsBody: Component = () => {
   const [deltaSnapshotInput, setDeltaSnapshotInput] = createSignal(String(settings.deltaSnapshotInterval()));
   const [fanoutInput, setFanoutInput] = createSignal(String(settings.orderBookFanout()));
   const [levelsInput, setLevelsInput] = createSignal(String(settings.orderBookLevels()));
+  const [seedInput, setSeedInput] = createSignal(String(settings.seed()));
   const [settingsTransferStatus, setSettingsTransferStatus] = createSignal("");
   const languageOptions = createMemo(() => locales.map((value) => ({ value, label: t(`settings.language.${value}`) })));
   const priceScaleOptions = createMemo(() =>
@@ -222,6 +223,13 @@ export const SettingsBody: Component = () => {
 
   const updateLevelsInput = (value: string): void => {
     updatePositiveIntegerInput(value, setLevelsInput, settings.setOrderBookLevels);
+  };
+
+  const updateSeedInput = (value: string): void => {
+    setSeedInput(value);
+    const next = Number(value);
+    if (!Number.isInteger(next) || next < 0) return;
+    settings.setSeed(next);
   };
 
   const exportSettings = async (): Promise<void> => {
@@ -364,6 +372,16 @@ export const SettingsBody: Component = () => {
               </div>
             </Field>
           </div>
+        </Panel>
+
+        <Panel title={t("settings.panels.runtime")}>
+          <Field label={t("settings.runtime.seed")}>
+            <TextInput
+              inputMode="numeric"
+              value={seedInput()}
+              onInput={(event) => updateSeedInput(event.currentTarget.value)}
+            />
+          </Field>
         </Panel>
 
         <Panel title={t("settings.panels.performance")}>

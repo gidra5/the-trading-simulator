@@ -4,6 +4,7 @@ import { binarySearchIndex } from "./utils";
 type ResamplerOptions<T> = {
   candidateCount: Accessor<number>;
   proposalSample: () => { item: T; weight: number } | null;
+  rng: () => number;
   weight: (item: T) => number;
 };
 
@@ -22,7 +23,7 @@ export const createResampler = <T>(options: ResamplerOptions<T>) => {
       }
 
       if (candidates.length === 0) return null;
-      const targetWeight = Math.random() * totalWeight;
+      const targetWeight = options.rng() * totalWeight;
       const index = binarySearchIndex(candidates, (candidate) => (candidate.cumulativeWeight <= targetWeight ? -1 : 1));
       const chosen = candidates[index];
       if (!chosen) return null;

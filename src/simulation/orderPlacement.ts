@@ -1,5 +1,5 @@
 import type { Accessor } from "solid-js";
-import { sampleBernoulli, sampleTruncatedExponential } from "../distributions";
+import type { Distributions } from "../distributions";
 import { type MarketState, type OrderSide } from "../market/index";
 import { assert } from "../utils";
 import { type SimulationTimeState } from "./time";
@@ -8,7 +8,7 @@ import { type RestingOrder } from "./types";
 export type SimulationOrderPlacementOptions = {
   market: MarketState;
   time: SimulationTimeState;
-  rng: () => number;
+  distributions: Pick<Distributions, "sampleBernoulli" | "sampleTruncatedExponential">;
   sampleOrderDistance: () => number;
   sampleOrderSize: () => number;
   inSpread: {
@@ -26,9 +26,9 @@ export const createOrderPlacementState = (options: SimulationOrderPlacementOptio
     const spreadSize = spread.buy - spread.sell;
     const ramp = Math.LN2 / options.inSpread.halfRateSize();
     const max = options.inSpread.max();
-    if (sampleBernoulli(max * (1 - Math.exp(-ramp * spreadSize)), options.rng)) {
+    if (options.distributions.sampleBernoulli(max * (1 - Math.exp(-ramp * spreadSize)))) {
       const mean = options.inSpread.mean();
-      const distance = sampleTruncatedExponential(mean, spreadSize, options.rng);
+      const distance = options.distributions.sampleTruncatedExponential(mean, spreadSize);
 
       if (side === "buy") return spread.sell + distance;
       if (!Number.isFinite(spread.buy)) return spread.sell + distance;

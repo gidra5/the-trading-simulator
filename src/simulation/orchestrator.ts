@@ -12,7 +12,7 @@ import {
   type SimulationEventSettingGroup,
 } from "./types";
 import { clamp, halfLifeToDecay } from "../utils";
-import { sampleNormal, sampleUniform } from "../distributions";
+import type { Distributions } from "../distributions";
 import type { SimulationOrderPlacementOptions } from "./orderPlacement";
 
 type ScalarMarketModelSetting = Exclude<
@@ -29,6 +29,7 @@ export type SimulationOrchestrator = {
     excitementDecay: Accessor<number[]>;
     baselineActivity: Accessor<number[]>;
     excitationMatrix: Accessor<number[][]>;
+    distributions: Distributions;
   };
 };
 
@@ -53,11 +54,17 @@ export type SimulationOrchestratorController = {
 // todo: orchestrator modes/events
 // mode - baseline model parameters describing a particular crowd behavior archetype
 // events - deviations from an archetype that eventually dies, or a permanent archetype change.
-export const createOrchestrator = (): {
+type SimulationOrchestratorOptions = {
+  distributions: Distributions;
+};
+
+export const createOrchestrator = (
+  options: SimulationOrchestratorOptions,
+): {
   orchestrator: SimulationOrchestrator;
   controller: SimulationOrchestratorController;
 } => {
-  const rng = (): number => Math.random();
+  const { distributions } = options;
   const [modelSettings, setModelSettings] = createSignal(defaultMarketModelSettings);
   const [orderPriceDistribution, setOrderPriceDistribution] = createSignal<OrderPriceDistribution>("normal");
   const [orderSizeDistribution, setOrderSizeDistribution] = createSignal<OrderSizeDistribution>("normal");
@@ -115,7 +122,7 @@ export const createOrchestrator = (): {
     const low = Math.max(min, mean - halfRange);
     const high = Math.max(low, mean + halfRange);
 
-    return sampleUniform(low, high, rng);
+    return distributions.sampleUniform(low, high);
   };
 
   const sampleOrderDistance = (): number => {
@@ -128,7 +135,7 @@ export const createOrchestrator = (): {
         case "uniform":
           return sampleUniformWithStandardDeviation(mean, standardDeviation, -Infinity);
         case "normal":
-          return sampleNormal(mean, standardDeviation, rng);
+          return distributions.sampleNormal(mean, standardDeviation);
       }
     })();
     return Math.max(Number.EPSILON, Math.abs(distance));
@@ -143,7 +150,7 @@ export const createOrchestrator = (): {
       case "uniform":
         return sampleUniformWithStandardDeviation(mean, standardDeviation, Number.EPSILON);
       case "normal":
-        return Math.max(Number.EPSILON, Math.abs(sampleNormal(mean, standardDeviation, rng)));
+        return Math.max(Number.EPSILON, Math.abs(distributions.sampleNormal(mean, standardDeviation)));
     }
   };
 
@@ -159,7 +166,7 @@ export const createOrchestrator = (): {
         const sample =
           orderSelectionDistribution() === "uniform"
             ? sampleUniformWithStandardDeviation(mean, standardDeviation, 0)
-            : sampleNormal(mean, standardDeviation, rng);
+            : distributions.sampleNormal(mean, standardDeviation);
 
         return Math.round(clamp(sample, 0, orderCount - 1));
       }
@@ -179,7 +186,7 @@ export const createOrchestrator = (): {
       // todo: anchoring - round anchor,
       // todo: anchoring - liquidity anchors (place right before a wall)
       // todo: near/far distributions.
-      rng,
+      distributions,
       inSpread: {
         max: () => 1,
         halfRateSize: () => 0.01,
@@ -192,6 +199,7 @@ export const createOrchestrator = (): {
       excitementDecay,
       baselineActivity,
       excitationMatrix,
+      distributions,
     },
   };
 

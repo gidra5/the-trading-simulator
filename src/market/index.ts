@@ -198,7 +198,6 @@ export const createMarketState = (options: MarketStateOptions) => {
 
   const hasOrder = (id: number, side?: OrderSide): boolean => findOrderLocation(id, side) !== null;
 
-  // todo: seeding rng
   const makeOrder = (side: OrderSide, order: Order): MakeOrderResult => {
     const id = nextOrderId++;
     const result = takeOrder(side, order.size, order.price);

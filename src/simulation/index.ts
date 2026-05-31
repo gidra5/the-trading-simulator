@@ -1,11 +1,11 @@
 import { type Accessor } from "solid-js";
+import type { Distributions } from "../distributions";
 import { type MarketState, type OrderSide } from "../market/index";
 import { assert } from "../utils";
 import { createCancellationState } from "./cancellation";
-import { createSimulationEventStream } from "./eventStream";
 import { createOrderPlacementState, type SimulationOrderPlacementOptions } from "./orderPlacement";
 import { type SimulationTimeState } from "./time";
-import { type SimulationEventType } from "./types";
+import { eventVector, simulationEventTypes as events, type SimulationEventType } from "./types";
 
 export {
   defaultMarketModelSettings,
@@ -33,13 +33,22 @@ type TradingSimulationOptions = {
     baselineActivity: Accessor<number[]>;
     excitementDecay: Accessor<number[]>;
     excitationMatrix: Accessor<number[][]>;
+    distributions: Pick<Distributions, "sampleMultivariateHawkesProcessEventTypes">;
   };
 };
 
 // TODO: Preference to place orders in the direction of the movement
 // todo: Preference to place orders closer to spread?
 export const createTradingSimulationState = (options: TradingSimulationOptions) => {
-  const eventStream = createSimulationEventStream(options.eventStream);
+  let excitedInterest = eventVector({
+    "market-buy": 0,
+    "market-sell": 0,
+    "order-buy": 0,
+    "order-sell": 0,
+    "cancel-buy": 0,
+    "cancel-sell": 0,
+  });
+
   const cancellation = createCancellationState({
     market: options.market,
     onCancel: (order) => options.market.cancelOrder(order.id, order.side) !== null,
@@ -88,13 +97,25 @@ export const createTradingSimulationState = (options: TradingSimulationOptions) 
   // https://chatgpt.com/c/69e01063-a9c8-8390-a2db-4f314b4d59f1
   const tick = (dt: number): void => {
     let elapsed = 0;
-    eventStream.sampleEvents(dt, (eventType, eventDt) => {
-      elapsed += eventDt;
-      simulateEvent(eventType, eventDt);
-    });
+
+    // todo: return elapsed instead of tracking it manually
+    options.eventStream.distributions.sampleMultivariateHawkesProcessEventTypes(
+      options.eventStream.baselineActivity(),
+      options.eventStream.excitationMatrix(),
+      options.eventStream.excitementDecay(),
+      dt,
+      excitedInterest,
+      (index, dt) => {
+        const event = events[index];
+        assert(event !== undefined);
+
+        elapsed += dt;
+        simulateEvent(event, dt);
+      },
+    );
 
     if (elapsed < dt) options.time.advance(dt - elapsed);
-  };
+  };;
 
   return { getCancellationRestingOrders: cancellation.getRestingOrders, tick };
 };

@@ -1,5 +1,6 @@
 import { createMemo, createSignal } from "solid-js";
 import type { PriceScaleKind, QuotePriceKind } from "../market";
+import { createRngSeed } from "../rng";
 import { type StoreEncoding, type StoreKind } from "../storage/interface";
 import { createSaveFileStore } from "../storage/persistence";
 import { resolveAutosaveStatus } from "./autosaveStatus";
@@ -16,7 +17,7 @@ export const createSettings = () => {
   const [deltaSnapshotInterval, setDeltaSnapshotInterval] = createSignal(100);
   const [orderBookFanout, setOrderBookFanout] = createSignal(5);
   const [orderBookLevels, setOrderBookLevels] = createSignal(5);
-  const [seed, setSeed] = createSignal(Math.random());
+  const [seed, setSeed] = createSignal(createRngSeed());
   const [histogramPriceReference, setHistogramPriceReference] = createSignal(1);
   const [histogramFanout, setHistogramFanout] = createSignal(5);
   const [frontierPickerSize, setFrontierPickerSize] = createSignal(3);

@@ -1,5 +1,7 @@
 import { createRoot } from "solid-js";
-import { afterEach, expect, test, vi } from "vitest";
+import { expect, test } from "vitest";
+import { createDistributions, type Distributions } from "../src/distributions";
+import { createRng } from "../src/rng";
 import { createOrchestrator } from "../src/simulation/orchestrator";
 import {
   cloneMarketModelSettings,
@@ -19,15 +21,6 @@ type DistributionMeasurement = {
   standardDeviation: number;
 };
 
-const seededRandom = (seed: number): (() => number) => {
-  let state = seed >>> 0;
-
-  return () => {
-    state = (1664525 * state + 1013904223) >>> 0;
-    return state / 2 ** 32;
-  };
-};
-
 const average = (values: number[]): number =>
   values.reduce((total, value) => total + value, 0) / Math.max(1, values.length);
 
@@ -39,9 +32,12 @@ const standardDeviation = (values: number[]): number => {
   return Math.sqrt(variance);
 };
 
-const measureDistribution = (distribution: OrderSelectionDistribution): DistributionMeasurement => {
+const measureDistribution = (
+  distribution: OrderSelectionDistribution,
+  distributions: Distributions,
+): DistributionMeasurement => {
   return createRoot((dispose) => {
-    const { controller, orchestrator } = createOrchestrator();
+    const { controller, orchestrator } = createOrchestrator({ distributions });
     const settings = cloneMarketModelSettings(defaultMarketModelSettings);
     settings.cancellationSelectionCenter = 0.5;
     settings.cancellationSelectionStandardDeviation = 0.15;
@@ -64,14 +60,13 @@ const measureDistribution = (distribution: OrderSelectionDistribution): Distribu
   });
 };
 
-afterEach(() => {
-  vi.restoreAllMocks();
-});
-
 test("print cancellation order selection measurements", () => {
-  vi.spyOn(Math, "random").mockImplementation(seededRandom(0x5eed));
+  const distributions = createDistributions(createRng(0x5eed));
 
-  const measurements: DistributionMeasurement[] = [measureDistribution("uniform"), measureDistribution("normal")];
+  const measurements: DistributionMeasurement[] = [
+    measureDistribution("uniform", distributions),
+    measureDistribution("normal", distributions),
+  ];
 
   console.table(
     measurements.map((measurement) => ({

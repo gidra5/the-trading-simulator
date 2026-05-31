@@ -2,13 +2,12 @@ import { createEffect, createSignal } from "solid-js";
 import { ProgressionFrontierPicker } from "../ProgressionFrontierPicker";
 import { ProgressionScheduleQueue } from "../ProgressionScheduleQueue";
 import { ProgressionTierList } from "../ProgressionTierList";
-import { actor, settings } from "../../routes/game/state";
+import { actor, distributions, settings } from "../../routes/game/state";
 import type { ProgressionTierNodeData } from "../../progression/interface";
-import { sampleUniformInteger } from "../../distributions";
 
 export const EconomySidebar = () => {
   const samplePickerNode = (): ProgressionTierNodeData => {
-    const idx = sampleUniformInteger(0, actor.progression.frontier().length);
+    const idx = distributions.sampleUniformInteger(0, actor.progression.frontier().length);
     const node = actor.progression.frontier()[idx];
     return { node, ...actor.progression.graph[node] };
   };

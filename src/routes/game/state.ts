@@ -1,4 +1,4 @@
-import { createRoot } from "solid-js";
+import { createMemo, createRoot } from "solid-js";
 import { createMarketState } from "../../market";
 import { createTradingSimulationState } from "../../simulation";
 import { createSimulationTimeState } from "../../simulation/time";
@@ -6,12 +6,17 @@ import { createSettings } from "../../settings/settings";
 import { createActor } from "../../economy/actor";
 import { progressionGraph } from "../../progression/data";
 import { createOrchestrator } from "../../simulation/orchestrator";
+import { createRng } from "../../rng";
+import { createDistributions } from "../../distributions";
 
 // todo: economic simulation
 // TODO: an simulation orchestrator (simulate initial interest)
 // todo: snapshot/restore for all the state, including settings
-export const { time, market, simulation, actor, settings } = createRoot(() => {
+export const { time, market, simulation, actor, settings, distributions } = createRoot(() => {
   const settings = createSettings();
+  const currentRng = createMemo(() => createRng(settings.seed()));
+  const rng = (): number => currentRng()();
+  const distributions = createDistributions(rng);
   const time = createSimulationTimeState();
   const market = createMarketState({
     time: time.time,
@@ -21,7 +26,7 @@ export const { time, market, simulation, actor, settings } = createRoot(() => {
     histogramPriceReference: settings.histogramPriceReference,
     histogramFanout: settings.histogramFanout,
   });
-  const { orchestrator } = createOrchestrator();
+  const { orchestrator } = createOrchestrator({ distributions });
   const simulation = createTradingSimulationState({
     market,
     time,
@@ -42,5 +47,5 @@ export const { time, market, simulation, actor, settings } = createRoot(() => {
     needsDecayRates: () => ({ Food: 0.001, Sleep: 0.001, Health: 0.001, Stress: 0.001 }),
   });
 
-  return { time, market, simulation, actor, settings };
+  return { time, market, simulation, actor, settings, distributions };
 });

@@ -4,6 +4,8 @@ do not replace reports, but prepend to them with a date
 
 always measure the impact of optimizations
 
+we are working together, so dont revert what i changed, but fix the errors that occure due to it.
+
 keep interfaces minimal, including exports from modules. If an export is never used outside of the module, it should be private. Also keep related items close to each other (same file, same module, same object, same folder, etc.)
 
 when creating new ui components, use the ui kit

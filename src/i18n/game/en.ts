@@ -215,6 +215,7 @@ export const dict = {
   "settings.performance.deltaSnapshotLevels": "Delta snapshot levels",
   "settings.performance.fps": "FPS",
   "settings.performance.fpsCounter": "FPS counter",
+  "settings.runtime.seed": "Seed",
   "storage.serializer.base64": "Base64",
   "storage.serializer.binary": "Binary",
   "storage.serializer.json": "JSON",
