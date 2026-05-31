@@ -11,7 +11,15 @@ import {
   type Accessor,
 } from "solid-js";
 import type { MarketState, PriceCandle, QuotePriceKind } from "../market/index";
-import { actor, market, settings, simulation, snapshot as gameSnapshot, time } from "./game/state";
+import {
+  actor,
+  market,
+  restore as restoreGameSnapshot,
+  settings,
+  simulation,
+  snapshot as gameSnapshot,
+  time,
+} from "./game/state";
 import type { ChartViewport } from "../components/Chart";
 import { AccountBody } from "../components/game/AccountBody";
 import { AccountSidebar } from "../components/game/AccountSidebar";
@@ -25,6 +33,7 @@ import { SettingsBody } from "../components/game/SettingsBody";
 import { SettingsSidebar } from "../components/game/SettingsSidebar";
 import { Resource } from "../economy/inventory";
 import { ProgressionMetric, ProgressionNode } from "../progression/data";
+import type { Store } from "../storage/interface";
 import { createThrottledMemo } from "../utils";
 
 const pollingInterval = 200;
@@ -32,6 +41,13 @@ const initialClickValue = 0.05;
 const handworkClickValue = 1;
 const autoClickInterval = 1_000;
 const minuteMs = 60_000;
+
+const automaticSaveStore = (): Store<ReturnType<typeof gameSnapshot>> | null => {
+  const entry = settings.autosaveStatus().entry;
+  if (!entry?.store || entry.kind === "manual") return null;
+
+  return entry.store;
+};
 
 const createAccountGameState = () => {
   const orderHistory = createMemo(() => actor.account.orderHistory().filter((entry) => entry.kind !== "liquidation"));
@@ -232,16 +248,31 @@ export default function GamePage() {
     isActive: () => activeTab() === "economy",
   });
   const accountTelemetry = createAccountTelemetryState();
+  let autosaveRestoreStarted = false;
 
   createEffect(() => {
     if (activeTab() === "market" && !gates.market()) setActiveTab("economy");
   });
 
   createEffect(() => {
-    const entry = settings.autosaveActiveStore();
-    const store = entry?.store ?? null;
+    const store = automaticSaveStore();
+    if (!settings.autosaveEnabled() || autosaveRestoreStarted || !store) return;
+
+    autosaveRestoreStarted = true;
+    void (async () => {
+      try {
+        const snapshot = await store.load();
+        if (snapshot) restoreGameSnapshot(snapshot);
+      } catch (error) {
+        console.error("Autosave restore failed", error);
+      }
+    })();
+  });
+
+  createEffect(() => {
+    const store = automaticSaveStore();
     const interval = settings.autosaveIntervalMinutes() * minuteMs;
-    if (!settings.autosaveEnabled() || !store || entry?.kind === "manual") return;
+    if (!settings.autosaveEnabled() || !store) return;
 
     let savePending = false;
     const save = async (): Promise<void> => {
