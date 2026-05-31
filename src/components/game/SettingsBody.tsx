@@ -141,6 +141,7 @@ export const SettingsBody: Component = () => {
   const [fanoutInput, setFanoutInput] = createSignal(String(settings.orderBookFanout()));
   const [levelsInput, setLevelsInput] = createSignal(String(settings.orderBookLevels()));
   const [seedInput, setSeedInput] = createSignal(String(settings.seed()));
+  const [autosaveIntervalInput, setAutosaveIntervalInput] = createSignal(String(settings.autosaveIntervalMinutes()));
   const [saveTransferPending, setSaveTransferPending] = createSignal(false);
   const [saveTransferStatus, setSaveTransferStatus] = createSignal("");
   const languageOptions = createMemo(() => locales.map((value) => ({ value, label: t(`settings.language.${value}`) })));
@@ -185,6 +186,7 @@ export const SettingsBody: Component = () => {
     setFanoutInput(String(settings.orderBookFanout()));
     setLevelsInput(String(settings.orderBookLevels()));
     setSeedInput(String(settings.seed()));
+    setAutosaveIntervalInput(String(settings.autosaveIntervalMinutes()));
   };
 
   const updatePositiveNumberInput = (
@@ -247,6 +249,10 @@ export const SettingsBody: Component = () => {
     const next = Number(value);
     if (!Number.isInteger(next) || next < 0) return;
     settings.setSeed(next);
+  };
+
+  const updateAutosaveIntervalInput = (value: string): void => {
+    updatePositiveNumberInput(value, setAutosaveIntervalInput, settings.setAutosaveIntervalMinutes);
   };
 
   const saveGame = async (): Promise<void> => {
@@ -472,6 +478,13 @@ export const SettingsBody: Component = () => {
                 <TextInput
                   value={settings.autosaveFileName()}
                   onInput={(event) => settings.setAutosaveFileName(event.currentTarget.value)}
+                />
+              </Field>
+              <Field label={t("settings.autosave.interval")}>
+                <TextInput
+                  inputMode="decimal"
+                  value={autosaveIntervalInput()}
+                  onInput={(event) => updateAutosaveIntervalInput(event.currentTarget.value)}
                 />
               </Field>
               <Field label={t("settings.autosave.encoding")}>

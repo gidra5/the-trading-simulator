@@ -11,7 +11,7 @@ import {
   type Accessor,
 } from "solid-js";
 import type { MarketState, PriceCandle, QuotePriceKind } from "../market/index";
-import { actor, market, settings, simulation, time } from "./game/state";
+import { actor, market, settings, simulation, snapshot as gameSnapshot, time } from "./game/state";
 import type { ChartViewport } from "../components/Chart";
 import { AccountBody } from "../components/game/AccountBody";
 import { AccountSidebar } from "../components/game/AccountSidebar";
@@ -31,6 +31,7 @@ const pollingInterval = 200;
 const initialClickValue = 0.05;
 const handworkClickValue = 1;
 const autoClickInterval = 1_000;
+const minuteMs = 60_000;
 
 const createAccountGameState = () => {
   const orderHistory = createMemo(() => actor.account.orderHistory().filter((entry) => entry.kind !== "liquidation"));
@@ -220,7 +221,6 @@ const createAccountTelemetryState = () => {
 };
 
 export default function GamePage() {
-  const startTime = time.time();
   const [activeTab, setActiveTab] = createSignal<Tab>("economy");
   const gates = {
     market: () => actor.progression.isComplete(ProgressionNode.Trading),
@@ -235,6 +235,30 @@ export default function GamePage() {
 
   createEffect(() => {
     if (activeTab() === "market" && !gates.market()) setActiveTab("economy");
+  });
+
+  createEffect(() => {
+    const entry = settings.autosaveActiveStore();
+    const store = entry?.store ?? null;
+    const interval = settings.autosaveIntervalMinutes() * minuteMs;
+    if (!settings.autosaveEnabled() || !store || entry?.kind === "manual") return;
+
+    let savePending = false;
+    const save = async (): Promise<void> => {
+      if (savePending) return;
+
+      savePending = true;
+      try {
+        await store.save(gameSnapshot());
+      } catch (error) {
+        console.error("Autosave failed", error);
+      } finally {
+        savePending = false;
+      }
+    };
+    const intervalId = window.setInterval(() => void save(), interval);
+
+    onCleanup(() => clearInterval(intervalId));
   });
 
   onMount(() => {

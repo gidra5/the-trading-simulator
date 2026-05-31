@@ -15,6 +15,7 @@ export type SettingsSnapshot = {
   autosaveEncoding: StoreEncoding;
   autosaveEnabled: boolean;
   autosaveFileName: string;
+  autosaveIntervalMinutes: number;
   autosaveStorePreference: AutosaveStorePreference;
   cancellationCandidatesCount: number;
   candleInterval: number;
@@ -68,6 +69,7 @@ export const createSettings = <SaveSnapshot = unknown>() => {
   const [autosaveEnabled, setAutosaveEnabled] = createSignal(true);
   const [autosaveEncoding, setAutosaveEncoding] = createSignal<StoreEncoding>("json");
   const [autosaveFileName, setAutosaveFileName] = createSignal("trading-simulator-autosave.json");
+  const [autosaveIntervalMinutes, setAutosaveIntervalMinutes] = createSignal(5);
   const [autosaveStorePreference, setAutosaveStorePreference] = createSignal<AutosaveStorePreference>(null);
   const [simulationSpeed, setSimulationSpeed] = createSignal(1);
   const [isSimulationPaused, setIsSimulationPaused] = createSignal(false);
@@ -96,6 +98,7 @@ export const createSettings = <SaveSnapshot = unknown>() => {
     autosaveEncoding: autosaveEncoding(),
     autosaveEnabled: autosaveEnabled(),
     autosaveFileName: autosaveFileName(),
+    autosaveIntervalMinutes: autosaveIntervalMinutes(),
     autosaveStorePreference: autosaveStorePreference(),
     cancellationCandidatesCount: cancellationCandidatesCount(),
     candleInterval: candleInterval(),
@@ -129,6 +132,7 @@ export const createSettings = <SaveSnapshot = unknown>() => {
       setAutosaveEncoding(snapshot.autosaveEncoding);
       setAutosaveEnabled(snapshot.autosaveEnabled);
       setAutosaveFileName(snapshot.autosaveFileName);
+      setAutosaveIntervalMinutes(snapshot.autosaveIntervalMinutes);
       setAutosaveStorePreference(snapshot.autosaveStorePreference);
       setCancellationCandidatesCount(snapshot.cancellationCandidatesCount);
       setCandleInterval(snapshot.candleInterval);
@@ -169,6 +173,7 @@ export const createSettings = <SaveSnapshot = unknown>() => {
     autosaveEncoding,
     autosaveEnabled,
     autosaveFileName,
+    autosaveIntervalMinutes,
     autosaveStatus,
     autosaveStorePreference,
     autosaveStores: autosaveFileStore.stores,
@@ -202,6 +207,7 @@ export const createSettings = <SaveSnapshot = unknown>() => {
     setAutosaveEncoding,
     setAutosaveEnabled,
     setAutosaveFileName,
+    setAutosaveIntervalMinutes,
     setAutosaveStorePreference,
     setCandleInterval,
     setEffectsVolume,

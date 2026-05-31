@@ -180,6 +180,7 @@ export const dict = {
   "settings.importExport.imported": "Settings imported.",
   "settings.autosave.encoding": "Encoding",
   "settings.autosave.fileName": "File name",
+  "settings.autosave.interval": "Autosave interval, minutes",
   "settings.autosave.storage": "Storage",
   "settings.autosave.storage.auto": "Auto",
   "settings.features.advancedOrders": "Advanced orders",
