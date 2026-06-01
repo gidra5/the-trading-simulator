@@ -1,9 +1,15 @@
 import clsx from "clsx";
-import { FolderOpen, RotateCcw, Save } from "lucide-solid";
+import { Download, FolderOpen, RotateCcw, Save, Upload } from "lucide-solid";
 import { createMemo, createSignal, For, type Component } from "solid-js";
 import { locales, locale, setLocale, t, type Locale } from "../../i18n/game";
 import { priceScaleKinds, quotePriceKinds, type PriceScaleKind, type QuotePriceKind } from "../../market";
-import { resetProgress, restore as restoreGameSnapshot, saveSnapshot, settings } from "../../routes/game/state";
+import {
+  resetProgress,
+  restore as restoreGameSnapshot,
+  saveSnapshot,
+  settings,
+  type GameSnapshot,
+} from "../../routes/game/state";
 import { encodings, type StoreEncoding, type StoreKind } from "../../storage/interface";
 import type { SaveFileStoreEntry, SaveFileStoreStatus } from "../../storage/persistence";
 import { Button } from "../../ui-kit/Button";
@@ -133,6 +139,7 @@ const autosaveEntryStoreState = (entry: SaveFileStoreEntry<unknown>): string =>
   entry.store ? t("autosave.store.ready") : t("autosave.store.none");
 
 const errorMessage = (error: unknown): string => (error instanceof Error ? error.message : "Unknown error");
+type ManualSaveStore = NonNullable<SaveFileStoreEntry<GameSnapshot>["store"]>;
 
 export const SettingsBody: Component = () => {
   const [candleIntervalInput, setCandleIntervalInput] = createSignal(String(settings.candleInterval() / 1_000));
@@ -142,6 +149,8 @@ export const SettingsBody: Component = () => {
   const [levelsInput, setLevelsInput] = createSignal(String(settings.orderBookLevels()));
   const [seedInput, setSeedInput] = createSignal(String(settings.seed()));
   const [autosaveIntervalInput, setAutosaveIntervalInput] = createSignal(String(settings.autosaveIntervalMinutes()));
+  const [manualTransferPending, setManualTransferPending] = createSignal(false);
+  const [manualTransferStatus, setManualTransferStatus] = createSignal("");
   const [saveTransferPending, setSaveTransferPending] = createSignal(false);
   const [saveTransferStatus, setSaveTransferStatus] = createSignal("");
   const languageOptions = createMemo(() => locales.map((value) => ({ value, label: t(`settings.language.${value}`) })));
@@ -333,6 +342,37 @@ export const SettingsBody: Component = () => {
       setSaveTransferStatus(t("settings.saveLoad.resetSaveFailed", { error: errorMessage(error) }));
     } finally {
       setSaveTransferPending(false);
+    }
+  };
+
+  const exportManualSave = async (store: ManualSaveStore): Promise<void> => {
+    setManualTransferPending(true);
+    try {
+      await saveSnapshot(store);
+      setManualTransferStatus(t("settings.importExport.exported"));
+    } catch (error) {
+      setManualTransferStatus(t("settings.importExport.exportFailed", { error: errorMessage(error) }));
+    } finally {
+      setManualTransferPending(false);
+    }
+  };
+
+  const importManualSave = async (store: ManualSaveStore): Promise<void> => {
+    setManualTransferPending(true);
+    try {
+      const snapshot = await store.load();
+      if (!snapshot) {
+        setManualTransferStatus(t("settings.importExport.importCanceled"));
+        return;
+      }
+
+      restoreGameSnapshot(snapshot);
+      syncSettingsInputs();
+      setManualTransferStatus(t("settings.importExport.imported"));
+    } catch (error) {
+      setManualTransferStatus(t("settings.importExport.importFailed", { error: errorMessage(error) }));
+    } finally {
+      setManualTransferPending(false);
     }
   };
 
@@ -601,6 +641,31 @@ export const SettingsBody: Component = () => {
                           {autosaveEntryStoreState(entry)}
                         </span>
                       </div>
+                      {entry.kind === "manual" ? (
+                        <>
+                          {manualTransferStatus() ? (
+                            <p class="break-words font-body-primary-xs-rg text-text-secondary">
+                              {manualTransferStatus()}
+                            </p>
+                          ) : null}
+                          <div class="flex flex-wrap items-center justify-center gap-2">
+                            <Button
+                              onClick={() => entry.store && void exportManualSave(entry.store)}
+                              disabled={!entry.store || manualTransferPending()}
+                            >
+                              <Download aria-hidden="true" class="h-4 w-4" strokeWidth={1.8} />
+                              <span>{t("settings.importExport.export")}</span>
+                            </Button>
+                            <Button
+                              onClick={() => entry.store && void importManualSave(entry.store)}
+                              disabled={!entry.store || manualTransferPending()}
+                            >
+                              <Upload aria-hidden="true" class="h-4 w-4" strokeWidth={1.8} />
+                              <span>{t("settings.importExport.import")}</span>
+                            </Button>
+                          </div>
+                        </>
+                      ) : null}
                       {entry.kind === "opfs" ? (
                         <>
                           <div class="flex justify-between gap-3">
