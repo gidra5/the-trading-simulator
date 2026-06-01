@@ -134,6 +134,9 @@ export const halfLifeToDecay = (halfLifeSeconds: number): number => {
 export const inRangeInclusive = (x: number, min: number, max: number) => x >= min && x <= max;
 export const inRange = (x: number, min: number, max: number) => x >= min && x < max;
 
+export const interpolate = (ratio: number, lower: number, upper: number): number =>
+  clamp((ratio - lower) / (upper - lower), 0, 1);
+
 export const createThrottledMemo = <Value>(
   computation: (previous: Value | undefined) => Value,
   timeoutMs: number,

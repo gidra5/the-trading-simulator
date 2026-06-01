@@ -50,9 +50,9 @@
          11. Study points - earned through clicker as well.
          12. you can spend study points to complete new upgrades, write a book/teach your knowledge others, read a book to complete a skill study
       7. + Save system - store simulation and account state in a file/localstorage
-         1. Autosave
+         1. + Autosave
          2. + Manual load/save
-         3. Reset
+         3. + Reset
       8. Offline simulation/time skip/+ speedup
       9. Multiplayer - play in the same session as other players
          1. Centralized state and simulation on a server

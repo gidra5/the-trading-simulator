@@ -95,8 +95,16 @@ test("actor progression spends inventory money", () => {
       debtCapitalizationRate: () => 0,
       feeRate: () => 0,
       maintenanceMargin: () => 0.05,
-      needsBase: () => ({ Food: 100, Sleep: 100, Health: 100, Stress: 100 }),
-      needsDecayRates: () => ({ Food: 0, Sleep: 0, Health: 0, Stress: 0 }),
+      needs: {
+        base: () => ({ Food: 100, Sleep: 100, Health: 100, Stress: 100 }),
+        decayRates: () => ({ Food: 0, Sleep: 0, Health: 0, Stress: 0 }),
+        thresholds: () => ({
+          Food: [1, 0.95, 0.7, 0.35],
+          Sleep: [1, 0.95, 0.7, 0.35],
+          Health: [1, 0.95, 0.7, 0.35],
+          Stress: [1, 0.95, 0.7, 0.35],
+        }),
+      },
     });
   });
 

@@ -1,6 +1,10 @@
-import { ArrowLeftRight } from "lucide-solid";
-import { createMemo, createSignal, Show, type Accessor, type Component } from "solid-js";
+import clsx from "clsx";
+import { Apple, ArrowLeftRight, Brain, HeartPulse, Moon, type LucideIcon } from "lucide-solid";
+import { createMemo, createSignal, For, Show, type Accessor, type Component } from "solid-js";
+import { assets, type Asset, type AssetPair } from "../../economy/account";
+import { Need, NeedStatus } from "../../economy/needs";
 import { t } from "../../i18n/game";
+import type { OrderSide } from "../../market";
 import { ProgressionNode } from "../../progression/data";
 import { actor } from "../../routes/game/state";
 import { Button } from "../../ui-kit/Button";
@@ -10,8 +14,6 @@ import { Popover } from "../../ui-kit/Popover";
 import { Select } from "../../ui-kit/Select";
 import { formatNumber } from "../../utils";
 import { digits, formatAmount, formatMoney } from "./format";
-import { assets, type Asset, type AssetPair } from "../../economy/account";
-import type { OrderSide } from "../../market";
 import {
   autosaveIconConfig,
   autosaveStatusTitle,
@@ -24,6 +26,82 @@ type FooterProps = {
   cashPerMinute: number;
   priceSpread: Accessor<{ buy: number; sell: number }>;
 };
+
+const needIcons = {
+  [Need.Food]: Apple,
+  [Need.Health]: HeartPulse,
+  [Need.Sleep]: Moon,
+  [Need.Stress]: Brain,
+} as const satisfies Record<Need, LucideIcon>;
+
+const footerNeeds = [Need.Food, Need.Sleep, Need.Health, Need.Stress] as const;
+
+const needStatusVisuals = {
+  [NeedStatus.Critical]: { meterClass: "bg-danger", toneClass: "text-danger" },
+  [NeedStatus.Ok]: { meterClass: "bg-warning", toneClass: "text-warning" },
+  [NeedStatus.Overflow]: { meterClass: "bg-[#c084fc]", toneClass: "text-[#c084fc]" },
+  [NeedStatus.Perfect]: { meterClass: "bg-success", toneClass: "text-success" },
+  [NeedStatus.Warning]: { meterClass: "bg-[#fb923c]", toneClass: "text-[#fb923c]" },
+} as const satisfies Record<NeedStatus, { meterClass: string; toneClass: string }>;
+
+const formatNeedValue = (value: number): string => value.toFixed(0);
+const formatNeedFill = (fill: number): string => `${(fill * 100).toFixed(1)}%`;
+
+const NeedStatusIcon: Component<{ need: Need }> = (props) => {
+  const [isOpen, setIsOpen] = createSignal(false);
+  const needLabel = () => t(`needs.need.${props.need}`);
+  const progress = () => actor.needs.needProgress(props.need);
+  const statusLabel = () => t(`needs.status.${actor.needs.needStatus(props.need)}`);
+  const visual = () => needStatusVisuals[actor.needs.needStatus(props.need)];
+  const value = () => actor.needs.needs()[props.need];
+  const NeedIcon: Component = () => {
+    const Icon = needIcons[props.need];
+
+    return <Icon aria-hidden="true" class="h-4 w-4" strokeWidth={1.8} />;
+  };
+
+  return (
+    <Popover
+      align="start"
+      contentClass="w-52"
+      open={isOpen()}
+      openOnHover
+      placement="top"
+      trigger={
+        <Button
+          aria-expanded={isOpen()}
+          aria-label={t("needs.status.aria", { need: needLabel(), status: statusLabel() })}
+          class={visual().toneClass}
+          size="sm"
+          title={statusLabel()}
+          variant="icon"
+          onBlur={() => setIsOpen(false)}
+          onClick={() => setIsOpen((open) => !open)}
+          onFocus={() => setIsOpen(true)}
+        >
+          <NeedIcon />
+        </Button>
+      }
+      onOpenChange={setIsOpen}
+    >
+      <div class="grid gap-2">
+        <div class="flex items-center justify-between gap-3">
+          <span class="font-body-primary-xs-semi text-text-primary">{needLabel()}</span>
+          <span class={clsx("font-mono-primary-xs-rg uppercase", visual().toneClass)}>{statusLabel()}</span>
+        </div>
+        <div class="h-1.5 overflow-hidden rounded bg-black-high">
+          <div class={clsx("h-full rounded", visual().meterClass)} style={{ width: formatNeedFill(progress()) }} />
+        </div>
+        <span class="font-mono-primary-xs-rg text-text-secondary">
+          {t("needs.tooltip.value", {
+            value: formatNeedValue(value()),
+          })}
+        </span>
+      </div>
+    </Popover>
+  );
+};
+
 export const Footer: Component<FooterProps> = (props) => {
   const [isAutosaveOpen, setIsAutosaveOpen] = createSignal(false);
   const [isPairOpen, setIsPairOpen] = createSignal(false);
@@ -63,6 +141,10 @@ export const Footer: Component<FooterProps> = (props) => {
     <footer class="font-mono-primary-xs-rg flex h-8 shrink-0 items-center justify-between p-2 text-text-secondary">
       <div class="flex shrink-0 items-center gap-2 h-full">
         <span>{actor.meta.name()}</span>
+        <Divider />
+        <div class="flex items-center gap-0.5" aria-label={t("needs.label")}>
+          <For each={footerNeeds}>{(need) => <NeedStatusIcon need={need} />}</For>
+        </div>
         <Divider />
         <span>{t("account.footer.netWorth", { value: formatMoney(totalNetWorth()) })}</span>
         <Divider />

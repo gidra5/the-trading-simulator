@@ -4,7 +4,7 @@ import { type SimulationTimeState } from "../simulation/time";
 import { createProgression, type ProgressionSnapshot } from "../progression/interface";
 import type { ProgressionGraph } from "../progression/data";
 import { createAccount, type AccountSnapshot } from "./account";
-import { createNeeds, type Needs, type NeedsSnapshot } from "./needs";
+import { createNeeds, type Needs, type NeedsSnapshot, type NeedThresholds } from "./needs";
 import { createInventory, type InventorySnapshot } from "./inventory";
 
 let nextActorId = 0;
@@ -35,8 +35,11 @@ type ActorOptions = {
   feeRate: Accessor<number>;
   debtCapitalizationRate: Accessor<number>;
   maintenanceMargin: Accessor<number>;
-  needsDecayRates: Accessor<Needs>;
-  needsBase: Accessor<Needs>;
+  needs: {
+    decayRates: Accessor<Needs>;
+    base: Accessor<Needs>;
+    thresholds: Accessor<NeedThresholds>;
+  };
 };
 
 // TODO: depend on recent returns for buy/sell with two "populations" of trend following and contrarians
@@ -52,8 +55,7 @@ export const createActor = (options: ActorOptions) => {
   const account = createAccount({ ...options, progression });
   const needs = createNeeds({
     dt: options.time.dt,
-    decayRates: options.needsDecayRates,
-    base: options.needsBase,
+    ...options.needs,
   });
   const [name, setName] = createSignal(options.name);
   const meta: ActorMeta = { id, name, setName, birthDate: options.time.time() };
