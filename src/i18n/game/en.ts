@@ -80,6 +80,10 @@ export const dict = {
   "header.resume": "Resume",
   "header.settings": "Settings",
   "header.speed": "Simulation speed",
+  "header.timeSkip.duration": "Skip interval",
+  "header.timeSkip.invalid": "Use a value like 8h, 30m, or 1h 30m.",
+  "header.timeSkip.placeholder": "8h",
+  "header.timeSkip.submit": "Skip time",
   "market.activeOrder.amountAtPrice": "{{ amount }} @ {{ price }}",
   "market.depth.title": "Depth",
   "market.header.buy": "Buy {{ price }}",
@@ -254,4 +258,6 @@ export const dict = {
   "tabs.economy": "Economy",
   "tabs.market": "Market",
   "tabs.settings": "Settings",
+  "timeSkip.modal.description": "Advancing the simulation, please wait.",
+  "timeSkip.modal.title": "Simulation in progress",
 } as const;

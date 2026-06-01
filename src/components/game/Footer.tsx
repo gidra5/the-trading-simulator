@@ -6,7 +6,7 @@ import { Need, NeedStatus } from "../../economy/needs";
 import { t } from "../../i18n/game";
 import type { OrderSide } from "../../market";
 import { ProgressionNode } from "../../progression/data";
-import { actor } from "../../routes/game/state";
+import { actor, time } from "../../routes/game/state";
 import { Button } from "../../ui-kit/Button";
 import { Divider } from "../../ui-kit/Divider";
 import { Field } from "../../ui-kit/Field";
@@ -46,6 +46,21 @@ const needStatusVisuals = {
 
 const formatNeedValue = (value: number): string => value.toFixed(0);
 const formatNeedFill = (fill: number): string => `${(fill * 100).toFixed(1)}%`;
+const formatSimulationTime = (timeMs: number): string => {
+  const totalSeconds = Math.floor(timeMs / 1_000);
+  const seconds = totalSeconds % 60;
+  const totalMinutes = Math.floor(totalSeconds / 60);
+  const minutes = totalMinutes % 60;
+  const totalHours = Math.floor(totalMinutes / 60);
+  const hours = totalHours % 24;
+  const totalDays = Math.floor(totalHours / 24);
+  const years = Math.floor(totalDays / 360);
+  const months = Math.floor((totalDays % 360) / 30);
+  const days = totalDays % 30;
+  const clock = [hours, minutes, seconds].map((part) => part.toString().padStart(2, "0")).join(":");
+
+  return `${years}/${months}/${days} ${clock}`;
+};
 
 const NeedStatusIcon: Component<{ need: Need }> = (props) => {
   const [isOpen, setIsOpen] = createSignal(false);
@@ -141,6 +156,8 @@ export const Footer: Component<FooterProps> = (props) => {
     <footer class="font-mono-primary-xs-rg flex h-8 shrink-0 items-center justify-between p-2 text-text-secondary">
       <div class="flex shrink-0 items-center gap-2 h-full">
         <span>{actor.meta.name()}</span>
+        <Divider />
+        <span>{formatSimulationTime(time.time())}</span>
         <Divider />
         <div class="flex items-center gap-0.5" aria-label={t("needs.label")}>
           <For each={footerNeeds}>{(need) => <NeedStatusIcon need={need} />}</For>

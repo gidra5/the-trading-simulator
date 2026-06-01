@@ -1,13 +1,18 @@
-import { ChartColumn, Gauge, Pause, Play, Settings } from "lucide-solid";
+import { ChartColumn, FastForward, Gauge, Pause, Play, Settings } from "lucide-solid";
 import { createMemo, createSignal, For, Show, type Component } from "solid-js";
 import { t } from "../../i18n/game";
+import { parseSimulationDuration } from "../../simulation/time";
 import { Button } from "../../ui-kit/Button";
+import { Field } from "../../ui-kit/Field";
 import { Popover } from "../../ui-kit/Popover";
 import { Radio } from "../../ui-kit/Radio";
+import { TextInput } from "../../ui-kit/TextInput";
 import { settings } from "../../routes/game/state";
 
 type HeaderProps = {
   activeTab: Tab;
+  isTimeSkipRunning: boolean;
+  onTimeSkip: (durationMs: number) => void;
   tabs: readonly Tab[];
   onTabChange: (tab: Tab) => void;
 };
@@ -18,10 +23,19 @@ export type Tab = "market" | "account" | "economy" | "settings";
 
 export const Header: Component<HeaderProps> = (props) => {
   const [isSpeedOpen, setIsSpeedOpen] = createSignal(false);
+  const [timeSkipInput, setTimeSkipInput] = createSignal("8h");
   const tabs = createMemo(() => props.tabs.map((value) => ({ value, label: t(`tabs.${value}`) })));
+  const timeSkipDuration = createMemo(() => parseSimulationDuration(timeSkipInput()));
   const speedLabel = createMemo(() =>
     settings.isSimulationPaused() ? t("header.paused") : `${settings.simulationSpeed()}x`,
   );
+  const submitTimeSkip = (): void => {
+    const duration = timeSkipDuration();
+    if (duration === null) return;
+
+    setIsSpeedOpen(false);
+    props.onTimeSkip(duration);
+  };
 
   return (
     <header class="grid h-16 shrink-0 grid-cols-3 gap-4 px-3">
@@ -49,10 +63,11 @@ export const Header: Component<HeaderProps> = (props) => {
           }
           onOpenChange={setIsSpeedOpen}
         >
-          <div class="flex flex-col gap-2">
+          <div class="flex flex-col gap-3">
             <span class="font-body-primary-xs-semi text-text-secondary uppercase">{t("header.speed")}</span>
             <Button
               active={settings.isSimulationPaused()}
+              disabled={props.isTimeSkipRunning}
               size="sm"
               variant={settings.isSimulationPaused() ? "primary" : "secondary"}
               onClick={() => settings.setIsSimulationPaused(!settings.isSimulationPaused())}
@@ -70,6 +85,7 @@ export const Header: Component<HeaderProps> = (props) => {
                 {(speed) => (
                   <Button
                     active={settings.simulationSpeed() === speed}
+                    disabled={props.isTimeSkipRunning}
                     size="sm"
                     variant={settings.simulationSpeed() === speed ? "primary" : "ghost"}
                     onClick={() => {
@@ -82,6 +98,30 @@ export const Header: Component<HeaderProps> = (props) => {
                 )}
               </For>
             </div>
+            <form
+              class="grid gap-2 pt-3"
+              onSubmit={(event) => {
+                event.preventDefault();
+                submitTimeSkip();
+              }}
+            >
+              <Field label={t("header.timeSkip.duration")}>
+                <TextInput
+                  disabled={props.isTimeSkipRunning}
+                  inputMode="text"
+                  placeholder={t("header.timeSkip.placeholder")}
+                  value={timeSkipInput()}
+                  onInput={(event) => setTimeSkipInput(event.currentTarget.value)}
+                />
+              </Field>
+              <Show when={timeSkipInput().trim() !== "" && timeSkipDuration() === null}>
+                <span class="font-body-primary-xs-rg text-danger">{t("header.timeSkip.invalid")}</span>
+              </Show>
+              <Button disabled={props.isTimeSkipRunning || timeSkipDuration() === null} size="sm" type="submit">
+                <FastForward aria-hidden="true" class="h-4 w-4" strokeWidth={1.8} />
+                <span>{t("header.timeSkip.submit")}</span>
+              </Button>
+            </form>
           </div>
         </Popover>
         <Button

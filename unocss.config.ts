@@ -47,6 +47,16 @@ export default defineConfig({
 *::-webkit-scrollbar-corner {
   background: ${themeColors.surface.body};
 }
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-spin {
+  animation: spin 1s linear infinite;
+}
 `,
     },
   ],

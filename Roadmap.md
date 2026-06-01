@@ -53,7 +53,7 @@
          1. + Autosave
          2. + Manual load/save
          3. + Reset
-      8. Offline simulation/time skip/+ speedup
+      8. Offline simulation/+ time skip/+ speedup
       9. Multiplayer - play in the same session as other players
          1. Centralized state and simulation on a server
          2. Or P2P with discovery through centralized server 

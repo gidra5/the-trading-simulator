@@ -5,8 +5,16 @@ import { createMarketState } from "../src/market";
 import { createRng } from "../src/rng";
 import { createTradingSimulationState } from "../src/simulation";
 import { createOrchestrator } from "../src/simulation/orchestrator";
-import { createSimulationTimeState } from "../src/simulation/time";
+import { createSimulationTimeState, parseSimulationDuration } from "../src/simulation/time";
 import { cloneMarketModelSettings, defaultMarketModelSettings, simulationEventTypes } from "../src/simulation/types";
+
+test("simulation duration parser accepts compact time input", () => {
+  expect(parseSimulationDuration("8h")).toBe(8 * 60 * 60 * 1_000);
+  expect(parseSimulationDuration("1h 30m")).toBe(90 * 60 * 1_000);
+  expect(parseSimulationDuration("2.5s")).toBe(2_500);
+  expect(parseSimulationDuration("")).toBeNull();
+  expect(parseSimulationDuration("8")).toBeNull();
+});
 
 test("multivariate Hawkes event callback receives millisecond gaps", () => {
   const firstGapRandom = 1 - Math.exp(-0.5);

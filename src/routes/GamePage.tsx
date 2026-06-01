@@ -10,6 +10,7 @@ import {
   untrack,
   type Accessor,
 } from "solid-js";
+import { LoaderCircle } from "lucide-solid";
 import type { MarketState, PriceCandle, QuotePriceKind } from "../market/index";
 import {
   actor,
@@ -33,15 +34,18 @@ import { MarketSidebar } from "../components/game/MarketSidebar";
 import { SettingsBody } from "../components/game/SettingsBody";
 import { SettingsSidebar } from "../components/game/SettingsSidebar";
 import { Resource } from "../economy/inventory";
+import { t } from "../i18n/game";
 import { ProgressionMetric, ProgressionNode } from "../progression/data";
 import type { Store } from "../storage/interface";
-import { createThrottledMemo } from "../utils";
+import { Dialog } from "../ui-kit/Dialog";
+import { createThrottledMemo, promiseYield } from "../utils";
 
 const pollingInterval = 200;
 const initialClickValue = 0.05;
 const handworkClickValue = 1;
 const autoClickInterval = 1_000;
 const minuteMs = 60_000;
+const timeSkipChunkMs = 15_000;
 
 const automaticSaveStore = (): Store<ReturnType<typeof gameSnapshot>> | null => {
   const entry = settings.autosaveStatus().entry;
@@ -237,8 +241,13 @@ const createAccountTelemetryState = () => {
   return { cashPerMinute };
 };
 
+const formatPercent = (value: number): string => `${Math.floor(value * 100)}%`;
+
 export default function GamePage() {
   const [activeTab, setActiveTab] = createSignal<Tab>("economy");
+  const [isTimeSkipRunning, setIsTimeSkipRunning] = createSignal(false);
+  const [timeSkipProgress, setTimeSkipProgress] = createSignal(0);
+  let resetNextAnimationFrameElapsed = false;
   const gates = {
     market: () => actor.progression.isComplete(ProgressionNode.Trading),
   };
@@ -264,6 +273,30 @@ export default function GamePage() {
     } finally {
       autosavePending = false;
     }
+  };
+  const timeSkip = (durationMs: number): void => {
+    if (isTimeSkipRunning()) return;
+
+    void (async () => {
+      setIsTimeSkipRunning(true);
+      setTimeSkipProgress(0);
+
+      try {
+        await promiseYield();
+        let elapsed = 0;
+        while (elapsed < durationMs) {
+          const dt = Math.min(timeSkipChunkMs, durationMs - elapsed);
+          simulation.tick(dt);
+          elapsed += dt;
+          setTimeSkipProgress(elapsed / durationMs);
+          await promiseYield();
+        }
+      } finally {
+        resetNextAnimationFrameElapsed = true;
+        setIsTimeSkipRunning(false);
+        setTimeSkipProgress(0);
+      }
+    })();
   };
 
   createEffect(() => {
@@ -303,7 +336,9 @@ export default function GamePage() {
       const elapsed = timestamp - previousTimestamp;
       previousTimestamp = timestamp;
 
-      if (elapsed > 0 && !settings.isSimulationPaused()) {
+      if (resetNextAnimationFrameElapsed) {
+        resetNextAnimationFrameElapsed = false;
+      } else if (elapsed > 0 && !settings.isSimulationPaused() && !isTimeSkipRunning()) {
         simulation.tick(elapsed * settings.simulationSpeed());
       }
 
@@ -338,7 +373,13 @@ export default function GamePage() {
 
   return (
     <div class="font-body-primary-base-rg flex h-screen min-h-[680px] w-full flex-col overflow-hidden bg-surface-body text-text-primary">
-      <Header activeTab={activeTab()} tabs={mainTabs()} onTabChange={setActiveTab} />
+      <Header
+        activeTab={activeTab()}
+        isTimeSkipRunning={isTimeSkipRunning()}
+        tabs={mainTabs()}
+        onTabChange={setActiveTab}
+        onTimeSkip={timeSkip}
+      />
 
       <div class="flex min-h-0 flex-1">
         <main class="min-w-0 flex-1">
@@ -386,6 +427,19 @@ export default function GamePage() {
         cashPerMinute={accountTelemetry.cashPerMinute()}
         priceSpread={marketState.priceSpread}
       />
+      <Dialog class="w-80" open={isTimeSkipRunning()} onOpenChange={() => {}}>
+        <div class="flex items-center gap-3">
+          <LoaderCircle
+            aria-hidden="true"
+            class="h-6 w-6 shrink-0 animate-spin text-accent-primary"
+            strokeWidth={1.8}
+          />
+          <div class="flex flex-col gap-1">
+            <span class="font-body-primary-sm-semi text-text-primary">{t("timeSkip.modal.title")}</span>
+            <span class="font-body-primary-xs-rg text-text-secondary">{t("timeSkip.modal.description")}</span>
+          </div>
+        </div>
+      </Dialog>
     </div>
   );
 }
