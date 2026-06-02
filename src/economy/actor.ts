@@ -4,6 +4,7 @@ import { type SimulationTimeState } from "../simulation/time";
 import { createProgression, type ProgressionSnapshot } from "../progression/interface";
 import type { ProgressionGraph } from "../progression/data";
 import { createAccount, type AccountSnapshot } from "./account";
+import { createCrafting, type CraftingSnapshot } from "./crafting";
 import { createNeeds, type Needs, type NeedsSnapshot, type NeedThresholds } from "./needs";
 import { createInventory, type InventorySnapshot } from "./inventory";
 
@@ -18,6 +19,7 @@ type ActorMeta = {
 
 export type ActorSnapshot = {
   account: AccountSnapshot;
+  crafting: CraftingSnapshot;
   inventory: InventorySnapshot;
   meta: {
     birthDate: number;
@@ -32,6 +34,7 @@ type ActorOptions = {
   market: MarketState;
   time: SimulationTimeState;
   progressionGraph: ProgressionGraph;
+  sampleCraftingQuality: (mean: number, standardDeviation: number) => number;
   feeRate: Accessor<number>;
   debtCapitalizationRate: Accessor<number>;
   maintenanceMargin: Accessor<number>;
@@ -51,6 +54,7 @@ type ActorOptions = {
 export const createActor = (options: ActorOptions) => {
   const id = nextActorId++;
   const inventory = createInventory();
+  const crafting = createCrafting({ sampleQuality: options.sampleCraftingQuality });
   const progression = createProgression(options.progressionGraph, inventory);
   const account = createAccount({ ...options, progression });
   const needs = createNeeds({
@@ -62,6 +66,7 @@ export const createActor = (options: ActorOptions) => {
 
   const snapshot = (): ActorSnapshot => ({
     account: account.snapshot(),
+    crafting: crafting.snapshot(),
     inventory: inventory.snapshot(),
     meta: {
       birthDate: meta.birthDate,
@@ -74,6 +79,7 @@ export const createActor = (options: ActorOptions) => {
   const restore = (snapshot: ActorSnapshot): void => {
     batch(() => {
       inventory.restore(snapshot.inventory);
+      crafting.restore(snapshot.crafting);
       progression.restore(snapshot.progression);
       account.restore(snapshot.account);
       meta.birthDate = snapshot.meta.birthDate;
@@ -82,5 +88,5 @@ export const createActor = (options: ActorOptions) => {
     });
   };
 
-  return { progression, inventory, account, needs, meta, restore, snapshot };
+  return { progression, inventory, account, crafting, needs, meta, restore, snapshot };
 };

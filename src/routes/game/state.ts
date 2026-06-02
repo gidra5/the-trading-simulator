@@ -61,6 +61,7 @@ export const {
     market,
     time,
     progressionGraph,
+    sampleCraftingQuality: distributions.sampleLogNormal,
     feeRate: () => 0.0001,
     debtCapitalizationRate: () => 0.00001,
     maintenanceMargin: () => 0.05,

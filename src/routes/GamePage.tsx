@@ -34,11 +34,12 @@ import { MarketSidebar } from "../components/game/MarketSidebar";
 import { SettingsBody } from "../components/game/SettingsBody";
 import { SettingsSidebar } from "../components/game/SettingsSidebar";
 import { Resource } from "../economy/inventory";
+import { Need } from "../economy/needs";
 import { t } from "../i18n/game";
 import { ProgressionMetric, ProgressionNode } from "../progression/data";
 import type { Store } from "../storage/interface";
 import { Dialog } from "../ui-kit/Dialog";
-import { createThrottledMemo, promiseYield } from "../utils";
+import { assert, createThrottledMemo, promiseYield } from "../utils";
 
 const pollingInterval = 200;
 const initialClickValue = 0.05;
@@ -189,6 +190,31 @@ const createEconomyGameState = (options: { isActive: Accessor<boolean> }) => {
       tracking.work(clicks);
     });
   };
+  const makeResource = (resource: Resource): void => {
+    const quality = actor.crafting.craftResource(resource);
+    actor.inventory.addResource(resource, 1, quality);
+  };
+  const eatFood = (): void => {
+    const amount = 1;
+    assert(actor.inventory.resources().Food >= amount);
+
+    batch(() => {
+      actor.inventory.removeResource(Resource.Food, 1);
+      actor.needs.fulfillNeed(Need.Food, 8);
+      actor.needs.fulfillNeed(Need.Health, 1);
+      actor.needs.fulfillNeed(Need.Stress, 2);
+    });
+  };
+  const useMedicine = (): void => {
+    const amount = 1;
+    assert(actor.inventory.resources().Medicine >= amount);
+
+    batch(() => {
+      actor.inventory.removeResource(Resource.Medicine, amount);
+      actor.needs.fulfillNeed(Need.Health, 8);
+      actor.needs.fulfillNeed(Need.Stress, 4);
+    });
+  };
 
   createEffect(() => {
     const now = time.time();
@@ -210,7 +236,10 @@ const createEconomyGameState = (options: { isActive: Accessor<boolean> }) => {
 
   return {
     clickValue,
+    eatFood,
     earnMoney: () => earnMoney(1),
+    makeResource,
+    useMedicine,
   };
 };
 
@@ -397,7 +426,14 @@ export default function GamePage() {
               <AccountBody />
             </Match>
             <Match when={activeTab() === "economy"}>
-              <EconomyBody clickValue={economy.clickValue()} onEarnMoney={economy.earnMoney} />
+              <EconomyBody
+                clickValue={economy.clickValue()}
+                resources={actor.inventory.resources()}
+                onEatFood={economy.eatFood}
+                onEarnMoney={economy.earnMoney}
+                onMakeResource={economy.makeResource}
+                onUseMedicine={economy.useMedicine}
+              />
             </Match>
             <Match when={activeTab() === "settings"}>
               <SettingsBody />

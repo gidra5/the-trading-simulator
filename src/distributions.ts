@@ -55,10 +55,6 @@ export const createDistributions = (rng: () => number) => {
   };
 
   const sampleLogNormal = (median: number, volatility: number): number => {
-    if (!Number.isFinite(median) || !Number.isFinite(volatility) || median <= 0 || volatility < 0) {
-      return 0;
-    }
-
     const radius = Math.sqrt(-2 * Math.log(1 - rng()));
     const angle = 2 * Math.PI * rng();
     const normal = radius * Math.cos(angle);
