@@ -35,6 +35,7 @@ const createTestSimulation = (eventType: SimulationEventType, sampleOrderSize = 
         sampleOrderIndex: () => 0,
       },
       eventStream: {
+        applyMarketParameterEvents: () => undefined,
         baselineActivity: () => [],
         excitationMatrix: () => [],
         excitementDecay: () => [],

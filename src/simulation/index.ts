@@ -2,7 +2,12 @@ import { type Accessor } from "solid-js";
 import type { Distributions } from "../distributions";
 import { type MarketState, type OrderSide } from "../market/index";
 import { assert, binarySearchIndex, createCleanupScope } from "../utils";
-import { createSimulationCapitalState, type SimulationCapitalPair, type SimulationCapitalSnapshot } from "./capital";
+import {
+  createSimulationCapitalState,
+  type SimulationCapitalPair,
+  type SimulationCapitalSnapshot,
+  type SimulationCapitalState,
+} from "./capital";
 import { createCancellationState } from "./cancellation";
 import { createOrderPlacementState, type SimulationOrderPlacementOptions } from "./orderPlacement";
 import { type SimulationTimeState } from "./time";
@@ -33,6 +38,7 @@ type TradingSimulationOptions = {
   };
   orderPlacement: Omit<SimulationOrderPlacementOptions, "capital" | "market" | "time">;
   eventStream: {
+    applyMarketParameterEvents: (dt: number, capital: SimulationCapitalState) => void;
     baselineActivity: Accessor<number[]>;
     excitementDecay: Accessor<number[]>;
     excitationMatrix: Accessor<number[][]>;
@@ -235,6 +241,8 @@ export const createTradingSimulationState = (options: TradingSimulationOptions) 
   // TODO: macro laws?
   // https://chatgpt.com/c/69e01063-a9c8-8390-a2db-4f314b4d59f1
   const tick = (dt: number): void => {
+    options.eventStream.applyMarketParameterEvents(dt, capital);
+
     let elapsed = 0;
 
     // todo: return elapsed instead of tracking it manually

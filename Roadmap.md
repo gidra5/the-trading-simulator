@@ -59,7 +59,7 @@
          2. Or P2P with discovery through centralized server 
          3. Local network discovery
       10. Challenges/tasks to direct players?
-      11. Market narrator - a system that would direct and adjust parameters of the market simulation and simulate market events like dump/pump
+      11. + Market narrator - a system that would direct and adjust parameters of the market simulation and simulate market events like dump/pump
       12. Native build?
       13. Funding, marketing, discoverability, analytics https://chatgpt.com/c/6a01d729-4d34-8393-aea3-337e52f37b34
          1. Shareable artifacts, like game session stats and results, leaderboards, etc

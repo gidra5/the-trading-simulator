@@ -13,8 +13,6 @@ export type SimulationCapitalSnapshot = {
   reserved: SimulationCapitalPair;
 };
 
-const cloneCapital = (capital: SimulationCapitalPair): SimulationCapitalPair => ({ ...capital });
-
 const createCapitalSignals = (initial: SimulationCapitalPair) => {
   const [money, setMoney] = createSignal(initial.Money);
   const [stock, setStock] = createSignal(initial.Stock);
@@ -62,6 +60,10 @@ export const createSimulationCapitalState = (initial: SimulationCapitalPair) => 
   const addCapital = (signals: CapitalSignals, amount: SimulationCapitalPair): void => {
     signals.addMoney(amount.Money);
     signals.addStock(amount.Stock);
+  };
+
+  const addTotalCapital = (amount: SimulationCapitalPair): void => {
+    addCapital(total, amount);
   };
 
   const reserveLimitOrder = (order: RestingOrder): void => {
@@ -130,6 +132,7 @@ export const createSimulationCapitalState = (initial: SimulationCapitalPair) => 
   return {
     total: total.value,
     reserved: reserved.value,
+    addTotalCapital,
     free,
     applyOwnedOrderChange,
     applySimulatedMarketFill,

@@ -43,7 +43,9 @@ test("simulation ticks advance through quiet intervals", () => {
       orderBookFanout: () => 5,
       orderBookLevels: () => 5,
     });
-    const { controller, orchestrator } = createOrchestrator({ distributions: createDistributions(createRng(0x5eed)) });
+    const { controller, orchestrator } = createOrchestrator({
+      distributions: createDistributions(createRng(0x5eed).sample),
+    });
     const settings = cloneMarketModelSettings(defaultMarketModelSettings);
     for (const eventType of simulationEventTypes) settings.publicInterest[eventType] = 0;
     controller.setMarketModelSettings(settings);

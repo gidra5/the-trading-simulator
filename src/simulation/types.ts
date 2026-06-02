@@ -31,6 +31,10 @@ export type MarketModelSettings = {
   sizeVariance: number;
   cancellationCenter: number;
   cancellationVariance: number;
+  capitalFlow: number;
+  spreadHalfRateSize: number;
+  spreadMaxFraction: number;
+  spreadMeanDistance: number;
 };
 
 export type RestingOrder = {
@@ -49,12 +53,12 @@ export const eventExcitationMatrix = (matrix: SimulationExcitationMatrix): numbe
 
 export const defaultMarketModelSettings: MarketModelSettings = {
   publicInterest: {
-    "market-buy": 25,
-    "market-sell": 25,
-    "order-buy": 30,
-    "order-sell": 30,
-    "cancel-buy": 0,
-    "cancel-sell": 0,
+    "market-buy": 5,
+    "market-sell": 5,
+    "order-buy": 50,
+    "order-sell": 50,
+    "cancel-buy": 2,
+    "cancel-sell": 2,
   }, // event rates per second before self-excitation
   excitementHalfLife: {
     "market-buy": 0,
@@ -120,6 +124,10 @@ export const defaultMarketModelSettings: MarketModelSettings = {
   sizeVariance: 40, // order size standard deviation
   cancellationCenter: 0.5, // normalized sorted-order index
   cancellationVariance: 0.25,
+  capitalFlow: 0,
+  spreadHalfRateSize: 0.01,
+  spreadMaxFraction: 1,
+  spreadMeanDistance: 1,
 };
 
 const cloneExcitationMatrix = (matrix: SimulationExcitationMatrix): SimulationExcitationMatrix => ({
@@ -133,7 +141,11 @@ const cloneExcitationMatrix = (matrix: SimulationExcitationMatrix): SimulationEx
 
 export const cloneMarketModelSettings = (settings: MarketModelSettings): MarketModelSettings => ({
   ...settings,
-  publicInterest: { ...settings.publicInterest },
-  excitementHalfLife: { ...settings.excitementHalfLife },
-  excitationMatrix: cloneExcitationMatrix(settings.excitationMatrix),
+  publicInterest: { ...defaultMarketModelSettings.publicInterest, ...settings.publicInterest },
+  excitementHalfLife: { ...defaultMarketModelSettings.excitementHalfLife, ...settings.excitementHalfLife },
+  excitationMatrix: cloneExcitationMatrix(settings.excitationMatrix ?? defaultMarketModelSettings.excitationMatrix),
+  capitalFlow: settings.capitalFlow ?? defaultMarketModelSettings.capitalFlow,
+  spreadHalfRateSize: settings.spreadHalfRateSize ?? defaultMarketModelSettings.spreadHalfRateSize,
+  spreadMaxFraction: settings.spreadMaxFraction ?? defaultMarketModelSettings.spreadMaxFraction,
+  spreadMeanDistance: settings.spreadMeanDistance ?? defaultMarketModelSettings.spreadMeanDistance,
 });
