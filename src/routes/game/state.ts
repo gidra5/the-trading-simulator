@@ -62,13 +62,14 @@ export const {
     time,
     progressionGraph,
     sampleCraftingQuality: distributions.sampleLogNormal,
+    sampleSleepDuration: (durationMs) => Math.max(1, distributions.sampleNormal(durationMs, durationMs / 12)),
     feeRate: () => 0.0001,
     debtCapitalizationRate: () => 0.00001,
     maintenanceMargin: () => 0.05,
 
     needs: {
       base: () => ({ Food: 100, Sleep: 100, Health: 100, Stress: 100 }),
-      decayRates: () => ({ Food: 0.001, Sleep: 0.001, Health: 0.001, Stress: 0.001 }),
+      decayRates: () => ({ Food: 1e-4, Sleep: 1e-4, Health: 1e-4, Stress: 1e-4 }),
       thresholds: () => ({
         Food: [0.35, 0.7, 0.9, 1.5],
         Sleep: [0.35, 0.7, 0.9, 1.5],

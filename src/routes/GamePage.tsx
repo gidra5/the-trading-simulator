@@ -38,6 +38,7 @@ import { Need } from "../economy/needs";
 import { t } from "../i18n/game";
 import { ProgressionMetric, ProgressionNode } from "../progression/data";
 import type { Store } from "../storage/interface";
+import { Button } from "../ui-kit/Button";
 import { Dialog } from "../ui-kit/Dialog";
 import { assert, createThrottledMemo, promiseYield } from "../utils";
 
@@ -174,7 +175,7 @@ const createEconomyGameState = (options: { isActive: Accessor<boolean> }) => {
   let autoClickElapsed = 0;
   let previousAutoClickSample = time.time();
   const gates = {
-    active: options.isActive,
+    active: () => options.isActive() && !actor.sleep.sleeping(),
     automatedWork: () => actor.progression.isComplete(ProgressionNode.Habits),
     handwork: () => actor.progression.isComplete(ProgressionNode.Handwork),
   };
@@ -239,6 +240,7 @@ const createEconomyGameState = (options: { isActive: Accessor<boolean> }) => {
     eatFood,
     earnMoney: () => earnMoney(1),
     makeResource,
+    sleep: actor.sleep.start,
     useMedicine,
   };
 };
@@ -270,13 +272,11 @@ const createAccountTelemetryState = () => {
   return { cashPerMinute };
 };
 
-const formatPercent = (value: number): string => `${Math.floor(value * 100)}%`;
-
 export default function GamePage() {
   const [activeTab, setActiveTab] = createSignal<Tab>("economy");
   const [isTimeSkipRunning, setIsTimeSkipRunning] = createSignal(false);
-  const [timeSkipProgress, setTimeSkipProgress] = createSignal(0);
   let resetNextAnimationFrameElapsed = false;
+  let timeSkipRunId = 0;
   const gates = {
     market: () => actor.progression.isComplete(ProgressionNode.Trading),
   };
@@ -305,27 +305,41 @@ export default function GamePage() {
   };
   const timeSkip = (durationMs: number): void => {
     if (isTimeSkipRunning()) return;
+    const runId = timeSkipRunId + 1;
+    timeSkipRunId = runId;
 
     void (async () => {
       setIsTimeSkipRunning(true);
-      setTimeSkipProgress(0);
 
       try {
         await promiseYield();
         let elapsed = 0;
-        while (elapsed < durationMs) {
+        while (elapsed < durationMs && runId === timeSkipRunId) {
           const dt = Math.min(timeSkipChunkMs, durationMs - elapsed);
           simulation.tick(dt);
           elapsed += dt;
-          setTimeSkipProgress(elapsed / durationMs);
           await promiseYield();
         }
       } finally {
-        resetNextAnimationFrameElapsed = true;
-        setIsTimeSkipRunning(false);
-        setTimeSkipProgress(0);
+        if (runId === timeSkipRunId) {
+          resetNextAnimationFrameElapsed = true;
+          setIsTimeSkipRunning(false);
+        }
       }
     })();
+  };
+  const cancelTimeSkip = (): void => {
+    timeSkipRunId += 1;
+    resetNextAnimationFrameElapsed = true;
+    setIsTimeSkipRunning(false);
+  };
+  const sleep = (durationMs: number): void => {
+    const wakeAt = economy.sleep(durationMs);
+    timeSkip(wakeAt - time.time());
+  };
+  const interruptSleep = (): void => {
+    actor.sleep.interrupt();
+    cancelTimeSkip();
   };
 
   createEffect(() => {
@@ -432,6 +446,7 @@ export default function GamePage() {
                 onEatFood={economy.eatFood}
                 onEarnMoney={economy.earnMoney}
                 onMakeResource={economy.makeResource}
+                onSleep={sleep}
                 onUseMedicine={economy.useMedicine}
               />
             </Match>
@@ -463,7 +478,7 @@ export default function GamePage() {
         cashPerMinute={accountTelemetry.cashPerMinute()}
         priceSpread={marketState.priceSpread}
       />
-      <Dialog class="w-80" open={isTimeSkipRunning()} onOpenChange={() => {}}>
+      <Dialog class="w-80" open={isTimeSkipRunning() && !actor.sleep.sleeping()} onOpenChange={() => {}}>
         <div class="flex items-center gap-3">
           <LoaderCircle
             aria-hidden="true"
@@ -474,6 +489,24 @@ export default function GamePage() {
             <span class="font-body-primary-sm-semi text-text-primary">{t("timeSkip.modal.title")}</span>
             <span class="font-body-primary-xs-rg text-text-secondary">{t("timeSkip.modal.description")}</span>
           </div>
+        </div>
+      </Dialog>
+      <Dialog class="w-80" open={actor.sleep.sleeping()} onOpenChange={() => {}}>
+        <div class="grid gap-4">
+          <div class="flex items-center gap-3">
+            <LoaderCircle
+              aria-hidden="true"
+              class="h-6 w-6 shrink-0 animate-spin text-accent-primary"
+              strokeWidth={1.8}
+            />
+            <div class="flex flex-col gap-1">
+              <span class="font-body-primary-sm-semi text-text-primary">{t("economy.sleep.modal.title")}</span>
+              <span class="font-body-primary-xs-rg text-text-secondary">{t("economy.sleep.modal.description")}</span>
+            </div>
+          </div>
+          <Button type="button" onClick={interruptSleep}>
+            {t("economy.sleep.interrupt")}
+          </Button>
         </div>
       </Dialog>
     </div>

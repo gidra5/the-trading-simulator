@@ -7,8 +7,11 @@ import { createAccount, type AccountSnapshot } from "./account";
 import { createCrafting, type CraftingSnapshot } from "./crafting";
 import { createNeeds, type Needs, type NeedsSnapshot, type NeedThresholds } from "./needs";
 import { createInventory, type InventorySnapshot } from "./inventory";
+import { createSleep, type SleepSnapshot } from "./sleep";
+import { assert } from "../utils";
 
 let nextActorId = 0;
+const sleepingFoodDecayRateMultiplier = 0.25;
 
 type ActorMeta = {
   id: number;
@@ -27,6 +30,7 @@ export type ActorSnapshot = {
   };
   needs: NeedsSnapshot;
   progression: ProgressionSnapshot;
+  sleep: SleepSnapshot;
 };
 
 type ActorOptions = {
@@ -35,6 +39,7 @@ type ActorOptions = {
   time: SimulationTimeState;
   progressionGraph: ProgressionGraph;
   sampleCraftingQuality: (mean: number, standardDeviation: number) => number;
+  sampleSleepDuration: (durationMs: number) => number;
   feeRate: Accessor<number>;
   debtCapitalizationRate: Accessor<number>;
   maintenanceMargin: Accessor<number>;
@@ -57,10 +62,31 @@ export const createActor = (options: ActorOptions) => {
   const crafting = createCrafting({ sampleQuality: options.sampleCraftingQuality });
   const progression = createProgression(options.progressionGraph, inventory);
   const account = createAccount({ ...options, progression });
+  let sleep: ReturnType<typeof createSleep> | undefined;
+  const decayRates = (): Needs => {
+    const decayRates = options.needs.decayRates();
+    if (!sleep?.sleeping()) return decayRates;
+
+    return {
+      ...decayRates,
+      Food: decayRates.Food * sleepingFoodDecayRateMultiplier,
+      Sleep: 0,
+      Stress: 0,
+    };
+  };
   const needs = createNeeds({
-    dt: options.time.dt,
     ...options.needs,
+    decayRates,
+    dt: options.time.dt,
   });
+  sleep = createSleep({
+    base: options.needs.base,
+    dt: options.time.dt,
+    needs,
+    sampleDuration: options.sampleSleepDuration,
+    time: options.time.time,
+  });
+  assert(sleep);
   const [name, setName] = createSignal(options.name);
   const meta: ActorMeta = { id, name, setName, birthDate: options.time.time() };
 
@@ -74,6 +100,7 @@ export const createActor = (options: ActorOptions) => {
     },
     needs: needs.snapshot(),
     progression: progression.snapshot(),
+    sleep: sleep.snapshot(),
   });
 
   const restore = (snapshot: ActorSnapshot): void => {
@@ -84,9 +111,10 @@ export const createActor = (options: ActorOptions) => {
       account.restore(snapshot.account);
       meta.birthDate = snapshot.meta.birthDate;
       needs.restore(snapshot.needs);
+      sleep.restore(snapshot.sleep);
       setName(snapshot.meta.name);
     });
   };
 
-  return { progression, inventory, account, crafting, needs, meta, restore, snapshot };
+  return { progression, inventory, account, crafting, needs, meta, restore, sleep, snapshot };
 };

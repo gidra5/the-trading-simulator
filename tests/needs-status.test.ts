@@ -1,4 +1,4 @@
-import { createRoot } from "solid-js";
+import { createRoot, createSignal } from "solid-js";
 import { expect, test } from "vitest";
 import { createNeeds, Need, NeedStatus, type Needs, type NeedThresholds } from "../src/economy/needs";
 
@@ -19,6 +19,19 @@ const createTestNeeds = () =>
       thresholds: () => thresholds,
     }),
   );
+
+const createDecayingTestNeeds = () =>
+  createRoot(() => {
+    const [dt, setDt] = createSignal(0, { equals: false });
+    const needs = createNeeds({
+      base: () => baseNeeds,
+      decayRates: () => ({ Food: 0, Health: 1, Sleep: 0, Stress: 0 }),
+      dt,
+      thresholds: () => thresholds,
+    });
+
+    return { needs, tick: setDt };
+  });
 
 test("need status classifies ratios with configured thresholds", () => {
   const needs = createTestNeeds();
@@ -56,4 +69,36 @@ test("need progress maps ratios into status bands", () => {
   expect(needs.needProgress(Need.Health)).toBeCloseTo((0.96 - 0.9) / (1.5 - 0.9));
   expect(needs.needProgress(Need.Sleep)).toBeCloseTo((0.8 - 0.7) / (0.9 - 0.7));
   expect(needs.needProgress(Need.Stress)).toBeCloseTo(0.2 / 0.35);
+});
+
+test("health does not decay when support needs are ok", () => {
+  const { needs, tick } = createDecayingTestNeeds();
+
+  needs.restore({
+    needs: {
+      Food: 70,
+      Health: 80,
+      Sleep: 70,
+      Stress: 70,
+    },
+  });
+  tick(1);
+
+  expect(needs.needs()[Need.Health]).toBe(80);
+});
+
+test("health slowly recovers when support needs are perfect", () => {
+  const { needs, tick } = createDecayingTestNeeds();
+
+  needs.restore({
+    needs: {
+      Food: 90,
+      Health: 80,
+      Sleep: 90,
+      Stress: 90,
+    },
+  });
+  tick(1);
+
+  expect(needs.needs()[Need.Health]).toBeGreaterThan(80);
 });

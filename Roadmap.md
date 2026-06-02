@@ -115,6 +115,31 @@
    9. infrastructure - automation, storage, logistics
 6. Implement trading platform functions like trading automation, scripts, auctions, arbitrary pairs.
 7. Implement an orchestrator/narrator - a system that create a world narrative, economic events, bot behavior, tracks player performance and adjusts game flow/simulations accordingly
-8. Endgame
+8. Full survival mechanics
+   1. make food/medicine/commodities with some quality
+   2. eat x amount of food, decrease stress a bit, decrease hunger, improve health.
+   3. use x amount of medicine to improve health, moderately improve stress.
+   4. sleep. 
+      1. decrease stress, improves sleep. 
+      2. You can interrupt sleep. 
+      3. The improvement is initially slow, then get up to speed, on interrupt resets.
+      4. during sleep everything is blocked. 
+      5. You can time skip to the wake up time. 
+      6. Wake up time is randomized with normal distribution around 8 simulated hours of total sleep time in that case. 
+      7. if 8 hrs of sleep are met, you restore full sleep.
+      8. health very slowly restores, if enough food.
+      9. food decreases slower
+   5. relaxing
+      1. improve stress. 
+      2. Commodities improve efficiency of relaxing. 
+      3. During relaxing everything is blocked similarly to sleep. 
+      4. You can time skip some selected amount of time in this state or interrupt it without much penalty. 
+      5. Initially the relaxation slowly reduces stress, then gets to a faster speed proportional to amount of stress. 
+      6. stopping relaxing simply resets this process. 
+   6. bad states (warning, critical, overflow) should add debuffs, like faster stress gain, slower sleep gain, worse quality of items made, less money earned, decrease in health. The healthier the player, the smaller debuffs are.
+   7. perfect state should add buffs, like slower stress gain, faster sleep gain, better quality of items made, more money earned, recover health, etc.
+   8. if player is dead, tha game stops and shows a modal with a message and a button to reset the game.
+   9.  health should decrease only once food/stress/sleep are critical.
+9. Endgame
    1. base - you gain enough to manipulate the market and trivially multiply your wealth
-9. Story mode?
+10. Story mode?

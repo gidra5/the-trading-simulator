@@ -9,6 +9,7 @@ export enum Need {
 }
 const needValues = Object.values(Need) as Need[];
 const criticalNeeds = [Need.Food, Need.Health];
+const healthSupportNeeds = [Need.Food, Need.Sleep, Need.Stress] as const;
 export enum NeedStatus {
   Overflow = "overflow",
   Perfect = "perfect",
@@ -28,6 +29,10 @@ export type NeedThresholds = Record<Need, number[]>;
 export type NeedsSnapshot = {
   needs: Needs;
 };
+
+const okRatio = 0.7;
+const perfectRatio = 0.9;
+const healthRecoveryRate = 0.00005;
 
 type NeedsOptions = {
   dt: Accessor<number>;
@@ -69,12 +74,20 @@ export const createNeeds = (options: NeedsOptions) => {
   createEffect(() => {
     if (untrack(dead)) return;
     const elapsed = options.dt();
+    const base = untrack(options.base);
     const decayRates = untrack(options.decayRates);
 
     setNeeds((current) => {
       const next = { ...current };
       for (const need of needValues) {
         next[need] = current[need] - decayRates[need] * elapsed;
+      }
+      const healthSupportRatios = healthSupportNeeds.map((need) => current[need] / base[need]);
+      if (healthSupportRatios.every((ratio) => ratio >= okRatio)) {
+        next[Need.Health] += decayRates[Need.Health] * elapsed;
+      }
+      if (healthSupportRatios.every((ratio) => ratio >= perfectRatio)) {
+        next[Need.Health] += healthRecoveryRate * elapsed;
       }
 
       return next;
