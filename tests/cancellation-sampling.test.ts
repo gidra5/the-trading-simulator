@@ -20,6 +20,7 @@ test("cancellation returns false when there are no resting orders for the side",
     removeOrder: () => {},
     candidatesCount: () => 0,
     sampleOrderIndex: () => 0,
+    shouldCancel: () => true,
     onCancel: (canceledOrder) => {
       canceledOrders.push(canceledOrder);
       return true;
@@ -45,6 +46,7 @@ test("cancellation samples a simple order index from price-sorted resting orders
       );
     },
     sampleOrderIndex: () => 1,
+    shouldCancel: () => true,
     onCancel: (canceledOrder) => {
       canceledOrders.push(canceledOrder);
       return true;
@@ -70,6 +72,7 @@ test("cancellation clamps sampled order indexes to the available orders", () => 
     ownedOrders: () => ownedOrders,
     removeOrder,
     sampleOrderIndex: () => 99,
+    shouldCancel: () => true,
     onCancel: (canceledOrder) => {
       canceledOrders.push(canceledOrder);
       return true;
@@ -85,6 +88,7 @@ test("cancellation clamps sampled order indexes to the available orders", () => 
     ownedOrders: () => ownedOrders,
     removeOrder,
     sampleOrderIndex: () => -10,
+    shouldCancel: () => true,
     onCancel: (canceledOrder) => {
       canceledOrders.push(canceledOrder);
       return true;
@@ -93,4 +97,27 @@ test("cancellation clamps sampled order indexes to the available orders", () => 
 
   expect(lowIndexState.simulate("sell")).toBe(true);
   expect(canceledOrders.map((canceledOrder) => canceledOrder.id)).toEqual([2, 3]);
+});
+
+test("cancellation returns false before sampling when probability gate rejects", () => {
+  const ownedOrders: OwnedOrders = {
+    buy: [order(1, "buy", 0.99)],
+    sell: [],
+  };
+  let sampled = false;
+  const state = createCancellationState({
+    candidatesCount: () => 0,
+    ownedOrders: () => ownedOrders,
+    removeOrder: () => {},
+    sampleOrderIndex: () => {
+      sampled = true;
+      return 0;
+    },
+    shouldCancel: () => false,
+    onCancel: () => true,
+  });
+
+  expect(state.simulate("buy")).toBe(false);
+  expect(sampled).toBe(false);
+  expect(ownedOrders.buy).toHaveLength(1);
 });

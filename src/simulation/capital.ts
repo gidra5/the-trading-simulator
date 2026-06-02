@@ -114,6 +114,11 @@ export const createSimulationCapitalState = (initial: SimulationCapitalPair) => 
     return total.value.Stock() <= 0 ? 0 : free.Stock() / total.value.Stock();
   };
 
+  const reservedFraction = (side: OrderSide): number => {
+    if (side === "buy") return total.value.Money() <= 0 ? 0 : reserved.value.Money() / total.value.Money();
+    return total.value.Stock() <= 0 ? 0 : reserved.value.Stock() / total.value.Stock();
+  };
+
   const limitOrderSize = (side: OrderSide, price: number, size: number): number => {
     if (side === "buy") return Math.min(size, free.Money() / price);
     return Math.min(size, free.Stock());
@@ -140,6 +145,7 @@ export const createSimulationCapitalState = (initial: SimulationCapitalPair) => 
     limitOrderSize,
     recoverLimitOrder,
     reserveLimitOrder,
+    reservedFraction,
     restore,
     snapshot,
   };

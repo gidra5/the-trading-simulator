@@ -9,6 +9,7 @@ export type CancellationOptions = {
   ownedOrders: Accessor<OwnedOrders>;
   removeOrder: (order: RestingOrder) => void;
   onCancel: (order: RestingOrder) => boolean;
+  shouldCancel: (side: OrderSide) => boolean;
 
   candidatesCount: Accessor<number>;
   sampleOrderIndex: (orderCount: number) => number;
@@ -24,6 +25,8 @@ export const createCancellationState = (options: CancellationOptions) => {
   };
 
   const simulate = (side: OrderSide) => {
+    if (!options.shouldCancel(side)) return false;
+
     const order = randomRestingOrder(side);
     if (!order) return false;
 

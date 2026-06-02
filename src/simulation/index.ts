@@ -158,6 +158,7 @@ export const createTradingSimulationState = (options: TradingSimulationOptions) 
   const cancellation = createCancellationState({
     ownedOrders: ownedOrders.orders,
     removeOrder: (order) => ownedOrders.remove(order.side, order),
+    shouldCancel: (side) => options.orderPlacement.distributions.sampleBernoulli(capital.reservedFraction(side)),
     onCancel: (order) => {
       const canceled = options.market.cancelOrder(order.id, order.side);
       if (!canceled) return false;

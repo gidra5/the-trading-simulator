@@ -27,6 +27,7 @@ const createTestSimulation = (eventType: SimulationEventType, sampleOrderSize = 
   createRoot((dispose) => {
     let currentEventType = eventType;
     let currentSampleOrderSize = sampleOrderSize;
+    let currentBernoulliFloor = 0;
     const time = createSimulationTimeState();
     const market = createTestMarket(time);
     const simulation = createTradingSimulationState({
@@ -49,7 +50,7 @@ const createTestSimulation = (eventType: SimulationEventType, sampleOrderSize = 
       market,
       orderPlacement: {
         distributions: {
-          sampleBernoulli: (probability) => probability > 0,
+          sampleBernoulli: (probability) => probability > currentBernoulliFloor,
           sampleTruncatedExponential: () => 0,
         },
         inSpread: {
@@ -66,6 +67,7 @@ const createTestSimulation = (eventType: SimulationEventType, sampleOrderSize = 
     return {
       dispose,
       market,
+      setBernoulliFloor: (next: number) => (currentBernoulliFloor = next),
       setEventType: (next: SimulationEventType) => (currentEventType = next),
       setSampleOrderSize: (next: number) => (currentSampleOrderSize = next),
       simulation,
@@ -99,6 +101,30 @@ test("simulated cancels recover reserved capital", () => {
     expect(state.simulation.ownedOrders().buy).toHaveLength(0);
     expect(state.simulation.capital.reserved.Money()).toBe(0);
     expect(state.simulation.capital.free.Money()).toBe(5);
+  } finally {
+    state.dispose();
+  }
+});
+
+test("simulated cancellation probability follows reserved capital fraction", () => {
+  const state = createTestSimulation("order-buy", 2);
+
+  try {
+    state.simulation.tick(1);
+    expect(state.simulation.capital.reservedFraction("buy")).toBe(0.4);
+
+    state.setEventType("cancel-buy");
+    state.setBernoulliFloor(0.6);
+    state.simulation.tick(1);
+
+    expect(state.simulation.ownedOrders().buy).toHaveLength(1);
+    expect(state.simulation.capital.reserved.Money()).toBe(2);
+
+    state.setBernoulliFloor(0.3);
+    state.simulation.tick(1);
+
+    expect(state.simulation.ownedOrders().buy).toHaveLength(0);
+    expect(state.simulation.capital.reserved.Money()).toBe(0);
   } finally {
     state.dispose();
   }
