@@ -80,6 +80,7 @@ export const { market, marketModelController, orchestrator, restore, settings, s
     const simulation = createTradingSimulationState({
       cancellation: { ...orchestrator.cancellation, candidatesCount: settings.cancellationCandidatesCount },
       eventStream: orchestrator.eventStream,
+      initialCapital: { Money: 100_000, Stock: 100_000 },
       market,
       orderPlacement: orchestrator.orderPlacement,
       time,

@@ -51,6 +51,7 @@ export const {
   const simulation = createTradingSimulationState({
     market,
     time,
+    initialCapital: { Money: 100_000, Stock: 100_000 },
     eventStream: orchestrator.eventStream,
     orderPlacement: orchestrator.orderPlacement,
     cancellation: { ...orchestrator.cancellation, candidatesCount: settings.cancellationCandidatesCount },

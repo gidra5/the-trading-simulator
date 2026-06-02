@@ -2,6 +2,7 @@ import { type Accessor } from "solid-js";
 import type { Distributions } from "../distributions";
 import { type MarketState, type OrderSide } from "../market/index";
 import { assert, binarySearchIndex, createCleanupScope } from "../utils";
+import { createSimulationCapitalState, type SimulationCapitalPair, type SimulationCapitalSnapshot } from "./capital";
 import { createCancellationState } from "./cancellation";
 import { createOrderPlacementState, type SimulationOrderPlacementOptions } from "./orderPlacement";
 import { type SimulationTimeState } from "./time";
@@ -25,11 +26,12 @@ export {
 type TradingSimulationOptions = {
   market: MarketState;
   time: SimulationTimeState;
+  initialCapital: SimulationCapitalPair;
   cancellation: {
     candidatesCount: Accessor<number>;
     sampleOrderIndex: (orderCount: number) => number;
   };
-  orderPlacement: Omit<SimulationOrderPlacementOptions, "market" | "time">;
+  orderPlacement: Omit<SimulationOrderPlacementOptions, "capital" | "market" | "time">;
   eventStream: {
     baselineActivity: Accessor<number[]>;
     excitementDecay: Accessor<number[]>;
@@ -39,12 +41,14 @@ type TradingSimulationOptions = {
 };
 
 export type TradingSimulationSnapshot = {
+  capital: SimulationCapitalSnapshot;
   ownedOrders: OwnedOrdersSnapshot;
   excitedInterest: number[];
 };
 
 export type OwnedOrders = { buy: RestingOrder[]; sell: RestingOrder[] };
 type SubscribeToOrder = (id: number, callback: (change: OrderBookChange) => void) => VoidFunction | void;
+type OwnedOrderChangeHandler = (change: OrderBookChange) => void;
 
 export type OwnedOrdersSnapshot = {
   orders: OwnedOrders;
@@ -56,7 +60,7 @@ const cloneRestingOrders = (orders: OwnedOrders): OwnedOrders => ({
   sell: orders.sell.map(cloneRestingOrder),
 });
 
-const createOwnedOrders = (subscribeToOrder: SubscribeToOrder) => {
+const createOwnedOrders = (subscribeToOrder: SubscribeToOrder, onOwnedOrderChange: OwnedOrderChangeHandler) => {
   const _orders: OwnedOrders = { buy: [], sell: [] };
   const subscriptionScope = createCleanupScope();
   const subscribedOrderIds = new Set<number>();
@@ -74,6 +78,18 @@ const createOwnedOrders = (subscribeToOrder: SubscribeToOrder) => {
     return true;
   };
 
+  const update = (side: OrderSide, order: { id: number; price: number; size: number }): boolean => {
+    const orders = _orders[side];
+    let idx = binarySearchIndex(orders, (candidate) => candidate.price - order.price);
+    if (idx >= orders.length) return false;
+
+    while (idx < orders.length && orders[idx]!.price === order.price && orders[idx]!.id !== order.id) idx += 1;
+    if (idx >= orders.length || orders[idx]!.price !== order.price) return false;
+
+    orders[idx] = { ...orders[idx]!, size: order.size };
+    return true;
+  };
+
   const add = (order: RestingOrder): void => {
     const orders = _orders[order.side];
     const idx = binarySearchIndex(orders, (candidate) => candidate.price - order.price);
@@ -84,8 +100,12 @@ const createOwnedOrders = (subscribeToOrder: SubscribeToOrder) => {
     subscribedOrderIds.add(order.id);
     subscriptionScope.run(() =>
       subscribeToOrder(order.id, (change) => {
-        if (change.kind !== "remove") return;
-        remove(change.side, change.order);
+        if (change.kind === "partial-fill") {
+          if (update(change.side, change.order)) onOwnedOrderChange(change);
+          return;
+        }
+
+        if (remove(change.side, change.order)) onOwnedOrderChange(change);
       }),
     );
   };
@@ -118,7 +138,8 @@ const createOwnedOrders = (subscribeToOrder: SubscribeToOrder) => {
 // TODO: Preference to place orders in the direction of the movement
 // todo: Preference to place orders closer to spread?
 export const createTradingSimulationState = (options: TradingSimulationOptions) => {
-  const ownedOrders = createOwnedOrders(options.market.subscribeToOrder);
+  const capital = createSimulationCapitalState(options.initialCapital);
+  const ownedOrders = createOwnedOrders(options.market.subscribeToOrder, capital.applyOwnedOrderChange);
   let excitedInterest = eventVector({
     "market-buy": 0,
     "market-sell": 0,
@@ -131,24 +152,62 @@ export const createTradingSimulationState = (options: TradingSimulationOptions) 
   const cancellation = createCancellationState({
     ownedOrders: ownedOrders.orders,
     removeOrder: (order) => ownedOrders.remove(order.side, order),
-    onCancel: (order) => options.market.cancelOrder(order.id, order.side) !== null,
+    onCancel: (order) => {
+      const canceled = options.market.cancelOrder(order.id, order.side);
+      if (!canceled) return false;
+
+      capital.recoverLimitOrder({ ...order, size: canceled.size });
+      return true;
+    },
     ...options.cancellation,
   });
 
   const orderPlacement = createOrderPlacementState({
     market: options.market,
     time: options.time,
+    capital,
     ...options.orderPlacement,
   });
 
   const simulateLimitOrderEvent = (side: OrderSide): void => {
     const restingOrder = orderPlacement.simulateLimitOrderEvent(side);
-    assert(restingOrder !== null);
+    if (!restingOrder) return;
+
+    capital.reserveLimitOrder(restingOrder);
     ownedOrders.add(restingOrder);
   };
 
   const simulateMarketOrderEvent = (side: OrderSide): void => {
-    options.market.takeOrder(side, options.orderPlacement.sampleOrderSize());
+    const size = affordableMarketOrderSize(side, options.orderPlacement.sampleOrderSize());
+    if (size <= 0) return;
+
+    const result = options.market.takeOrder(side, size);
+    capital.applySimulatedMarketFill(side, result.fulfilled, result.cost);
+  };
+
+  const affordableMarketOrderSize = (side: OrderSide, size: number): number => {
+    if (side === "sell") return Math.min(size, capital.free.Stock());
+
+    let affordableSize = 0;
+    let cost = 0;
+    const orders = options.market.orderBook().sell;
+    let orderIndex = orders.length - 1;
+
+    while (affordableSize < size) {
+      const order = orders[orderIndex];
+      if (!order) return affordableSize;
+
+      const nextSize = Math.min(order.size, size - affordableSize);
+      if (cost + nextSize * order.price > capital.free.Money()) {
+        return affordableSize + (capital.free.Money() - cost) / order.price;
+      }
+
+      affordableSize += nextSize;
+      cost += nextSize * order.price;
+      orderIndex -= 1;
+    }
+
+    return affordableSize;
   };
 
   const simulateEvent = (eventType: SimulationEventType, dt: number): void => {
@@ -198,16 +257,18 @@ export const createTradingSimulationState = (options: TradingSimulationOptions) 
   };
 
   const snapshot = (): TradingSimulationSnapshot => ({
+    capital: capital.snapshot(),
     ownedOrders: ownedOrders.snapshot(),
     excitedInterest: [...excitedInterest],
   });
 
   const restore = (snapshot: TradingSimulationSnapshot): void => {
     excitedInterest = [...snapshot.excitedInterest];
+    capital.restore(snapshot.capital);
     ownedOrders.restore(snapshot.ownedOrders);
   };
 
-  return { ownedOrders: ownedOrders.orders, restore, snapshot, tick };
+  return { capital, ownedOrders: ownedOrders.orders, restore, snapshot, tick };
 };
 
 export type TradingSimulation = ReturnType<typeof createTradingSimulationState>;

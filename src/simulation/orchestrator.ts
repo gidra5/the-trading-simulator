@@ -24,7 +24,7 @@ export type SimulationOrchestrator = {
   cancellation: {
     sampleOrderIndex: (orderCount: number) => number;
   };
-  orderPlacement: Omit<SimulationOrderPlacementOptions, "market" | "time">;
+  orderPlacement: Omit<SimulationOrderPlacementOptions, "capital" | "market" | "time">;
   eventStream: {
     excitementDecay: Accessor<number[]>;
     baselineActivity: Accessor<number[]>;

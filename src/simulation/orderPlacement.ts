@@ -2,12 +2,14 @@ import type { Accessor } from "solid-js";
 import type { Distributions } from "../distributions";
 import { type MarketState, type OrderSide } from "../market/index";
 import { assert } from "../utils";
+import type { SimulationCapitalState } from "./capital";
 import { type SimulationTimeState } from "./time";
 import { type RestingOrder } from "./types";
 
 export type SimulationOrderPlacementOptions = {
   market: MarketState;
   time: SimulationTimeState;
+  capital: Pick<SimulationCapitalState, "freeFraction" | "limitOrderSize">;
   distributions: Pick<Distributions, "sampleBernoulli" | "sampleTruncatedExponential">;
   sampleOrderDistance: () => number;
   sampleOrderSize: () => number;
@@ -44,9 +46,13 @@ export const createOrderPlacementState = (options: SimulationOrderPlacementOptio
     return price;
   };
 
-  const simulateLimitOrderEvent = (side: OrderSide): RestingOrder => {
-    const size = options.sampleOrderSize();
+  const simulateLimitOrderEvent = (side: OrderSide): RestingOrder | null => {
+    if (!options.distributions.sampleBernoulli(options.capital.freeFraction(side))) return null;
+
     const price = sampleOrderPrice(side);
+    const size = options.capital.limitOrderSize(side, price, options.sampleOrderSize());
+    if (size <= 0) return null;
+
     const result = options.market.makeOrder(side, { price, size });
 
     assert(result.order.size === size, "simulated limit orders should not fill immediately");

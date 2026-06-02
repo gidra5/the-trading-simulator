@@ -50,6 +50,7 @@ test("simulation ticks advance through quiet intervals", () => {
     const simulation = createTradingSimulationState({
       cancellation: orchestrator.cancellation,
       eventStream: orchestrator.eventStream,
+      initialCapital: { Money: 100_000, Stock: 100_000 },
       market,
       orderPlacement: orchestrator.orderPlacement,
       time,
