@@ -1,11 +1,12 @@
 import { type Accessor } from "solid-js";
 import type { Distributions } from "../distributions";
 import { type MarketState, type OrderSide } from "../market/index";
-import { assert } from "../utils";
-import { createCancellationState, type CancellationSnapshot } from "./cancellation";
+import { assert, binarySearchIndex, createCleanupScope } from "../utils";
+import { createCancellationState } from "./cancellation";
 import { createOrderPlacementState, type SimulationOrderPlacementOptions } from "./orderPlacement";
 import { type SimulationTimeState } from "./time";
-import { eventVector, simulationEventTypes as events, type SimulationEventType } from "./types";
+import { eventVector, simulationEventTypes as events, type RestingOrder, type SimulationEventType } from "./types";
+import type { OrderBookChange } from "../market/orderBook";
 
 export {
   defaultMarketModelSettings,
@@ -38,13 +39,86 @@ type TradingSimulationOptions = {
 };
 
 export type TradingSimulationSnapshot = {
-  cancellation: CancellationSnapshot;
+  ownedOrders: OwnedOrdersSnapshot;
   excitedInterest: number[];
+};
+
+export type OwnedOrders = { buy: RestingOrder[]; sell: RestingOrder[] };
+type SubscribeToOrder = (id: number, callback: (change: OrderBookChange) => void) => VoidFunction | void;
+
+export type OwnedOrdersSnapshot = {
+  orders: OwnedOrders;
+};
+
+const cloneRestingOrder = (order: RestingOrder): RestingOrder => ({ ...order });
+const cloneRestingOrders = (orders: OwnedOrders): OwnedOrders => ({
+  buy: orders.buy.map(cloneRestingOrder),
+  sell: orders.sell.map(cloneRestingOrder),
+});
+
+const createOwnedOrders = (subscribeToOrder: SubscribeToOrder) => {
+  const _orders: OwnedOrders = { buy: [], sell: [] };
+  const subscriptionScope = createCleanupScope();
+  const subscribedOrderIds = new Set<number>();
+
+  const remove = (side: OrderSide, order: { id: number; price: number }): boolean => {
+    const orders = _orders[side];
+    let idx = binarySearchIndex(orders, (candidate) => candidate.price - order.price);
+    if (idx >= orders.length) return false;
+
+    while (idx < orders.length && orders[idx]!.price === order.price && orders[idx]!.id !== order.id) idx += 1;
+    if (idx >= orders.length || orders[idx]!.price !== order.price) return false;
+
+    _orders[side].splice(idx, 1);
+    subscribedOrderIds.delete(order.id);
+    return true;
+  };
+
+  const add = (order: RestingOrder): void => {
+    const orders = _orders[order.side];
+    const idx = binarySearchIndex(orders, (candidate) => candidate.price - order.price);
+    orders.splice(idx, 0, cloneRestingOrder(order));
+
+    if (subscribedOrderIds.has(order.id)) return;
+
+    subscribedOrderIds.add(order.id);
+    subscriptionScope.run(() =>
+      subscribeToOrder(order.id, (change) => {
+        if (change.kind !== "remove") return;
+        remove(change.side, change.order);
+      }),
+    );
+  };
+
+  const orders = () => cloneRestingOrders(_orders);
+
+  const snapshot = (): OwnedOrdersSnapshot => ({
+    orders: cloneRestingOrders(_orders),
+  });
+
+  const restore = (snapshot: OwnedOrdersSnapshot): void => {
+    subscriptionScope.reset();
+    subscribedOrderIds.clear();
+    _orders.buy = [];
+    _orders.sell = [];
+
+    for (const order of snapshot.orders.buy) add(order);
+    for (const order of snapshot.orders.sell) add(order);
+  };
+
+  return {
+    orders,
+    add,
+    remove,
+    restore,
+    snapshot,
+  };
 };
 
 // TODO: Preference to place orders in the direction of the movement
 // todo: Preference to place orders closer to spread?
 export const createTradingSimulationState = (options: TradingSimulationOptions) => {
+  const ownedOrders = createOwnedOrders(options.market.subscribeToOrder);
   let excitedInterest = eventVector({
     "market-buy": 0,
     "market-sell": 0,
@@ -55,7 +129,8 @@ export const createTradingSimulationState = (options: TradingSimulationOptions) 
   });
 
   const cancellation = createCancellationState({
-    market: options.market,
+    ownedOrders: ownedOrders.orders,
+    removeOrder: (order) => ownedOrders.remove(order.side, order),
     onCancel: (order) => options.market.cancelOrder(order.id, order.side) !== null,
     ...options.cancellation,
   });
@@ -69,7 +144,7 @@ export const createTradingSimulationState = (options: TradingSimulationOptions) 
   const simulateLimitOrderEvent = (side: OrderSide): void => {
     const restingOrder = orderPlacement.simulateLimitOrderEvent(side);
     assert(restingOrder !== null);
-    cancellation.addOrder(restingOrder);
+    ownedOrders.add(restingOrder);
   };
 
   const simulateMarketOrderEvent = (side: OrderSide): void => {
@@ -123,16 +198,16 @@ export const createTradingSimulationState = (options: TradingSimulationOptions) 
   };
 
   const snapshot = (): TradingSimulationSnapshot => ({
-    cancellation: cancellation.snapshot(),
+    ownedOrders: ownedOrders.snapshot(),
     excitedInterest: [...excitedInterest],
   });
 
   const restore = (snapshot: TradingSimulationSnapshot): void => {
     excitedInterest = [...snapshot.excitedInterest];
-    cancellation.restore(snapshot.cancellation);
+    ownedOrders.restore(snapshot.ownedOrders);
   };
 
-  return { getCancellationRestingOrders: cancellation.getRestingOrders, restore, snapshot, tick };
+  return { ownedOrders: ownedOrders.orders, restore, snapshot, tick };
 };
 
 export type TradingSimulation = ReturnType<typeof createTradingSimulationState>;
